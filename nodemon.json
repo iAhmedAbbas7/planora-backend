@@ -1,0 +1,9 @@
+{
+  "watch": ["src"],
+  "ext": "ts,js",
+  "ignore": ["src/**/*.spec.ts"],
+  "exec": "node --import tsx src/server.ts",
+  "watchOptions": {
+    "ignored": ["src/**/*.spec.ts"]
+  }
+}

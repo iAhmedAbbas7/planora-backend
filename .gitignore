@@ -1,0 +1,54 @@
+# <== LOGS ==>
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# <== DEPENDENCY DIRECTORIES ==>
+node_modules/
+
+# <== BUILD OUTPUTS ==>
+dist/
+dist-ssr/
+
+# <== ENVIRONMENT FILES ==>
+.env
+.env.local
+
+# <== LOCK FILES ==>
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# <== COVERAGE REPORTS ==>
+coverage/
+.nyc_output/
+
+# <== EDITOR DIRECTORIES AND FILES ==>
+.vscode/
+!.vscode/extensions.json
+.idea/
+.DS_Store
+
+# <== OS-SPECIFIC ==>
+Thumbs.db
+.ini
+
+# <== OPTIONAL: TYPE SCRIPT DECLARATION OUTPUTS ==>
+# *.d.ts
+
+# <== MISCELLANEOUS ==>
+*.local
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# <== TEMPORARY FILES ==>
+temp/
+tmp/
+*.tmp
