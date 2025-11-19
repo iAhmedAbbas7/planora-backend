@@ -4,30 +4,12 @@ import mongoose from "mongoose";
 // <== USER SCHEMA ==>
 const userSchema = new mongoose.Schema(
   {
-    // NAME FIELD (BACKWARD COMPATIBILITY)
+    // NAME FIELD
     name: {
       type: String,
       required: true,
       trim: true,
       index: true,
-    },
-    // FIRST NAME FIELD
-    firstName: {
-      type: String,
-      default: "",
-      trim: true,
-    },
-    // LAST NAME FIELD
-    lastName: {
-      type: String,
-      default: "",
-      trim: true,
-    },
-    // ROLE FIELD
-    role: {
-      type: String,
-      default: "",
-      trim: true,
     },
     // BIO FIELD
     bio: {
@@ -74,8 +56,6 @@ userSchema.index({ email: 1, name: 1 });
 userSchema.index({
   name: "text",
   email: "text",
-  firstName: "text",
-  lastName: "text",
 });
 
 // <== EXPORTING THE USER MODEL ==>

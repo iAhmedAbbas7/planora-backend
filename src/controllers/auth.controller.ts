@@ -2,7 +2,9 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { User } from "../models/user.model.js";
+import { RefreshToken } from "../models/refreshToken.model.js";
 import expressAsyncHandler from "express-async-handler";
+import crypto from "crypto";
 
 /**
  * GENERATE JWT TOKEN
@@ -27,18 +29,22 @@ export const generateToken = (userId: string): string => {
 /**
  * GENERATE REFRESH TOKEN
  * @param userId - User ID
+ * @param tokenId - Token ID for database lookup
  * @returns Refresh Token
  */
 // <== GENERATE REFRESH TOKEN ==>
-export const generateRefreshToken = (userId: string): string => {
+export const generateRefreshToken = (
+  userId: string,
+  tokenId: string
+): string => {
   // GETTING REFRESH TOKEN SECRET FROM ENVIRONMENT VARIABLES
   const secret = process.env.RT_SECRET;
   // IF REFRESH TOKEN SECRET IS NOT DEFINED, THROW AN ERROR
   if (!secret) {
     throw new Error("RT_SECRET is not Defined");
   }
-  // GENERATING JWT TOKEN WITH USER ID AND REFRESH TOKEN SECRET
-  return jwt.sign({ userId }, secret, {
+  // GENERATING JWT TOKEN WITH USER ID AND TOKEN ID
+  return jwt.sign({ userId, tokenId }, secret, {
     // SETTING EXPIRATION TIME TO 30 DAYS
     expiresIn: process.env.RT_EXPIRES_IN || "30d",
   } as jwt.SignOptions);
@@ -97,7 +103,52 @@ export const signup = expressAsyncHandler(async (req, res) => {
     email,
     password: hashedPassword,
   });
-  // RETURNING RESPONSE
+  // CLEANING UP ANY EXISTING REFRESH TOKENS (ALL TOKENS - REVOKED, EXPIRED, OR ACTIVE)
+  await RefreshToken.deleteMany({ userId: newUser._id }).exec();
+  // GENERATING UNIQUE TOKEN ID FOR DATABASE STORAGE
+  const tokenId = crypto.randomUUID();
+  // GENERATING ACCESS TOKEN
+  const accessToken = generateToken(newUser._id.toString());
+  // GENERATING REFRESH TOKEN WITH TOKEN ID
+  const refreshToken = generateRefreshToken(newUser._id.toString(), tokenId);
+  // CALCULATING REFRESH TOKEN EXPIRATION DATE
+  const expiresIn = process.env.RT_EXPIRES_IN || "30d";
+  // CALCULATING EXPIRATION DAYS
+  const expiresInDays = expiresIn.includes("d") ? parseInt(expiresIn) : 30;
+  // CALCULATING EXPIRATION DATE
+  const expiresAt = new Date();
+  // SETTING EXPIRATION DATE
+  expiresAt.setDate(expiresAt.getDate() + expiresInDays);
+  // STORING REFRESH TOKEN IN DATABASE
+  await RefreshToken.create({
+    tokenId,
+    userId: newUser._id,
+    expiresAt,
+    revoked: false,
+  });
+  // SETTING ACCESS TOKEN IN HTTP-ONLY COOKIE
+  const accessTokenExpiresIn = process.env.AT_EXPIRES_IN || "15m";
+  // CALCULATING ACCESS TOKEN MAX AGE
+  const accessTokenMaxAge = accessTokenExpiresIn.includes("m")
+    ? parseInt(accessTokenExpiresIn) * 60 * 1000
+    : 15 * 60 * 1000; // Default 15 minutes
+  // SETTING ACCESS TOKEN IN HTTP-ONLY COOKIE
+  res.cookie("accessToken", accessToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: accessTokenMaxAge,
+  });
+  // SETTING REFRESH TOKEN IN HTTP-ONLY COOKIE
+  const refreshTokenMaxAge = expiresInDays * 24 * 60 * 60 * 1000;
+  // SETTING REFRESH TOKEN IN HTTP-ONLY COOKIE
+  res.cookie("refreshToken", refreshToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: refreshTokenMaxAge,
+  });
+  // RETURNING RESPONSE (NO TOKENS IN BODY FOR SECURITY)
   res.status(201).json({
     message: "Signup successful!",
     success: true,
@@ -148,16 +199,52 @@ export const login = expressAsyncHandler(async (req, res) => {
     });
     return;
   }
-  // GENERATING JWT TOKEN
-  const token = generateToken(user._id.toString());
-  // SETTING TOKEN IN HTTP-ONLY COOKIE
-  res.cookie("token", token, {
+  // CLEANING UP ANY EXISTING REFRESH TOKENS (ALL TOKENS - REVOKED, EXPIRED, OR ACTIVE)
+  await RefreshToken.deleteMany({ userId: user._id }).exec();
+  // GENERATING UNIQUE TOKEN ID FOR DATABASE STORAGE
+  const tokenId = crypto.randomUUID();
+  // GENERATING ACCESS TOKEN
+  const accessToken = generateToken(user._id.toString());
+  // GENERATING REFRESH TOKEN WITH TOKEN ID
+  const refreshToken = generateRefreshToken(user._id.toString(), tokenId);
+  // CALCULATING REFRESH TOKEN EXPIRATION DATE
+  const expiresIn = process.env.RT_EXPIRES_IN || "30d";
+  // CALCULATING EXPIRATION DAYS
+  const expiresInDays = expiresIn.includes("d") ? parseInt(expiresIn) : 30;
+  // CALCULATING EXPIRATION DATE
+  const expiresAt = new Date();
+  // SETTING EXPIRATION DATE
+  expiresAt.setDate(expiresAt.getDate() + expiresInDays);
+  // STORING REFRESH TOKEN IN DATABASE
+  await RefreshToken.create({
+    tokenId,
+    userId: user._id,
+    expiresAt,
+    revoked: false,
+  });
+  // SETTING ACCESS TOKEN IN HTTP-ONLY COOKIE
+  const accessTokenExpiresIn = process.env.AT_EXPIRES_IN || "15m";
+  // CALCULATING ACCESS TOKEN MAX AGE
+  const accessTokenMaxAge = accessTokenExpiresIn.includes("m")
+    ? parseInt(accessTokenExpiresIn) * 60 * 1000
+    : 15 * 60 * 1000; // Default 15 minutes
+  // SETTING ACCESS TOKEN IN HTTP-ONLY COOKIE
+  res.cookie("accessToken", accessToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
-    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    sameSite: "lax",
+    maxAge: accessTokenMaxAge,
   });
-  // RETURNING RESPONSE
+  // SETTING REFRESH TOKEN IN HTTP-ONLY COOKIE
+  const refreshTokenMaxAge = expiresInDays * 24 * 60 * 60 * 1000;
+  // SETTING REFRESH TOKEN IN HTTP-ONLY COOKIE
+  res.cookie("refreshToken", refreshToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: refreshTokenMaxAge,
+  });
+  // RETURNING RESPONSE (NO TOKENS IN BODY FOR SECURITY)
   res.status(200).json({
     message: "Login successful!",
     success: true,
@@ -165,8 +252,125 @@ export const login = expressAsyncHandler(async (req, res) => {
       id: user._id,
       name: user.name,
       email: user.email,
-      token,
     },
+  });
+  return;
+});
+
+/**
+ * REFRESH ACCESS TOKEN
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== REFRESH ACCESS TOKEN ==>
+export const refreshToken = expressAsyncHandler(async (req, res) => {
+  // GETTING REFRESH TOKEN FROM COOKIE
+  const refreshTokenFromCookie = req.cookies.refreshToken;
+  // IF NO REFRESH TOKEN FOUND, RETURN 401 ERROR
+  if (!refreshTokenFromCookie) {
+    res.status(401).json({
+      message: "Refresh token not found!",
+      success: false,
+    });
+    return;
+  }
+  // DECODING REFRESH TOKEN
+  let decodedToken: jwt.JwtPayload | undefined;
+  try {
+    // VERIFYING REFRESH TOKEN
+    decodedToken = jwt.verify(
+      refreshTokenFromCookie,
+      process.env.RT_SECRET!
+    ) as jwt.JwtPayload;
+  } catch (error: any) {
+    // IF TOKEN EXPIRED OR INVALID, RETURN 401 ERROR
+    res.status(401).json({
+      message: "Invalid or expired refresh token!",
+      success: false,
+    });
+    return;
+  }
+  // GETTING USER ID AND TOKEN ID FROM DECODED TOKEN
+  const userId = decodedToken.userId;
+  const tokenId = decodedToken.tokenId;
+  // IF TOKEN ID NOT FOUND, RETURN 401 ERROR
+  if (!tokenId) {
+    res.status(401).json({
+      message: "Invalid refresh token format!",
+      success: false,
+    });
+    return;
+  }
+  // FINDING REFRESH TOKEN IN DATABASE BY TOKEN ID
+  const storedToken = await RefreshToken.findOne({
+    tokenId,
+    userId,
+    revoked: false,
+  })
+    .lean()
+    .exec();
+  // IF TOKEN NOT FOUND IN DATABASE OR EXPIRED, RETURN 401 ERROR
+  if (!storedToken || storedToken.expiresAt < new Date()) {
+    res.status(401).json({
+      message: "Refresh token not found or expired!",
+      success: false,
+    });
+    return;
+  }
+  // DELETING OLD REFRESH TOKEN BEING USED FOR REFRESH
+  await RefreshToken.deleteOne({ _id: storedToken._id }).exec();
+  // CLEANING UP ANY OTHER REVOKED OR EXPIRED TOKENS FOR THIS USER
+  await RefreshToken.deleteMany({
+    userId,
+    $or: [{ revoked: true }, { expiresAt: { $lt: new Date() } }],
+  }).exec();
+  // GENERATING NEW TOKEN ID
+  const newTokenId = crypto.randomUUID();
+  // GENERATING NEW ACCESS TOKEN
+  const newAccessToken = generateToken(userId);
+  // GENERATING NEW REFRESH TOKEN WITH NEW TOKEN ID
+  const newRefreshToken = generateRefreshToken(userId, newTokenId);
+  // CALCULATING NEW REFRESH TOKEN EXPIRATION DATE
+  const expiresIn = process.env.RT_EXPIRES_IN || "30d";
+  const expiresInDays = expiresIn.includes("d") ? parseInt(expiresIn) : 30;
+  // CALCULATING NEW REFRESH TOKEN EXPIRATION DATE
+  const expiresAt = new Date();
+  // SETTING EXPIRATION DATE
+  expiresAt.setDate(expiresAt.getDate() + expiresInDays);
+  // STORING NEW REFRESH TOKEN IN DATABASE
+  await RefreshToken.create({
+    tokenId: newTokenId,
+    userId,
+    expiresAt,
+    revoked: false,
+  });
+  // SETTING NEW ACCESS TOKEN IN HTTP-ONLY COOKIE
+  const accessTokenExpiresIn = process.env.AT_EXPIRES_IN || "15m";
+  // CALCULATING ACCESS TOKEN MAX AGE
+  const accessTokenMaxAge = accessTokenExpiresIn.includes("m")
+    ? parseInt(accessTokenExpiresIn) * 60 * 1000
+    : 15 * 60 * 1000; // Default 15 minutes
+  // SETTING NEW ACCESS TOKEN IN HTTP-ONLY COOKIE
+  res.cookie("accessToken", newAccessToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: accessTokenMaxAge,
+  });
+  // SETTING NEW REFRESH TOKEN IN HTTP-ONLY COOKIE
+  const refreshTokenMaxAge = expiresInDays * 24 * 60 * 60 * 1000;
+  // SETTING NEW REFRESH TOKEN IN HTTP-ONLY COOKIE
+  res.cookie("refreshToken", newRefreshToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: refreshTokenMaxAge,
+  });
+  // RETURNING RESPONSE
+  res.status(200).json({
+    message: "Token refreshed successfully!",
+    success: true,
   });
   return;
 });
@@ -179,8 +383,24 @@ export const login = expressAsyncHandler(async (req, res) => {
  */
 // <== USER LOGOUT ==>
 export const logout = expressAsyncHandler(async (req, res) => {
-  // CLEARING TOKEN COOKIE
-  res.clearCookie("token");
+  // GETTING USER ID FROM REQUEST (IF AUTHENTICATED)
+  const userId = (req as any).id;
+  // IF USER ID EXISTS, DELETE ALL REFRESH TOKENS FOR THIS USER
+  if (userId) {
+    await RefreshToken.deleteMany({ userId }).exec();
+  }
+  // CLEARING ACCESS TOKEN COOKIE
+  res.clearCookie("accessToken", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+  });
+  // CLEARING REFRESH TOKEN COOKIE
+  res.clearCookie("refreshToken", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+  });
   // RETURNING RESPONSE
   res.status(200).json({
     message: "Logout successful!",

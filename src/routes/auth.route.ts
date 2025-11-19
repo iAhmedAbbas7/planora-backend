@@ -1,6 +1,11 @@
 // <== IMPORTS ==>
+import {
+  signup,
+  login,
+  logout,
+  refreshToken,
+} from "../controllers/auth.controller.js";
 import express from "express";
-import { signup, login, logout } from "../controllers/auth.controller.js";
 
 // <== ROUTER ==>
 const router = express.Router();
@@ -12,5 +17,7 @@ router.post("/login", login);
 router.post("/signup", signup);
 // USER LOGOUT ROUTE
 router.post("/logout", logout);
+// REFRESH TOKEN ROUTE
+router.post("/refresh", refreshToken);
 
 export default router;
