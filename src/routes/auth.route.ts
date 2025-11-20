@@ -6,6 +6,8 @@ import {
   refreshToken,
   oauthCallback,
   getCurrentUser,
+  verifyEmail,
+  resendVerificationCode,
 } from "../controllers/auth.controller.js";
 import express from "express";
 import passport from "../config/passport.js";
@@ -59,7 +61,11 @@ router.post("/signup", signup);
 router.post("/logout", logout);
 // REFRESH TOKEN ROUTE
 router.post("/refresh", refreshToken);
+// VERIFY EMAIL ROUTE
+router.post("/verify-email", verifyEmail);
 // GET CURRENT USER ROUTE (REQUIRES AUTHENTICATION)
 router.get("/me", isAuthenticated, getCurrentUser);
+// RESEND VERIFICATION CODE ROUTE
+router.post("/resend-verification", resendVerificationCode);
 
 export default router;

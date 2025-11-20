@@ -1,10 +1,16 @@
 // <== IMPORTS ==>
+import {
+  sendVerificationEmail,
+  sendEmailVerificationConfirmation,
+  sendWelcomeEmail,
+} from "../utils/mailer.js";
+import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { User } from "../models/user.model.js";
-import { RefreshToken } from "../models/refreshToken.model.js";
 import expressAsyncHandler from "express-async-handler";
-import crypto from "crypto";
+import { PendingUser } from "../models/pendingUser.model.js";
+import { RefreshToken } from "../models/refreshToken.model.js";
 
 /**
  * GENERATE JWT TOKEN
@@ -68,8 +74,9 @@ export const signup = expressAsyncHandler(async (req, res) => {
     });
     return;
   }
-  // VALIDATING EMAIL FORMAT
-  const emailRegex = /^\S+@\S+\.\S+$/;
+  // VALIDATING EMAIL FORMAT (IMPROVED VALIDATION)
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  // IF EMAIL FORMAT IS INVALID, RETURN 400 ERROR
   if (!emailRegex.test(email)) {
     res.status(400).json({
       message: "Please provide a valid email address!",
@@ -77,15 +84,47 @@ export const signup = expressAsyncHandler(async (req, res) => {
     });
     return;
   }
-  // VALIDATING PASSWORD LENGTH
-  if (password.length < 6) {
+  // VALIDATING PASSWORD STRENGTH (8+ CHARACTERS, UPPERCASE, LOWERCASE, DIGIT, SPECIAL)
+  if (password.length < 8) {
     res.status(400).json({
-      message: "Password must be at least 6 characters long!",
+      message: "Password must be at least 8 characters long!",
       success: false,
     });
     return;
   }
-  // CHECKING IF USER ALREADY EXISTS
+  // CHECK FOR UPPERCASE LETTER
+  if (!/[A-Z]/.test(password)) {
+    res.status(400).json({
+      message: "Password must contain at least one uppercase letter!",
+      success: false,
+    });
+    return;
+  }
+  // CHECK FOR LOWERCASE LETTER
+  if (!/[a-z]/.test(password)) {
+    res.status(400).json({
+      message: "Password must contain at least one lowercase letter!",
+      success: false,
+    });
+    return;
+  }
+  // CHECK FOR DIGIT
+  if (!/[0-9]/.test(password)) {
+    res.status(400).json({
+      message: "Password must contain at least one digit!",
+      success: false,
+    });
+    return;
+  }
+  // CHECK FOR SPECIAL CHARACTER
+  if (!/[^A-Za-z0-9]/.test(password)) {
+    res.status(400).json({
+      message: "Password must contain at least one special character!",
+      success: false,
+    });
+    return;
+  }
+  // CHECKING IF USER ALREADY EXISTS (VERIFIED USER)
   const existingUser = await User.findOne({ email }).lean().exec();
   // IF USER ALREADY EXISTS, RETURN 409 ERROR
   if (existingUser) {
@@ -95,67 +134,56 @@ export const signup = expressAsyncHandler(async (req, res) => {
     });
     return;
   }
+  // CHECKING IF PENDING USER EXISTS
+  const existingPendingUser = await PendingUser.findOne({ email }).exec();
+  // IF PENDING USER EXISTS, DELETE IT (TO ALLOW RE-SIGNUP WITH NEW CODE)
+  if (existingPendingUser) {
+    // DELETING EXISTING PENDING USER
+    await existingPendingUser.deleteOne().exec();
+  }
   // HASHING PASSWORD
   const hashedPassword = await bcrypt.hash(password, 10);
-  // CREATING NEW USER
-  const newUser = await User.create({
+  // GENERATING 6-DIGIT VERIFICATION CODE
+  const verificationCode = Math.floor(
+    100000 + Math.random() * 900000
+  ).toString();
+  // CALCULATING EXPIRY TIME (2 MINUTES FROM NOW)
+  const verificationCodeExpiresAt = new Date();
+  // SETTING EXPIRY TIME TO 2 MINUTES
+  verificationCodeExpiresAt.setMinutes(
+    verificationCodeExpiresAt.getMinutes() + 2
+  );
+  // CREATING PENDING USER
+  const pendingUser = await PendingUser.create({
     name,
     email,
     password: hashedPassword,
+    verificationCode,
+    verificationCodeExpiresAt,
+    resendAttempts: 0,
+    lastResendAt: new Date(),
   });
-  // CLEANING UP ANY EXISTING REFRESH TOKENS (ALL TOKENS - REVOKED, EXPIRED, OR ACTIVE)
-  await RefreshToken.deleteMany({ userId: newUser._id }).exec();
-  // GENERATING UNIQUE TOKEN ID FOR DATABASE STORAGE
-  const tokenId = crypto.randomUUID();
-  // GENERATING ACCESS TOKEN
-  const accessToken = generateToken(newUser._id.toString());
-  // GENERATING REFRESH TOKEN WITH TOKEN ID
-  const refreshToken = generateRefreshToken(newUser._id.toString(), tokenId);
-  // CALCULATING REFRESH TOKEN EXPIRATION DATE
-  const expiresIn = process.env.RT_EXPIRES_IN || "30d";
-  // CALCULATING EXPIRATION DAYS
-  const expiresInDays = expiresIn.includes("d") ? parseInt(expiresIn) : 30;
-  // CALCULATING EXPIRATION DATE
-  const expiresAt = new Date();
-  // SETTING EXPIRATION DATE
-  expiresAt.setDate(expiresAt.getDate() + expiresInDays);
-  // STORING REFRESH TOKEN IN DATABASE
-  await RefreshToken.create({
-    tokenId,
-    userId: newUser._id,
-    expiresAt,
-    revoked: false,
-  });
-  // SETTING ACCESS TOKEN IN HTTP-ONLY COOKIE
-  const accessTokenExpiresIn = process.env.AT_EXPIRES_IN || "15m";
-  // CALCULATING ACCESS TOKEN MAX AGE
-  const accessTokenMaxAge = accessTokenExpiresIn.includes("m")
-    ? parseInt(accessTokenExpiresIn) * 60 * 1000
-    : 15 * 60 * 1000; // Default 15 minutes
-  // SETTING ACCESS TOKEN IN HTTP-ONLY COOKIE
-  res.cookie("accessToken", accessToken, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: accessTokenMaxAge,
-  });
-  // SETTING REFRESH TOKEN IN HTTP-ONLY COOKIE
-  const refreshTokenMaxAge = expiresInDays * 24 * 60 * 60 * 1000;
-  // SETTING REFRESH TOKEN IN HTTP-ONLY COOKIE
-  res.cookie("refreshToken", refreshToken, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: refreshTokenMaxAge,
-  });
-  // RETURNING RESPONSE (NO TOKENS IN BODY FOR SECURITY)
+  // SENDING VERIFICATION EMAIL
+  try {
+    await sendVerificationEmail(pendingUser.email, verificationCode, name);
+  } catch (error) {
+    // DELETING PENDING USER IF EMAIL SENDING FAILS
+    await pendingUser.deleteOne().exec();
+    // LOGGING ERROR
+    console.error("Error sending verification email:", error);
+    // RETURNING ERROR RESPONSE
+    res.status(500).json({
+      message: "Failed to send verification email. Please try again later.",
+      success: false,
+    });
+    return;
+  }
+  // RETURNING RESPONSE (NO SENSITIVE DATA)
   res.status(201).json({
-    message: "Signup successful!",
+    message: "Verification code sent to your email! Please check your inbox.",
     success: true,
     data: {
-      id: newUser._id,
-      name: newUser.name,
-      email: newUser.email,
+      email: pendingUser.email,
     },
   });
   return;
@@ -291,8 +319,9 @@ export const refreshToken = expressAsyncHandler(async (req, res) => {
     });
     return;
   }
-  // GETTING USER ID AND TOKEN ID FROM DECODED TOKEN
+  // GETTING USER ID FROM DECODED TOKEN
   const userId = decodedToken.userId;
+  // GETTING TOKEN ID FROM DECODED TOKEN
   const tokenId = decodedToken.tokenId;
   // IF TOKEN ID NOT FOUND, RETURN 401 ERROR
   if (!tokenId) {
@@ -333,8 +362,9 @@ export const refreshToken = expressAsyncHandler(async (req, res) => {
   const newRefreshToken = generateRefreshToken(userId, newTokenId);
   // CALCULATING NEW REFRESH TOKEN EXPIRATION DATE
   const expiresIn = process.env.RT_EXPIRES_IN || "30d";
+  // CALCULATING EXPIRATION DAYS
   const expiresInDays = expiresIn.includes("d") ? parseInt(expiresIn) : 30;
-  // CALCULATING NEW REFRESH TOKEN EXPIRATION DATE
+  // CALCULATING EXPIRATION DATE
   const expiresAt = new Date();
   // SETTING EXPIRATION DATE
   expiresAt.setDate(expiresAt.getDate() + expiresInDays);
@@ -484,6 +514,30 @@ export const oauthCallback = expressAsyncHandler(async (req, res) => {
     sameSite: "lax",
     maxAge: refreshTokenMaxAge,
   });
+  // CHECK IF USER IS NEW (CREATED WITHIN LAST 10 SECONDS) AND SEND WELCOME EMAIL
+  try {
+    // FETCH USER FROM DATABASE TO GET CREATED AT TIMESTAMP
+    const dbUser = await User.findById(userId).lean().exec();
+    if (dbUser) {
+      // CHECK IF USER WAS CREATED WITHIN LAST 10 SECONDS (NEW USER)
+      const userCreatedAt = new Date(dbUser.createdAt || Date.now());
+      // CHECK IF USER WAS CREATED WITHIN LAST 10 SECONDS (NEW USER)
+      const tenSecondsAgo = new Date(Date.now() - 10 * 1000);
+      // CHECK IF USER WAS CREATED WITHIN LAST 10 SECONDS (NEW USER)
+      const isNewUser = userCreatedAt > tenSecondsAgo;
+      // IF NEW USER, SEND WELCOME EMAIL
+      if (isNewUser) {
+        // SEND WELCOME EMAIL (DON'T AWAIT - SEND IN BACKGROUND)
+        sendWelcomeEmail(dbUser.email, dbUser.name).catch((error) => {
+          // LOG ERROR BUT DON'T FAIL THE REQUEST
+          console.error("Error sending welcome email to OAuth user:", error);
+        });
+      }
+    }
+  } catch (error) {
+    // LOG ERROR BUT DON'T FAIL THE REQUEST
+    console.error("Error checking if user is new for welcome email:", error);
+  }
   // REDIRECT TO FRONTEND WITH SUCCESS
   const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
   // REDIRECTING TO FRONTEND WITH SUCCESS
@@ -529,6 +583,253 @@ export const getCurrentUser = expressAsyncHandler(async (req, res) => {
       name: user.name,
       email: user.email,
     },
+  });
+  return;
+});
+
+/**
+ * VERIFY EMAIL WITH CODE
+ * VERIFIES THE EMAIL CODE AND COMPLETES USER SIGNUP
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== VERIFY EMAIL ==>
+export const verifyEmail = expressAsyncHandler(async (req, res) => {
+  // GETTING EMAIL AND CODE FROM REQUEST BODY
+  const { email, code } = req.body;
+  // VALIDATING REQUIRED FIELDS
+  if (!email || !code) {
+    res.status(400).json({
+      message: "Email and Verification Code are Required!",
+      success: false,
+    });
+    return;
+  }
+  // VALIDATING CODE FORMAT (6 DIGITS)
+  if (!/^\d{6}$/.test(code)) {
+    res.status(400).json({
+      message: "Verification code must be 6 digits!",
+      success: false,
+    });
+    return;
+  }
+  // FINDING PENDING USER BY EMAIL AND CODE
+  const pendingUser = await PendingUser.findOne({
+    email: email.toLowerCase().trim(),
+    verificationCode: code,
+  }).exec();
+  // IF PENDING USER NOT FOUND, RETURN ERROR
+  if (!pendingUser) {
+    res.status(400).json({
+      message: "Invalid email or verification code!",
+      success: false,
+    });
+    return;
+  }
+  // CHECKING IF CODE HAS EXPIRED
+  if (pendingUser.verificationCodeExpiresAt < new Date()) {
+    // DELETE EXPIRED PENDING USER
+    await pendingUser.deleteOne();
+    res.status(400).json({
+      message: "Verification code has expired! Please request a new one.",
+      success: false,
+    });
+    return;
+  }
+  // CHECKING IF USER ALREADY EXISTS (RACE CONDITION CHECK)
+  const existingUser = await User.findOne({ email: pendingUser.email })
+    .lean()
+    .exec();
+  if (existingUser) {
+    // DELETE PENDING USER IF USER ALREADY EXISTS
+    await pendingUser.deleteOne();
+    res.status(409).json({
+      message: "User with this email already exists!",
+      success: false,
+    });
+    return;
+  }
+  // CREATING VERIFIED USER
+  const newUser = await User.create({
+    name: pendingUser.name,
+    email: pendingUser.email,
+    password: pendingUser.password,
+  });
+  // CLEANING UP ANY EXISTING REFRESH TOKENS
+  await RefreshToken.deleteMany({ userId: newUser._id }).exec();
+  // GENERATING UNIQUE TOKEN ID FOR DATABASE STORAGE
+  const tokenId = crypto.randomUUID();
+  // GENERATING ACCESS TOKEN
+  const accessToken = generateToken(newUser._id.toString());
+  // GENERATING REFRESH TOKEN WITH TOKEN ID
+  const refreshToken = generateRefreshToken(newUser._id.toString(), tokenId);
+  // CALCULATING REFRESH TOKEN EXPIRATION DATE
+  const expiresIn = process.env.RT_EXPIRES_IN || "30d";
+  // CALCULATING EXPIRATION DAYS
+  const expiresInDays = expiresIn.includes("d") ? parseInt(expiresIn) : 30;
+  // CALCULATING EXPIRATION DATE
+  const expiresAt = new Date();
+  // SETTING EXPIRATION DATE
+  expiresAt.setDate(expiresAt.getDate() + expiresInDays);
+  // STORING REFRESH TOKEN IN DATABASE
+  await RefreshToken.create({
+    tokenId,
+    userId: newUser._id,
+    expiresAt,
+    revoked: false,
+  });
+  // SETTING ACCESS TOKEN IN HTTP-ONLY COOKIE
+  const accessTokenExpiresIn = process.env.AT_EXPIRES_IN || "15m";
+  // CALCULATING ACCESS TOKEN MAX AGE
+  const accessTokenMaxAge = accessTokenExpiresIn.includes("m")
+    ? parseInt(accessTokenExpiresIn) * 60 * 1000
+    : 15 * 60 * 1000;
+  // SETTING ACCESS TOKEN IN HTTP-ONLY COOKIE
+  res.cookie("accessToken", accessToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: accessTokenMaxAge,
+  });
+  // SETTING REFRESH TOKEN IN HTTP-ONLY COOKIE
+  const refreshTokenMaxAge = expiresInDays * 24 * 60 * 60 * 1000;
+  // SETTING REFRESH TOKEN IN HTTP-ONLY COOKIE
+  res.cookie("refreshToken", refreshToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: refreshTokenMaxAge,
+  });
+  // SENDING EMAIL VERIFICATION CONFIRMATION (BEFORE WELCOME EMAIL)
+  try {
+    // SENDING EMAIL VERIFICATION CONFIRMATION
+    await sendEmailVerificationConfirmation(newUser.email, newUser.name);
+  } catch (error) {
+    // LOG ERROR BUT DON'T FAIL THE REQUEST
+    console.error("Error sending email verification confirmation:", error);
+  }
+  // SENDING WELCOME EMAIL (AFTER VERIFICATION CONFIRMATION)
+  try {
+    // SENDING WELCOME EMAIL
+    await sendWelcomeEmail(newUser.email, newUser.name);
+  } catch (error) {
+    // LOG ERROR BUT DON'T FAIL THE REQUEST
+    console.error("Error sending welcome email:", error);
+  }
+  // DELETING PENDING USER (VERIFICATION COMPLETE)
+  await pendingUser.deleteOne();
+  // RETURNING RESPONSE
+  res.status(200).json({
+    message: "Email verified successfully! Welcome to PlanOra!",
+    success: true,
+    data: {
+      id: newUser._id,
+      name: newUser.name,
+      email: newUser.email,
+    },
+  });
+  return;
+});
+
+/**
+ * RESEND VERIFICATION CODE
+ * RESENDS VERIFICATION CODE TO USER'S EMAIL WITH RATE LIMITING
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== RESEND VERIFICATION CODE ==>
+export const resendVerificationCode = expressAsyncHandler(async (req, res) => {
+  // GETTING EMAIL FROM REQUEST BODY
+  const { email } = req.body;
+  // VALIDATING REQUIRED FIELDS
+  if (!email) {
+    res.status(400).json({
+      message: "Email is Required!",
+      success: false,
+    });
+    return;
+  }
+  // VALIDATING EMAIL FORMAT
+  const emailRegex = /^\S+@\S+\.\S+$/;
+  if (!emailRegex.test(email)) {
+    res.status(400).json({
+      message: "Please provide a valid email address!",
+      success: false,
+    });
+    return;
+  }
+  // FINDING PENDING USER BY EMAIL
+  const pendingUser = await PendingUser.findOne({
+    email: email.toLowerCase().trim(),
+  }).exec();
+  // IF PENDING USER NOT FOUND, RETURN ERROR
+  if (!pendingUser) {
+    res.status(404).json({
+      message: "No pending verification found for this email!",
+      success: false,
+    });
+    return;
+  }
+  // RATE LIMITING: CHECK IF USER HAS EXCEEDED RESEND LIMIT (MAX 3 RESENDS PER 5 MINUTES)
+  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+  if (
+    pendingUser.lastResendAt > fiveMinutesAgo &&
+    pendingUser.resendAttempts >= 3
+  ) {
+    res.status(429).json({
+      message:
+        "Too many resend attempts! Please wait 5 minutes before requesting again.",
+      success: false,
+    });
+    return;
+  }
+  // RESET RESEND ATTEMPTS IF 5 MINUTES HAVE PASSED
+  if (pendingUser.lastResendAt <= fiveMinutesAgo) {
+    // RESETING RESEND ATTEMPTS
+    pendingUser.resendAttempts = 0;
+  }
+  // GENERATING NEW 6-DIGIT VERIFICATION CODE
+  const newVerificationCode = Math.floor(
+    100000 + Math.random() * 900000
+  ).toString();
+  // CALCULATING NEW EXPIRATION DATE (2 MINUTES FROM NOW)
+  const newExpiry = new Date();
+  // SETTING EXPIRATION DATE
+  newExpiry.setMinutes(newExpiry.getMinutes() + 2);
+  // UPDATING PENDING USER WITH NEW CODE AND EXPIRATION DATE
+  pendingUser.verificationCode = newVerificationCode;
+  // SETTING NEW EXPIRATION DATE
+  pendingUser.verificationCodeExpiresAt = newExpiry;
+  // INCREMENTING RESEND ATTEMPTS
+  pendingUser.resendAttempts += 1;
+  // SETTING LAST RESEND TIMESTAMP
+  pendingUser.lastResendAt = new Date();
+  // SAVING PENDING USER
+  await pendingUser.save();
+  // SENDING NEW VERIFICATION EMAIL
+  try {
+    // SENDING NEW VERIFICATION EMAIL
+    await sendVerificationEmail(
+      pendingUser.email,
+      newVerificationCode,
+      pendingUser.name
+    );
+  } catch (error) {
+    // LOGGING ERROR
+    console.error("Error sending verification email:", error);
+    // RETURNING ERROR RESPONSE
+    res.status(500).json({
+      message: "Failed to send verification email. Please try again later.",
+      success: false,
+    });
+    return;
+  }
+  // RETURNING RESPONSE
+  res.status(200).json({
+    message: "Verification code resent successfully! Please check your inbox.",
+    success: true,
   });
   return;
 });
