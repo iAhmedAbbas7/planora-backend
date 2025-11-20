@@ -32,12 +32,31 @@ const userSchema = new mongoose.Schema(
       index: true,
       match: [/^\S+@\S+\.\S+$/, "Please provide a valid email address"],
     },
-    // PASSWORD FIELD
+    // PASSWORD FIELD (OPTIONAL FOR OAUTH USERS)
     password: {
       type: String,
-      required: true,
+      required: function (this: { provider?: string }) {
+        return !this.provider;
+      },
       minlength: 6,
       select: false,
+    },
+    // OAUTH PROVIDER FIELD
+    provider: {
+      type: String,
+      enum: ["google", "github"],
+      default: null,
+    },
+    // OAUTH PROVIDER ID FIELD
+    providerId: {
+      type: String,
+      default: null,
+      sparse: true,
+    },
+    // OAUTH PROVIDER EMAIL FIELD
+    providerEmail: {
+      type: String,
+      default: null,
     },
   },
   { timestamps: true }
@@ -57,6 +76,13 @@ userSchema.index({
   name: "text",
   email: "text",
 });
+/**
+ * COMPOUND INDEX FOR OAUTH PROVIDER AND PROVIDER ID
+ */
+userSchema.index(
+  { provider: 1, providerId: 1 },
+  { unique: true, sparse: true }
+);
 
 // <== EXPORTING THE USER MODEL ==>
 export const User = mongoose.model("User", userSchema);

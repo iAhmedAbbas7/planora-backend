@@ -190,7 +190,7 @@ export const login = expressAsyncHandler(async (req, res) => {
     return;
   }
   // COMPARING PASSWORD
-  const isMatch = await bcrypt.compare(password, user.password);
+  const isMatch = await bcrypt.compare(password, user.password || "");
   // IF PASSWORD DOES NOT MATCH, RETURN 401 ERROR
   if (!isMatch) {
     res.status(401).json({
@@ -405,6 +405,130 @@ export const logout = expressAsyncHandler(async (req, res) => {
   res.status(200).json({
     message: "Logout successful!",
     success: true,
+  });
+  return;
+});
+
+/**
+ * OAUTH CALLBACK HANDLER
+ * HANDLES OAUTH CALLBACK AFTER SUCCESSFUL AUTHENTICATION
+ * GENERATES TOKENS AND REDIRECTS TO FRONTEND
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== OAUTH CALLBACK HANDLER ==>
+export const oauthCallback = expressAsyncHandler(async (req, res) => {
+  // GET USER FROM REQUEST (SET BY PASSPORT)
+  const user = (req as any).user;
+  // IF USER NOT FOUND, RETURN ERROR
+  if (!user) {
+    res.status(401).json({
+      message: "OAuth authentication failed!",
+      success: false,
+    });
+    return;
+  }
+  // GET USER ID (HANDLE BOTH OBJECTID AND STRING)
+  const userId = user._id?.toString() || user._id || user.id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    res.status(401).json({
+      message: "OAuth authentication failed!",
+      success: false,
+    });
+    return;
+  }
+  // CLEANING UP ALL EXISTING REFRESH TOKENS (ALL TOKENS - REVOKED, EXPIRED, OR ACTIVE)
+  await RefreshToken.deleteMany({ userId }).exec();
+  // GENERATING UNIQUE TOKEN ID FOR DATABASE STORAGE
+  const tokenId = crypto.randomUUID();
+  // GENERATING ACCESS TOKEN
+  const accessToken = generateToken(userId);
+  // GENERATING REFRESH TOKEN WITH TOKEN ID
+  const refreshToken = generateRefreshToken(userId, tokenId);
+  // CALCULATING REFRESH TOKEN EXPIRATION DATE
+  const expiresIn = process.env.RT_EXPIRES_IN || "30d";
+  // CALCULATING EXPIRATION DAYS
+  const expiresInDays = expiresIn.includes("d") ? parseInt(expiresIn) : 30;
+  // CALCULATING EXPIRATION DATE
+  const expiresAt = new Date();
+  // SETTING EXPIRATION DATE
+  expiresAt.setDate(expiresAt.getDate() + expiresInDays);
+  // STORING REFRESH TOKEN IN DATABASE
+  await RefreshToken.create({
+    tokenId,
+    userId,
+    expiresAt,
+    revoked: false,
+  });
+  // SETTING ACCESS TOKEN IN HTTP-ONLY COOKIE
+  const accessTokenExpiresIn = process.env.AT_EXPIRES_IN || "15m";
+  // CALCULATING ACCESS TOKEN MAX AGE
+  const accessTokenMaxAge = accessTokenExpiresIn.includes("m")
+    ? parseInt(accessTokenExpiresIn) * 60 * 1000
+    : 15 * 60 * 1000; // Default 15 minutes
+  // SETTING ACCESS TOKEN IN HTTP-ONLY COOKIE
+  res.cookie("accessToken", accessToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: accessTokenMaxAge,
+  });
+  // SETTING REFRESH TOKEN IN HTTP-ONLY COOKIE
+  const refreshTokenMaxAge = expiresInDays * 24 * 60 * 60 * 1000;
+  // SETTING REFRESH TOKEN IN HTTP-ONLY COOKIE
+  res.cookie("refreshToken", refreshToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: refreshTokenMaxAge,
+  });
+  // REDIRECT TO FRONTEND WITH SUCCESS
+  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+  // REDIRECTING TO FRONTEND WITH SUCCESS
+  res.redirect(`${frontendUrl}/dashboard?oauth=success`);
+  return;
+});
+
+/**
+ * GET CURRENT USER
+ * RETURNS CURRENT USER BASED ON ACCESS TOKEN
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET CURRENT USER ==>
+export const getCurrentUser = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as any).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    return;
+  }
+  // FIND USER BY ID
+  const user = await User.findById(userId).select("-password").lean().exec();
+  // IF USER NOT FOUND, RETURN ERROR
+  if (!user) {
+    res.status(404).json({
+      message: "User not found!",
+      success: false,
+    });
+    return;
+  }
+  // RETURN USER DATA
+  res.status(200).json({
+    message: "User retrieved successfully!",
+    success: true,
+    data: {
+      id: user._id.toString(),
+      name: user.name,
+      email: user.email,
+    },
   });
   return;
 });

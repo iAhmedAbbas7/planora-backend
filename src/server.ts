@@ -1,14 +1,13 @@
-// <== DOTENV CONFIGURATION ==>
-dotenv.config({});
-
 // <== IMPORTS ==>
+import "./config/env.js";
 import path from "path";
 import cors from "cors";
-import dotenv from "dotenv";
 import cron from "node-cron";
 import express from "express";
 import mongoose from "mongoose";
 import cookieParser from "cookie-parser";
+import session from "express-session";
+import passport from "./config/passport.js";
 import { Task } from "./models/task.model.js";
 import rootRoute from "./routes/root.route.js";
 import authRoute from "./routes/auth.route.js";
@@ -47,6 +46,25 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 // COOKIE PARSER MIDDLEWARE
 app.use(cookieParser());
+// SESSION MIDDLEWARE (REQUIRED FOR PASSPORT)
+app.use(
+  session({
+    secret:
+      process.env.SESSION_SECRET || "your-secret-key-change-in-production",
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: process.env.NODE_ENV === "production",
+      httpOnly: true,
+      maxAge: 24 * 60 * 60 * 1000,
+      sameSite: "lax",
+    },
+  })
+);
+// PASSPORT MIDDLEWARE
+app.use(passport.initialize());
+// PASSPORT SESSION MIDDLEWARE
+app.use(passport.session());
 // HELMET MIDDLEWARE
 app.use(helmetMiddleware());
 // STATIC MIDDLEWARE
