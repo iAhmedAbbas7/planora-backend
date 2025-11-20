@@ -166,7 +166,11 @@ const generateEmailTemplate = (content: string, title: string): string => {
     <body>
       <div class="email-container">
         <div class="email-header">
-          ${logoSrc ? `<img src="${logoSrc}" alt="PlanOra Logo" class="logo" style="display: block; margin: 0 auto 20px auto; max-width: 80px; width: 80px; height: auto; border: 0; outline: none; text-decoration: none;" />` : `<div style="color: #ffffff; font-size: 24px; font-weight: bold; margin-bottom: 20px;">PlanOra</div>`}
+          ${
+            logoSrc
+              ? `<img src="${logoSrc}" alt="PlanOra Logo" class="logo" style="display: block; margin: 0 auto 20px auto; max-width: 80px; width: 80px; height: auto; border: 0; outline: none; text-decoration: none;" />`
+              : `<div style="color: #ffffff; font-size: 24px; font-weight: bold; margin-bottom: 20px;">PlanOra</div>`
+          }
           <h1 style="color: #ffffff; font-size: 24px; margin: 0;">${title}</h1>
         </div>
         <div class="email-body">
@@ -315,7 +319,9 @@ export const sendWelcomeEmail = async (
       <p style="color: #4b5563; margin-bottom: 25px; font-size: 15px; line-height: 1.6; text-align: center;">
         Your dashboard is the command center of PlanOra. Here's a preview of what you'll see:
       </p>
-      ${dashboardImageUrl ? `
+      ${
+        dashboardImageUrl
+          ? `
       <div style="text-align: center; margin: 25px 0;">
         <img 
           src="${dashboardImageUrl}" 
@@ -323,7 +329,9 @@ export const sendWelcomeEmail = async (
           style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); border: 1px solid #e5e7eb;"
         />
       </div>
-      ` : ''}
+      `
+          : ""
+      }
     </div>
     <!-- INTERACTIVE FEATURES SECTION -->
     <div style="margin: 40px 0;">
@@ -478,6 +486,7 @@ export const sendPasswordResetEmail = async (
 ): Promise<nodemailer.SentMessageInfo> => {
   // PRIMARY COLOR
   const primaryColor = "#7c3aed";
+  // PRIMARY COLOR LIGHT
   const primaryColorLight = "#ede9fe";
   // EMAIL CONTENT
   const content = `
@@ -530,6 +539,7 @@ export const sendPasswordChangeConfirmation = async (
 ): Promise<nodemailer.SentMessageInfo> => {
   // PRIMARY COLOR
   const primaryColor = "#7c3aed";
+  // PRIMARY COLOR LIGHT
   const primaryColorLight = "#ede9fe";
   // FRONTEND URL
   const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";

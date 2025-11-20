@@ -12,8 +12,8 @@ import jwt from "jsonwebtoken";
 import { User } from "../models/user.model.js";
 import expressAsyncHandler from "express-async-handler";
 import { PendingUser } from "../models/pendingUser.model.js";
-import { PasswordReset } from "../models/passwordReset.model.js";
 import { RefreshToken } from "../models/refreshToken.model.js";
+import { PasswordReset } from "../models/passwordReset.model.js";
 
 /**
  * GENERATE JWT TOKEN
@@ -858,6 +858,7 @@ export const requestPasswordReset = expressAsyncHandler(async (req, res) => {
   }
   // VALIDATING EMAIL FORMAT
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  // IF EMAIL FORMAT IS INVALID, RETURN ERROR RESPONSE
   if (!emailRegex.test(email)) {
     res.status(400).json({
       message: "Please provide a valid email address!",
@@ -885,11 +886,14 @@ export const requestPasswordReset = expressAsyncHandler(async (req, res) => {
   }).exec();
   // RATE LIMITING: CHECK IF USER HAS EXCEEDED RESEND LIMIT (MAX 3 REQUESTS PER 5 MINUTES)
   if (existingReset) {
+    // CALCULATING 5 MINUTES AGO
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    // CHECK IF USER HAS EXCEEDED RESEND LIMIT
     if (
       existingReset.lastResendAt > fiveMinutesAgo &&
       existingReset.resendAttempts >= 3
     ) {
+      // RETURN ERROR RESPONSE
       res.status(429).json({
         message:
           "Too many reset requests! Please wait 5 minutes before requesting again.",
@@ -899,6 +903,7 @@ export const requestPasswordReset = expressAsyncHandler(async (req, res) => {
     }
     // RESET RESEND ATTEMPTS IF 5 MINUTES HAVE PASSED
     if (existingReset.lastResendAt <= fiveMinutesAgo) {
+      // RESET RESEND ATTEMPTS
       existingReset.resendAttempts = 0;
     }
     // DELETE EXISTING RESET REQUEST TO CREATE NEW ONE
@@ -908,6 +913,7 @@ export const requestPasswordReset = expressAsyncHandler(async (req, res) => {
   const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
   // CALCULATING EXPIRY TIME (2 MINUTES FROM NOW)
   const resetCodeExpiresAt = new Date();
+  // SETTING EXPIRY TIME TO 2 MINUTES
   resetCodeExpiresAt.setMinutes(resetCodeExpiresAt.getMinutes() + 2);
   // CREATING PASSWORD RESET REQUEST
   const passwordReset = await PasswordReset.create({
@@ -922,6 +928,7 @@ export const requestPasswordReset = expressAsyncHandler(async (req, res) => {
   });
   // SENDING PASSWORD RESET EMAIL
   try {
+    // SENDING PASSWORD RESET EMAIL
     await sendPasswordResetEmail(user.email, resetCode, user.name);
   } catch (error) {
     // DELETING PASSWORD RESET REQUEST IF EMAIL SENDING FAILS
@@ -965,6 +972,7 @@ export const resetPassword = expressAsyncHandler(async (req, res) => {
   }
   // VALIDATING EMAIL FORMAT
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  // IF EMAIL IS NOT VALID, RETURN ERROR
   if (!emailRegex.test(email)) {
     res.status(400).json({
       message: "Please provide a valid email address!",
@@ -1027,7 +1035,8 @@ export const resetPassword = expressAsyncHandler(async (req, res) => {
   // IF PASSWORD RESET REQUEST NOT FOUND, RETURN ERROR
   if (!passwordReset) {
     res.status(404).json({
-      message: "No password reset request found for this email. Please request a new code.",
+      message:
+        "No password reset request found for this email. Please request a new code.",
       success: false,
     });
     return;
@@ -1035,7 +1044,8 @@ export const resetPassword = expressAsyncHandler(async (req, res) => {
   // CHECK IF CODE HAS BEEN USED
   if (passwordReset.used) {
     res.status(400).json({
-      message: "This reset code has already been used. Please request a new code.",
+      message:
+        "This reset code has already been used. Please request a new code.",
       success: false,
     });
     return;
@@ -1044,6 +1054,7 @@ export const resetPassword = expressAsyncHandler(async (req, res) => {
   if (passwordReset.resetCodeExpiresAt < new Date()) {
     // DELETE EXPIRED RESET REQUEST
     await passwordReset.deleteOne().exec();
+    // RETURN ERROR RESPONSE
     res.status(400).json({
       message: "Reset code has expired! Please request a new code.",
       success: false,
@@ -1056,6 +1067,7 @@ export const resetPassword = expressAsyncHandler(async (req, res) => {
     passwordReset.lastVerificationAttemptAt > fifteenMinutesAgo &&
     passwordReset.verificationAttempts >= 5
   ) {
+    // RETURN ERROR RESPONSE
     res.status(429).json({
       message:
         "Too many verification attempts! Please wait 15 minutes before trying again.",
@@ -1065,11 +1077,14 @@ export const resetPassword = expressAsyncHandler(async (req, res) => {
   }
   // RESET VERIFICATION ATTEMPTS IF 15 MINUTES HAVE PASSED
   if (passwordReset.lastVerificationAttemptAt <= fifteenMinutesAgo) {
+    // RESET VERIFICATION ATTEMPTS
     passwordReset.verificationAttempts = 0;
   }
   // INCREMENT VERIFICATION ATTEMPTS
   passwordReset.verificationAttempts += 1;
+  // SET LAST VERIFICATION ATTEMPT TIMESTAMP
   passwordReset.lastVerificationAttemptAt = new Date();
+  // SAVING PASSWORD RESET REQUEST
   await passwordReset.save();
   // CHECK IF CODE MATCHES
   if (passwordReset.resetCode !== code) {
@@ -1095,6 +1110,7 @@ export const resetPassword = expressAsyncHandler(async (req, res) => {
   }
   // CHECK IF NEW PASSWORD IS SAME AS CURRENT PASSWORD
   const isSamePassword = await bcrypt.compare(newPassword, user.password || "");
+  // IF NEW PASSWORD IS SAME AS CURRENT PASSWORD, RETURN ERROR RESPONSE
   if (isSamePassword) {
     res.status(400).json({
       message: "New password must be different from your current password!",
@@ -1106,24 +1122,23 @@ export const resetPassword = expressAsyncHandler(async (req, res) => {
   const hashedPassword = await bcrypt.hash(newPassword, 10);
   // UPDATING USER PASSWORD
   user.password = hashedPassword;
+  // SAVING USER
   await user.save();
   // MARKING RESET CODE AS USED
   passwordReset.used = true;
+  // SAVING PASSWORD RESET REQUEST
   await passwordReset.save();
   // SENDING PASSWORD CHANGE CONFIRMATION EMAIL
   try {
-    await sendPasswordChangeConfirmation(
-      user.email,
-      user.name,
-      new Date()
-    );
+    await sendPasswordChangeConfirmation(user.email, user.name, new Date());
   } catch (error) {
     // LOG ERROR BUT DON'T FAIL THE REQUEST
     console.error("Error sending password change confirmation email:", error);
   }
   // RETURNING SUCCESS RESPONSE
   res.status(200).json({
-    message: "Password reset successfully! Please login with your new password.",
+    message:
+      "Password reset successfully! Please login with your new password.",
     success: true,
   });
   return;

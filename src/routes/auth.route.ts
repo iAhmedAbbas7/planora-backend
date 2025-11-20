@@ -65,13 +65,12 @@ router.post("/logout", logout);
 router.post("/refresh", refreshToken);
 // VERIFY EMAIL ROUTE
 router.post("/verify-email", verifyEmail);
-// GET CURRENT USER ROUTE (REQUIRES AUTHENTICATION)
-router.get("/me", isAuthenticated, getCurrentUser);
-// RESEND VERIFICATION CODE ROUTE
-router.post("/resend-verification", resendVerificationCode);
-// REQUEST PASSWORD RESET ROUTE
-router.post("/forgot-password", requestPasswordReset);
 // RESET PASSWORD ROUTE
 router.post("/reset-password", resetPassword);
-
+// GET CURRENT USER ROUTE (REQUIRES AUTHENTICATION)
+router.get("/me", isAuthenticated, getCurrentUser);
+// REQUEST PASSWORD RESET ROUTE
+router.post("/forgot-password", requestPasswordReset);
+// RESEND VERIFICATION CODE ROUTE
+router.post("/resend-verification", resendVerificationCode);
 export default router;
