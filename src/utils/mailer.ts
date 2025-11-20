@@ -463,3 +463,121 @@ export const sendWelcomeEmail = async (
   // SEND EMAIL WITH RETRY
   return sendMailWithRetry(mailOptions);
 };
+
+/**
+ * SENDS PASSWORD RESET CODE EMAIL
+ * @param toEmail - Email Address of the User
+ * @param code - 6-Digit Reset Code
+ * @param userName - Name of the User
+ * @returns Promise with Email Result
+ */
+export const sendPasswordResetEmail = async (
+  toEmail: string,
+  code: string,
+  userName: string
+): Promise<nodemailer.SentMessageInfo> => {
+  // PRIMARY COLOR
+  const primaryColor = "#7c3aed";
+  const primaryColorLight = "#ede9fe";
+  // EMAIL CONTENT
+  const content = `
+    <h2 style="color: #1f2937; margin-bottom: 20px;">Hello ${userName}!</h2>
+    <p style="color: #4b5563; margin-bottom: 20px; font-size: 16px; line-height: 1.6;">
+      We received a request to reset your password for your PlanOra account. Use the verification code below to reset your password.
+    </p>
+    <div class="code-container">
+      <p style="color: #6b7280; font-size: 14px; margin-bottom: 10px;">Your password reset code:</p>
+      <div class="verification-code">${code}</div>
+      <p style="color: #6b7280; font-size: 12px; margin-top: 10px;">
+        This code will expire in 2 minutes
+      </p>
+    </div>
+    <div style="background-color: ${primaryColorLight}; border-left: 4px solid ${primaryColor}; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #4b5563; font-size: 14px; margin: 0; line-height: 1.6;">
+        <strong>Security Tip:</strong> If you didn't request this password reset, please ignore this email. Your password will remain unchanged.
+      </p>
+    </div>
+    <p style="color: #4b5563; margin-top: 30px;">
+      If you have any questions or need assistance, feel free to reach out to our support team.
+    </p>
+    <p style="color: #4b5563; margin-top: 20px;">
+      Best regards,<br/>
+      <strong>The PlanOra Team</strong>
+    </p>
+  `;
+  // MAIL OPTIONS
+  const mailOptions: nodemailer.SendMailOptions = {
+    from: `PlanOra <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject: `Password Reset Request - PlanOra`,
+    html: generateEmailTemplate(content, "Password Reset"),
+  };
+  // SEND EMAIL WITH RETRY
+  return sendMailWithRetry(mailOptions);
+};
+
+/**
+ * SENDS PASSWORD CHANGE CONFIRMATION EMAIL
+ * @param toEmail - Email Address of the User
+ * @param userName - Name of the User
+ * @param changedAt - Timestamp when password was changed
+ * @returns Promise with Email Result
+ */
+export const sendPasswordChangeConfirmation = async (
+  toEmail: string,
+  userName: string,
+  changedAt: Date
+): Promise<nodemailer.SentMessageInfo> => {
+  // PRIMARY COLOR
+  const primaryColor = "#7c3aed";
+  const primaryColorLight = "#ede9fe";
+  // FRONTEND URL
+  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+  // FORMAT DATE
+  const formattedDate = changedAt.toLocaleString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
+  // EMAIL CONTENT
+  const content = `
+    <h2 style="color: #1f2937; margin-bottom: 20px;">Hello ${userName}!</h2>
+    <p style="color: #4b5563; margin-bottom: 20px; font-size: 16px; line-height: 1.6;">
+      🎉 Your password has been successfully changed!
+    </p>
+    <div style="background-color: ${primaryColorLight}; border-left: 4px solid ${primaryColor}; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #4b5563; font-size: 14px; margin: 0; line-height: 1.6;">
+        <strong>Password changed at:</strong><br/>
+        ${formattedDate}
+      </p>
+    </div>
+    <p style="color: #4b5563; margin-bottom: 20px; font-size: 15px; line-height: 1.6;">
+      If you didn't make this change, please contact our support team immediately to secure your account.
+    </p>
+    <div style="text-align: center; margin: 30px 0;">
+      <a href="${frontendUrl}/login" class="button" style="color: #ffffff !important; text-decoration: none !important; display: inline-block; padding: 14px 28px; background-color: ${primaryColor}; border-radius: 8px; font-weight: 600;">
+        Login to Your Account
+      </a>
+    </div>
+    <p style="color: #4b5563; margin-top: 30px;">
+      If you have any questions or concerns, feel free to reach out to our support team.
+    </p>
+    <p style="color: #4b5563; margin-top: 20px;">
+      Best regards,<br/>
+      <strong>The PlanOra Team</strong>
+    </p>
+  `;
+  // MAIL OPTIONS
+  const mailOptions: nodemailer.SendMailOptions = {
+    from: `PlanOra <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject: `Password Changed Successfully - PlanOra`,
+    html: generateEmailTemplate(content, "Password Changed"),
+  };
+  // SEND EMAIL WITH RETRY
+  return sendMailWithRetry(mailOptions);
+};

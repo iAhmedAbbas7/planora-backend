@@ -3,6 +3,8 @@ import {
   sendVerificationEmail,
   sendEmailVerificationConfirmation,
   sendWelcomeEmail,
+  sendPasswordResetEmail,
+  sendPasswordChangeConfirmation,
 } from "../utils/mailer.js";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
@@ -10,6 +12,7 @@ import jwt from "jsonwebtoken";
 import { User } from "../models/user.model.js";
 import expressAsyncHandler from "express-async-handler";
 import { PendingUser } from "../models/pendingUser.model.js";
+import { PasswordReset } from "../models/passwordReset.model.js";
 import { RefreshToken } from "../models/refreshToken.model.js";
 
 /**
@@ -829,6 +832,298 @@ export const resendVerificationCode = expressAsyncHandler(async (req, res) => {
   // RETURNING RESPONSE
   res.status(200).json({
     message: "Verification code resent successfully! Please check your inbox.",
+    success: true,
+  });
+  return;
+});
+
+/**
+ * REQUEST PASSWORD RESET
+ * SENDS PASSWORD RESET CODE TO USER'S EMAIL
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== REQUEST PASSWORD RESET ==>
+export const requestPasswordReset = expressAsyncHandler(async (req, res) => {
+  // GETTING EMAIL FROM REQUEST BODY
+  const { email } = req.body;
+  // VALIDATING REQUIRED FIELDS
+  if (!email) {
+    res.status(400).json({
+      message: "Email is required!",
+      success: false,
+    });
+    return;
+  }
+  // VALIDATING EMAIL FORMAT
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    res.status(400).json({
+      message: "Please provide a valid email address!",
+      success: false,
+    });
+    return;
+  }
+  // FINDING USER BY EMAIL
+  const user = await User.findOne({ email: email.toLowerCase().trim() })
+    .lean()
+    .exec();
+  // IF USER NOT FOUND, STILL RETURN SUCCESS (SECURITY: DON'T REVEAL IF EMAIL EXISTS)
+  if (!user) {
+    // RETURN SUCCESS TO PREVENT EMAIL ENUMERATION
+    res.status(200).json({
+      message:
+        "If an account exists with this email, a password reset code has been sent.",
+      success: true,
+    });
+    return;
+  }
+  // CHECKING IF PASSWORD RESET REQUEST ALREADY EXISTS
+  const existingReset = await PasswordReset.findOne({
+    email: email.toLowerCase().trim(),
+  }).exec();
+  // RATE LIMITING: CHECK IF USER HAS EXCEEDED RESEND LIMIT (MAX 3 REQUESTS PER 5 MINUTES)
+  if (existingReset) {
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    if (
+      existingReset.lastResendAt > fiveMinutesAgo &&
+      existingReset.resendAttempts >= 3
+    ) {
+      res.status(429).json({
+        message:
+          "Too many reset requests! Please wait 5 minutes before requesting again.",
+        success: false,
+      });
+      return;
+    }
+    // RESET RESEND ATTEMPTS IF 5 MINUTES HAVE PASSED
+    if (existingReset.lastResendAt <= fiveMinutesAgo) {
+      existingReset.resendAttempts = 0;
+    }
+    // DELETE EXISTING RESET REQUEST TO CREATE NEW ONE
+    await existingReset.deleteOne().exec();
+  }
+  // GENERATING 6-DIGIT RESET CODE
+  const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+  // CALCULATING EXPIRY TIME (2 MINUTES FROM NOW)
+  const resetCodeExpiresAt = new Date();
+  resetCodeExpiresAt.setMinutes(resetCodeExpiresAt.getMinutes() + 2);
+  // CREATING PASSWORD RESET REQUEST
+  const passwordReset = await PasswordReset.create({
+    email: email.toLowerCase().trim(),
+    resetCode,
+    resetCodeExpiresAt,
+    resendAttempts: existingReset ? existingReset.resendAttempts + 1 : 1,
+    lastResendAt: new Date(),
+    verificationAttempts: 0,
+    lastVerificationAttemptAt: new Date(),
+    used: false,
+  });
+  // SENDING PASSWORD RESET EMAIL
+  try {
+    await sendPasswordResetEmail(user.email, resetCode, user.name);
+  } catch (error) {
+    // DELETING PASSWORD RESET REQUEST IF EMAIL SENDING FAILS
+    await passwordReset.deleteOne().exec();
+    // LOGGING ERROR
+    console.error("Error sending password reset email:", error);
+    // RETURNING ERROR RESPONSE
+    res.status(500).json({
+      message: "Failed to send password reset email. Please try again later.",
+      success: false,
+    });
+    return;
+  }
+  // RETURNING RESPONSE (SECURITY: DON'T REVEAL IF EMAIL EXISTS)
+  res.status(200).json({
+    message:
+      "If an account exists with this email, a password reset code has been sent.",
+    success: true,
+  });
+  return;
+});
+
+/**
+ * RESET PASSWORD
+ * VERIFIES RESET CODE AND UPDATES USER PASSWORD
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== RESET PASSWORD ==>
+export const resetPassword = expressAsyncHandler(async (req, res) => {
+  // GETTING DATA FROM REQUEST BODY
+  const { email, code, newPassword } = req.body;
+  // VALIDATING REQUIRED FIELDS
+  if (!email || !code || !newPassword) {
+    res.status(400).json({
+      message: "Email, code, and new password are required!",
+      success: false,
+    });
+    return;
+  }
+  // VALIDATING EMAIL FORMAT
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    res.status(400).json({
+      message: "Please provide a valid email address!",
+      success: false,
+    });
+    return;
+  }
+  // VALIDATING CODE FORMAT (6 DIGITS)
+  if (!/^\d{6}$/.test(code)) {
+    res.status(400).json({
+      message: "Reset code must be 6 digits!",
+      success: false,
+    });
+    return;
+  }
+  // VALIDATING PASSWORD STRENGTH (8+ CHARACTERS, UPPERCASE, LOWERCASE, DIGIT, SPECIAL)
+  if (newPassword.length < 8) {
+    res.status(400).json({
+      message: "Password must be at least 8 characters long!",
+      success: false,
+    });
+    return;
+  }
+  // CHECK FOR UPPERCASE LETTER
+  if (!/[A-Z]/.test(newPassword)) {
+    res.status(400).json({
+      message: "Password must contain at least one uppercase letter!",
+      success: false,
+    });
+    return;
+  }
+  // CHECK FOR LOWERCASE LETTER
+  if (!/[a-z]/.test(newPassword)) {
+    res.status(400).json({
+      message: "Password must contain at least one lowercase letter!",
+      success: false,
+    });
+    return;
+  }
+  // CHECK FOR DIGIT
+  if (!/[0-9]/.test(newPassword)) {
+    res.status(400).json({
+      message: "Password must contain at least one digit!",
+      success: false,
+    });
+    return;
+  }
+  // CHECK FOR SPECIAL CHARACTER
+  if (!/[^A-Za-z0-9]/.test(newPassword)) {
+    res.status(400).json({
+      message: "Password must contain at least one special character!",
+      success: false,
+    });
+    return;
+  }
+  // FINDING PASSWORD RESET REQUEST
+  const passwordReset = await PasswordReset.findOne({
+    email: email.toLowerCase().trim(),
+  }).exec();
+  // IF PASSWORD RESET REQUEST NOT FOUND, RETURN ERROR
+  if (!passwordReset) {
+    res.status(404).json({
+      message: "No password reset request found for this email. Please request a new code.",
+      success: false,
+    });
+    return;
+  }
+  // CHECK IF CODE HAS BEEN USED
+  if (passwordReset.used) {
+    res.status(400).json({
+      message: "This reset code has already been used. Please request a new code.",
+      success: false,
+    });
+    return;
+  }
+  // CHECK IF CODE HAS EXPIRED
+  if (passwordReset.resetCodeExpiresAt < new Date()) {
+    // DELETE EXPIRED RESET REQUEST
+    await passwordReset.deleteOne().exec();
+    res.status(400).json({
+      message: "Reset code has expired! Please request a new code.",
+      success: false,
+    });
+    return;
+  }
+  // RATE LIMITING: CHECK VERIFICATION ATTEMPTS (MAX 5 ATTEMPTS PER 15 MINUTES)
+  const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+  if (
+    passwordReset.lastVerificationAttemptAt > fifteenMinutesAgo &&
+    passwordReset.verificationAttempts >= 5
+  ) {
+    res.status(429).json({
+      message:
+        "Too many verification attempts! Please wait 15 minutes before trying again.",
+      success: false,
+    });
+    return;
+  }
+  // RESET VERIFICATION ATTEMPTS IF 15 MINUTES HAVE PASSED
+  if (passwordReset.lastVerificationAttemptAt <= fifteenMinutesAgo) {
+    passwordReset.verificationAttempts = 0;
+  }
+  // INCREMENT VERIFICATION ATTEMPTS
+  passwordReset.verificationAttempts += 1;
+  passwordReset.lastVerificationAttemptAt = new Date();
+  await passwordReset.save();
+  // CHECK IF CODE MATCHES
+  if (passwordReset.resetCode !== code) {
+    res.status(400).json({
+      message: "Invalid reset code! Please check and try again.",
+      success: false,
+    });
+    return;
+  }
+  // FINDING USER BY EMAIL
+  const user = await User.findOne({ email: email.toLowerCase().trim() })
+    .select("+password")
+    .exec();
+  // IF USER NOT FOUND, RETURN ERROR
+  if (!user) {
+    // DELETE PASSWORD RESET REQUEST
+    await passwordReset.deleteOne().exec();
+    res.status(404).json({
+      message: "User not found!",
+      success: false,
+    });
+    return;
+  }
+  // CHECK IF NEW PASSWORD IS SAME AS CURRENT PASSWORD
+  const isSamePassword = await bcrypt.compare(newPassword, user.password || "");
+  if (isSamePassword) {
+    res.status(400).json({
+      message: "New password must be different from your current password!",
+      success: false,
+    });
+    return;
+  }
+  // HASHING NEW PASSWORD
+  const hashedPassword = await bcrypt.hash(newPassword, 10);
+  // UPDATING USER PASSWORD
+  user.password = hashedPassword;
+  await user.save();
+  // MARKING RESET CODE AS USED
+  passwordReset.used = true;
+  await passwordReset.save();
+  // SENDING PASSWORD CHANGE CONFIRMATION EMAIL
+  try {
+    await sendPasswordChangeConfirmation(
+      user.email,
+      user.name,
+      new Date()
+    );
+  } catch (error) {
+    // LOG ERROR BUT DON'T FAIL THE REQUEST
+    console.error("Error sending password change confirmation email:", error);
+  }
+  // RETURNING SUCCESS RESPONSE
+  res.status(200).json({
+    message: "Password reset successfully! Please login with your new password.",
     success: true,
   });
   return;

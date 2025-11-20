@@ -8,6 +8,8 @@ import {
   getCurrentUser,
   verifyEmail,
   resendVerificationCode,
+  requestPasswordReset,
+  resetPassword,
 } from "../controllers/auth.controller.js";
 import express from "express";
 import passport from "../config/passport.js";
@@ -67,5 +69,9 @@ router.post("/verify-email", verifyEmail);
 router.get("/me", isAuthenticated, getCurrentUser);
 // RESEND VERIFICATION CODE ROUTE
 router.post("/resend-verification", resendVerificationCode);
+// REQUEST PASSWORD RESET ROUTE
+router.post("/forgot-password", requestPasswordReset);
+// RESET PASSWORD ROUTE
+router.post("/reset-password", resetPassword);
 
 export default router;
