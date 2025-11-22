@@ -24,6 +24,14 @@ router.use(isAuthenticated);
 router.get("/", getProjects);
 // CREATE PROJECT
 router.post("/", createProject);
+// <== SPECIFIC ROUTES MUST BE DEFINED BEFORE PARAMETERIZED ROUTES ==>
+// GET PROJECT STATISTICS
+router.get("/stats", getProjectsStats);
+// GET TRASHED PROJECTS
+router.get("/trashed", getTrashedProjects);
+// GET WEEKLY SUMMARY
+router.get("/weekly-summary", getWeeklySummary);
+// <== PARAMETERIZED ROUTES MUST BE AFTER SPECIFIC ROUTES ==>
 // GET SINGLE PROJECT
 router.get("/:id", getOneProject);
 // UPDATE PROJECT
@@ -32,13 +40,7 @@ router.put("/:id", updateProject);
 router.delete("/:id", deleteProject);
 // MOVE PROJECT TO TRASH
 router.put("/:id/trash", moveToTrash);
-// GET PROJECT STATISTICS
-router.get("/stats", getProjectsStats);
 // RESTORE PROJECT FROM TRASH
 router.put("/:id/restore", restoreProject);
-// GET TRASHED PROJECTS
-router.get("/trashed", getTrashedProjects);
-// GET WEEKLY SUMMARY
-router.get("/weekly-summary", getWeeklySummary);
 
 export default router;

@@ -28,29 +28,31 @@ router.use(isAuthenticated);
 router.get("/", getAllTasks);
 // CREATE TASK
 router.post("/", createTask);
+// <== SPECIFIC ROUTES MUST BE DEFINED BEFORE PARAMETERIZED ROUTES ==>
+// GET TASK STATISTICS
+router.get("/stats", getTaskStats);
+// GET RECENT TASKS
+router.get("/recent", getRecentTasks);
+// GET TRASHED TASKS
+router.get("/trashed", getTrashedTasks);
+// GET MONTHLY SUMMARY
+router.get("/monthly-summary", getMonthlySummary);
+// GET TASKS BY PROJECT ID
+router.get("/project/:projectId", getTasksByProjectId);
+// <== PARAMETERIZED ROUTES MUST BE AFTER SPECIFIC ROUTES ==>
 // GET SINGLE TASK
 router.get("/:id", getOneTask);
 // UPDATE TASK
 router.put("/:id", updateTask);
 // DELETE TASK
 router.delete("/:id", deleteTask);
-// GET TASK STATISTICS
-router.get("/stats", getTaskStats);
-// GET RECENT TASKS
-router.get("/recent", getRecentTasks);
 // UPDATE TASK STATUS
 router.patch("/:id", updateTaskStatus);
 // RESTORE TASK FROM TRASH
 router.put("/:id/restore", restoreTask);
-// GET TRASHED TASKS
-router.get("/trashed", getTrashedTasks);
 // MOVE TASK TO TRASH
 router.put("/:id/trash", moveTaskToTrash);
-// GET MONTHLY SUMMARY
-router.get("/monthly-summary", getMonthlySummary);
 // PERMANENTLY DELETE TASK
 router.delete("/:id/permanent", permanentlyDeleteTask);
-// GET TASKS BY PROJECT ID
-router.get("/project/:projectId", getTasksByProjectId);
 
 export default router;

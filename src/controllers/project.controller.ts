@@ -171,19 +171,11 @@ export const getProjects = expressAsyncHandler(async (req, res) => {
       $project: { tasks: 0 },
     },
   ]).exec();
-  // IF NO PROJECTS FOUND, RETURN 404 ERROR
-  if (!projectsWithTaskCount || projectsWithTaskCount.length === 0) {
-    res.status(404).json({
-      message: "No projects found!",
-      success: false,
-    });
-    return;
-  }
   // RETURNING RESPONSE
   res.status(200).json({
     success: true,
-    count: projectsWithTaskCount.length,
-    data: projectsWithTaskCount,
+    count: projectsWithTaskCount?.length || 0,
+    data: projectsWithTaskCount || [],
   });
   return;
 });
