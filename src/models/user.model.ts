@@ -17,6 +17,13 @@ const userSchema = new mongoose.Schema(
       default: "",
       maxlength: 500,
     },
+    // ROLE FIELD
+    role: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: 100,
+    },
     // PROFILE PICTURE FIELD
     profilePic: {
       type: String,
