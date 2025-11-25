@@ -5,8 +5,8 @@ import cors from "cors";
 import cron from "node-cron";
 import express from "express";
 import mongoose from "mongoose";
-import cookieParser from "cookie-parser";
 import session from "express-session";
+import cookieParser from "cookie-parser";
 import passport from "./config/passport.js";
 import { Task } from "./models/task.model.js";
 import rootRoute from "./routes/root.route.js";
@@ -20,6 +20,7 @@ import { app, server } from "./services/socket.js";
 import profileRoute from "./routes/profile.route.js";
 import projectRoute from "./routes/project.route.js";
 import accountRoute from "./routes/account.route.js";
+import settingsRoute from "./routes/settings.route.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import notificationRoute from "./routes/notification.route.js";
 import helmetMiddleware from "./middleware/helmetMiddleware.js";
@@ -85,6 +86,8 @@ app.use("/api/v1/profile", profileRoute);
 app.use("/api/v1/account", accountRoute);
 // <== PROJECT ROUTE ==>
 app.use("/api/v1/projects", projectRoute);
+// <== SETTINGS ROUTE ==>
+app.use("/api/v1/settings", settingsRoute);
 // <== NOTIFICATION ROUTE ==>
 app.use("/api/v1/notifications", notificationRoute);
 // <== NOTIFICATION SETTINGS ROUTE ==>
