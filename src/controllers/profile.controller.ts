@@ -1,4 +1,8 @@
 // <== IMPORTS ==>
+import {
+  uploadToCloudinary,
+  deleteFromCloudinary,
+} from "../utils/cloudinaryUpload.js";
 import { User } from "../models/user.model.js";
 import expressAsyncHandler from "express-async-handler";
 
@@ -22,7 +26,7 @@ export const getProfile = expressAsyncHandler(async (req, res) => {
   }
   // FINDING USER
   const user = await User.findById(userId)
-    .select("email firstName lastName role bio profilePic name")
+    .select("email name role bio profilePic profilePicPublicId")
     .lean()
     .exec();
   // IF USER NOT FOUND, RETURN 404 ERROR
@@ -38,12 +42,11 @@ export const getProfile = expressAsyncHandler(async (req, res) => {
     success: true,
     data: {
       email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
+      name: user.name,
       role: user.role,
       bio: user.bio,
       profilePic: user.profilePic,
-      name: user.name,
+      profilePicPublicId: user.profilePicPublicId,
     },
   });
   return;
@@ -78,30 +81,44 @@ export const updateProfile = expressAsyncHandler(async (req, res) => {
     return;
   }
   // GETTING PROFILE DATA FROM REQUEST BODY
-  const { firstName, lastName, role, bio, profilePic } = req.body;
-  // UPDATING USER FIELDS
-  if (typeof firstName === "string") {
-    user.firstName = firstName.trim();
+  const { name, role, bio, deleteProfilePic } = req.body;
+  // HANDLING NAME
+  if (typeof name === "string") {
+    user.name = name.trim();
   }
-  if (typeof lastName === "string") {
-    user.lastName = lastName.trim();
-  }
+  // HANDLING ROLE
   if (typeof role === "string") {
     user.role = role.trim();
   }
+  // HANDLING BIO
   if (typeof bio === "string") {
     user.bio = bio.substring(0, 500);
   }
-  // HANDLING PROFILE PICTURE (MULTIPART OR BASE64)
+  // HANDLING PROFILE PICTURE
   const file = (req as any).file as Express.Multer.File | undefined;
+  // IF NEW FILE IS UPLOADED
   if (file && file.buffer) {
-    // CONVERTING FILE TO BASE64
-    const base64 = `data:${file.mimetype};base64,${file.buffer.toString(
-      "base64"
-    )}`;
-    user.profilePic = base64;
-  } else if (typeof profilePic === "string") {
-    user.profilePic = profilePic;
+    // DELETE OLD PROFILE PICTURE FROM CLOUDINARY IF EXISTS
+    if (user.profilePicPublicId) {
+      // DELETE OLD PROFILE PICTURE FROM CLOUDINARY
+      await deleteFromCloudinary(user.profilePicPublicId);
+    }
+    // UPLOAD NEW IMAGE TO CLOUDINARY
+    const uploadResult = await uploadToCloudinary(file);
+    // UPDATE USER PROFILE PICTURE URL
+    user.profilePic = uploadResult.url;
+    // UPDATE USER PROFILE PICTURE PUBLIC ID
+    user.profilePicPublicId = uploadResult.publicId;
+  } else if (deleteProfilePic === "true" || deleteProfilePic === true) {
+    // IF DELETE FLAG IS SET, DELETE PROFILE PICTURE
+    if (user.profilePicPublicId) {
+      // DELETE OLD PROFILE PICTURE FROM CLOUDINARY
+      await deleteFromCloudinary(user.profilePicPublicId);
+    }
+    // UPDATE USER PROFILE PICTURE URL
+    user.profilePic = "";
+    // UPDATE USER PROFILE PICTURE PUBLIC ID
+    user.profilePicPublicId = "";
   }
   // SAVING USER
   await user.save();
@@ -111,11 +128,11 @@ export const updateProfile = expressAsyncHandler(async (req, res) => {
     success: true,
     data: {
       email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
+      name: user.name,
       role: user.role,
       bio: user.bio,
       profilePic: user.profilePic,
+      profilePicPublicId: user.profilePicPublicId,
     },
   });
   return;

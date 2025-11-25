@@ -13,8 +13,10 @@ const getDataURI = (file: Express.Multer.File): string => {
   const parser = new DataURIParser();
   // GETTING FILE EXTENSION NAME
   const extName = path.extname(file.originalname).toString();
-  // FORMATTING DATA URI
-  return parser.format(extName, file.buffer) as unknown as string;
+  // FORMATTING DATA URI AND GETTING CONTENT
+  const result = parser.format(extName, file.buffer);
+  // RETURNING DATA URI STRING
+  return result.content || "";
 };
 
 export default getDataURI;

@@ -29,6 +29,11 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    // PROFILE PICTURE PUBLIC ID (FOR CLOUDINARY)
+    profilePicPublicId: {
+      type: String,
+      default: "",
+    },
     // EMAIL FIELD
     email: {
       type: String,
