@@ -40,8 +40,8 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
           process.env.GOOGLE_CALLBACK_URL || "/api/v1/auth/google/callback",
       },
       async (
-        accessToken: string,
-        refreshToken: string,
+        _accessToken: string,
+        _refreshToken: string,
         profile: GoogleProfile,
         done: VerifyCallback
       ) => {
@@ -76,6 +76,27 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
               ).exec();
               // UPDATE USER OBJECT
               user = { ...user, provider: "google", providerId: profile.id };
+            } else if (user.providerId === profile.id) {
+              // SYNC PROVIDER EMAIL WITH OAUTH PROVIDER'S EMAIL
+              if (profile.emails[0].value !== user.providerEmail) {
+                // UPDATE PROVIDER EMAIL TO MATCH OAUTH PROVIDER'S EMAIL
+                await User.updateOne(
+                  { _id: user._id },
+                  { providerEmail: profile.emails[0].value }
+                ).exec();
+                // UPDATE USER OBJECT
+                user = { ...user, providerEmail: profile.emails[0].value };
+              }
+              // SYNC USER EMAIL WITH OAUTH PROVIDER'S EMAIL IF IT IS DIFFERENT
+              if (user.email !== profile.emails[0].value) {
+                // UPDATE USER EMAIL TO MATCH OAUTH PROVIDER'S EMAIL
+                await User.updateOne(
+                  { _id: user._id },
+                  { email: profile.emails[0].value }
+                ).exec();
+                // UPDATE USER OBJECT
+                user = { ...user, email: profile.emails[0].value };
+              }
             }
             // RETURN USER (CONVERT _ID TO STRING IF NEEDED)
             const passportUser: PassportUser = {
@@ -84,6 +105,21 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
                 typeof user._id === "string" ? user._id : user._id.toString(),
             };
             return done(null, passportUser);
+          }
+          // IF EMAIL WAS PREVIOUSLY USED (VIA PROVIDER EMAIL) TO PREVENT DUPLICATES, RETURN ERROR
+          const existingUserWithProviderEmail = await User.findOne({
+            providerEmail: profile.emails[0].value,
+          })
+            .lean()
+            .exec();
+          if (existingUserWithProviderEmail) {
+            // RETURNING ERROR RESPONSE
+            return done(
+              new Error(
+                `This email address was previously associated with another account. Please use your original OAuth account to log in.`
+              ),
+              undefined
+            );
           }
           // CREATE NEW USER
           const newUser = await User.create({
@@ -96,6 +132,7 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
           });
           // RETURN NEW USER (CONVERT TO PLAIN OBJECT AND ENSURE _ID IS STRING)
           const userObject = newUser.toObject();
+          // RETURNING PASSPORT USER
           const passportUser: PassportUser = {
             ...userObject,
             _id:
@@ -103,9 +140,10 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
                 ? userObject._id
                 : userObject._id.toString(),
           };
+          // RETURNING PASSPORT USER
           return done(null, passportUser);
         } catch (error) {
-          // RETURN ERROR
+          // RETURNING ERROR RESPONSE
           const err =
             error instanceof Error
               ? error
@@ -133,8 +171,8 @@ if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
           process.env.GITHUB_CALLBACK_URL || "/api/v1/auth/github/callback",
       },
       async (
-        accessToken: string,
-        refreshToken: string,
+        _accessToken: string,
+        _refreshToken: string,
         profile: GitHubProfile,
         done: VerifyCallback
       ) => {
@@ -149,6 +187,7 @@ if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
           // GET EMAIL FROM PROFILE OR USE GITHUB NOREPLY EMAIL
           const email =
             profile.emails?.[0]?.value || `${profile.username}@github.noreply`;
+          // GET DISPLAY NAME FROM PROFILE OR USE DEFAULT
           const displayName = profile.displayName || profile.username || "User";
           // FIND USER BY PROVIDER ID OR EMAIL
           let user = await User.findOne({
@@ -177,6 +216,27 @@ if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
                 provider: "github",
                 providerId: profile.id.toString(),
               };
+            } else if (user.providerId === profile.id.toString()) {
+              // SYNC PROVIDER EMAIL WITH OAUTH PROVIDER'S EMAIL IF IT IS DIFFERENT
+              if (email !== user.providerEmail) {
+                // UPDATE PROVIDER EMAIL TO MATCH OAUTH PROVIDER'S EMAIL
+                await User.updateOne(
+                  { _id: user._id },
+                  { providerEmail: email }
+                ).exec();
+                // UPDATE USER OBJECT
+                user = { ...user, providerEmail: email };
+              }
+              // SYNC USER EMAIL WITH OAUTH PROVIDER'S EMAIL IF IT IS DIFFERENT
+              if (user.email !== email) {
+                // UPDATE USER EMAIL TO MATCH OAUTH PROVIDER'S EMAIL
+                await User.updateOne(
+                  { _id: user._id },
+                  { email: email }
+                ).exec();
+                // UPDATE USER OBJECT
+                user = { ...user, email: email };
+              }
             }
             // RETURN USER (CONVERT _ID TO STRING IF NEEDED)
             const passportUser: PassportUser = {
@@ -184,7 +244,24 @@ if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
               _id:
                 typeof user._id === "string" ? user._id : user._id.toString(),
             };
+            // RETURNING PASSPORT USER
             return done(null, passportUser);
+          }
+          // IF EMAIL WAS PREVIOUSLY USED (VIA PROVIDER EMAIL) TO PREVENT DUPLICATES, RETURN ERROR
+          const existingUserWithProviderEmail = await User.findOne({
+            providerEmail: email,
+          })
+            .lean()
+            .exec();
+          // IF EXISTING USER WITH PROVIDER EMAIL EXISTS, RETURN ERROR
+          if (existingUserWithProviderEmail) {
+            // RETURNING ERROR RESPONSE
+            return done(
+              new Error(
+                `This email address was previously associated with another account. Please use your original OAuth account to log in.`
+              ),
+              undefined
+            );
           }
           // CREATE NEW USER
           const newUser = await User.create({
@@ -197,6 +274,7 @@ if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
           });
           // RETURN NEW USER (CONVERT TO PLAIN OBJECT AND ENSURE _ID IS STRING)
           const userObject = newUser.toObject();
+          // RETURNING PASSPORT USER
           const passportUser: PassportUser = {
             ...userObject,
             _id:
@@ -206,7 +284,7 @@ if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
           };
           return done(null, passportUser);
         } catch (error) {
-          // RETURN ERROR
+          // RETURNING ERROR RESPONSE
           const err =
             error instanceof Error
               ? error
