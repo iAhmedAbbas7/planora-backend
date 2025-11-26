@@ -591,3 +591,272 @@ export const sendPasswordChangeConfirmation = async (
   // SEND EMAIL WITH RETRY
   return sendMailWithRetry(mailOptions);
 };
+
+/**
+ * SENDS EMAIL CHANGE VERIFICATION CODE TO CURRENT EMAIL
+ * @param toEmail - Current Email Address of the User
+ * @param code - 6-Digit Verification Code
+ * @param userName - Name of the User
+ * @param newEmail - New Email Address User Wants to Change To
+ * @returns Promise with Email Result
+ */
+export const sendEmailChangeVerificationCodeCurrent = async (
+  toEmail: string,
+  code: string,
+  userName: string,
+  newEmail: string
+): Promise<nodemailer.SentMessageInfo> => {
+  // PRIMARY COLOR
+  const primaryColor = "#7c3aed";
+  // PRIMARY COLOR LIGHT
+  const primaryColorLight = "#ede9fe";
+  // EMAIL CONTENT
+  const content = `
+    <h2 style="color: #1f2937; margin-bottom: 20px;">Hello ${userName}!</h2>
+    <p style="color: #4b5563; margin-bottom: 20px; font-size: 16px; line-height: 1.6;">
+      We received a request to change your email address from <strong>${toEmail}</strong> to <strong>${newEmail}</strong>.
+    </p>
+    <p style="color: #4b5563; margin-bottom: 20px; font-size: 16px; line-height: 1.6;">
+      To verify that you own this email address, please enter the verification code below:
+    </p>
+    <div class="code-container">
+      <p style="color: #6b7280; font-size: 14px; margin-bottom: 10px;">Your verification code:</p>
+      <div class="verification-code">${code}</div>
+      <p style="color: #6b7280; font-size: 12px; margin-top: 10px;">
+        This code will expire in 10 minutes
+      </p>
+    </div>
+    <div style="background-color: ${primaryColorLight}; border-left: 4px solid ${primaryColor}; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #4b5563; font-size: 14px; margin: 0; line-height: 1.6;">
+        <strong>Security Notice:</strong> If you didn't request this email change, please ignore this email and contact our support team immediately to secure your account.
+      </p>
+    </div>
+    <p style="color: #4b5563; margin-top: 30px;">
+      After verifying this code, you'll receive another verification code at your new email address to complete the change.
+    </p>
+    <p style="color: #4b5563; margin-top: 20px;">
+      Best regards,<br/>
+      <strong>The PlanOra Team</strong>
+    </p>
+  `;
+  // MAIL OPTIONS
+  const mailOptions: nodemailer.SendMailOptions = {
+    from: `PlanOra <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject: `Verify Your Current Email - PlanOra`,
+    html: generateEmailTemplate(content, "Email Change Verification"),
+  };
+  // SEND EMAIL WITH RETRY
+  return sendMailWithRetry(mailOptions);
+};
+
+/**
+ * SENDS EMAIL CHANGE VERIFICATION CODE TO NEW EMAIL
+ * @param toEmail - New Email Address of the User
+ * @param code - 6-Digit Verification Code
+ * @param userName - Name of the User
+ * @param currentEmail - Current Email Address
+ * @returns Promise with Email Result
+ */
+export const sendEmailChangeVerificationCodeNew = async (
+  toEmail: string,
+  code: string,
+  userName: string,
+  currentEmail: string
+): Promise<nodemailer.SentMessageInfo> => {
+  // PRIMARY COLOR
+  const primaryColor = "#7c3aed";
+  // PRIMARY COLOR LIGHT
+  const primaryColorLight = "#ede9fe";
+  // EMAIL CONTENT
+  const content = `
+    <h2 style="color: #1f2937; margin-bottom: 20px;">Hello!</h2>
+    <p style="color: #4b5563; margin-bottom: 20px; font-size: 16px; line-height: 1.6;">
+      You're one step away from changing your PlanOra account email from <strong>${currentEmail}</strong> to <strong>${toEmail}</strong>.
+    </p>
+    <p style="color: #4b5563; margin-bottom: 20px; font-size: 16px; line-height: 1.6;">
+      To complete the email change, please enter the verification code below:
+    </p>
+    <div class="code-container">
+      <p style="color: #6b7280; font-size: 14px; margin-bottom: 10px;">Your verification code:</p>
+      <div class="verification-code">${code}</div>
+      <p style="color: #6b7280; font-size: 12px; margin-top: 10px;">
+        This code will expire in 10 minutes
+      </p>
+    </div>
+    <div style="background-color: ${primaryColorLight}; border-left: 4px solid ${primaryColor}; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #4b5563; font-size: 14px; margin: 0; line-height: 1.6;">
+        <strong>Important:</strong> If you didn't request this email change, please ignore this email. The change will not be completed without this verification code.
+      </p>
+    </div>
+    <p style="color: #4b5563; margin-top: 30px;">
+      Once verified, your email address will be updated and you'll receive a confirmation email at this address.
+    </p>
+    <p style="color: #4b5563; margin-top: 20px;">
+      Best regards,<br/>
+      <strong>The PlanOra Team</strong>
+    </p>
+  `;
+  // MAIL OPTIONS
+  const mailOptions: nodemailer.SendMailOptions = {
+    from: `PlanOra <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject: `Verify Your New Email - PlanOra`,
+    html: generateEmailTemplate(content, "New Email Verification"),
+  };
+  // SEND EMAIL WITH RETRY
+  return sendMailWithRetry(mailOptions);
+};
+
+/**
+ * SENDS EMAIL CHANGE CONFIRMATION TO NEW EMAIL
+ * @param toEmail - New Email Address of the User
+ * @param userName - Name of the User
+ * @param changedAt - Timestamp when email was changed
+ * @returns Promise with Email Result
+ */
+export const sendEmailChangeConfirmation = async (
+  toEmail: string,
+  userName: string,
+  changedAt: Date
+): Promise<nodemailer.SentMessageInfo> => {
+  // PRIMARY COLOR
+  const primaryColor = "#7c3aed";
+  // PRIMARY COLOR LIGHT
+  const primaryColorLight = "#ede9fe";
+  // FRONTEND URL
+  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+  // FORMAT DATE
+  const formattedDate = changedAt.toLocaleString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
+  // EMAIL CONTENT
+  const content = `
+    <h2 style="color: #1f2937; margin-bottom: 20px;">Hello ${userName}!</h2>
+    <p style="color: #4b5563; margin-bottom: 20px; font-size: 16px; line-height: 1.6;">
+      🎉 Your email address has been successfully changed!
+    </p>
+    <div style="background-color: ${primaryColorLight}; border-left: 4px solid ${primaryColor}; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #4b5563; font-size: 14px; margin: 0; line-height: 1.6;">
+        <strong>Your new email address:</strong><br/>
+        ${toEmail}
+      </p>
+      <p style="color: #4b5563; font-size: 14px; margin: 10px 0 0 0; line-height: 1.6;">
+        <strong>Changed at:</strong><br/>
+        ${formattedDate}
+      </p>
+    </div>
+    <p style="color: #4b5563; margin-bottom: 20px; font-size: 15px; line-height: 1.6;">
+      From now on, you'll receive all PlanOra notifications and communications at this email address. You can use this email to log in to your account.
+    </p>
+    <div style="text-align: center; margin: 30px 0;">
+      <a href="${frontendUrl}/dashboard" class="button" style="color: #ffffff !important; text-decoration: none !important; display: inline-block; padding: 14px 28px; background-color: ${primaryColor}; border-radius: 8px; font-weight: 600;">
+        Go to Dashboard
+      </a>
+    </div>
+    <p style="color: #4b5563; margin-top: 30px;">
+      If you didn't make this change, please contact our support team immediately to secure your account.
+    </p>
+    <p style="color: #4b5563; margin-top: 20px;">
+      Best regards,<br/>
+      <strong>The PlanOra Team</strong>
+    </p>
+  `;
+  // MAIL OPTIONS
+  const mailOptions: nodemailer.SendMailOptions = {
+    from: `PlanOra <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject: `Email Changed Successfully - PlanOra`,
+    html: generateEmailTemplate(content, "Email Changed"),
+  };
+  // SEND EMAIL WITH RETRY
+  return sendMailWithRetry(mailOptions);
+};
+
+/**
+ * SENDS EMAIL CHANGE NOTIFICATION TO OLD EMAIL
+ * @param toEmail - Old Email Address of the User
+ * @param userName - Name of the User
+ * @param newEmail - New Email Address
+ * @param changedAt - Timestamp when email was changed
+ * @returns Promise with Email Result
+ */
+export const sendEmailChangeNotification = async (
+  toEmail: string,
+  userName: string,
+  newEmail: string,
+  changedAt: Date
+): Promise<nodemailer.SentMessageInfo> => {
+  // PRIMARY COLOR
+  const primaryColor = "#7c3aed";
+  // PRIMARY COLOR LIGHT
+  const primaryColorLight = "#ede9fe";
+  // FRONTEND URL
+  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+  // FORMAT DATE
+  const formattedDate = changedAt.toLocaleString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
+  // EMAIL CONTENT
+  const content = `
+    <h2 style="color: #1f2937; margin-bottom: 20px;">Hello ${userName}!</h2>
+    <p style="color: #4b5563; margin-bottom: 20px; font-size: 16px; line-height: 1.6;">
+      This is to notify you that your PlanOra account email address has been changed.
+    </p>
+    <div style="background-color: ${primaryColorLight}; border-left: 4px solid ${primaryColor}; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #4b5563; font-size: 14px; margin: 0; line-height: 1.6;">
+        <strong>Previous email:</strong><br/>
+        ${toEmail}
+      </p>
+      <p style="color: #4b5563; font-size: 14px; margin: 10px 0 0 0; line-height: 1.6;">
+        <strong>New email:</strong><br/>
+        ${newEmail}
+      </p>
+      <p style="color: #4b5563; font-size: 14px; margin: 10px 0 0 0; line-height: 1.6;">
+        <strong>Changed at:</strong><br/>
+        ${formattedDate}
+      </p>
+    </div>
+    <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #991b1b; font-size: 14px; margin: 0; line-height: 1.6;">
+        <strong>⚠️ Security Alert:</strong> If you didn't make this change, please contact our support team immediately to secure your account. This email address will no longer be associated with your PlanOra account.
+      </p>
+    </div>
+    <p style="color: #4b5563; margin-top: 30px;">
+      From now on, all PlanOra notifications and communications will be sent to your new email address (<strong>${newEmail}</strong>).
+    </p>
+    <div style="text-align: center; margin: 30px 0;">
+      <a href="${frontendUrl}/login" class="button" style="color: #ffffff !important; text-decoration: none !important; display: inline-block; padding: 14px 28px; background-color: ${primaryColor}; border-radius: 8px; font-weight: 600;">
+        Login to Your Account
+      </a>
+    </div>
+    <p style="color: #4b5563; margin-top: 30px;">
+      If you have any questions or concerns, feel free to reach out to our support team.
+    </p>
+    <p style="color: #4b5563; margin-top: 20px;">
+      Best regards,<br/>
+      <strong>The PlanOra Team</strong>
+    </p>
+  `;
+  // MAIL OPTIONS
+  const mailOptions: nodemailer.SendMailOptions = {
+    from: `PlanOra <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject: `Email Address Changed - PlanOra`,
+    html: generateEmailTemplate(content, "Email Change Notification"),
+  };
+  // SEND EMAIL WITH RETRY
+  return sendMailWithRetry(mailOptions);
+};
