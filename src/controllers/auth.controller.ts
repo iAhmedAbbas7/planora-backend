@@ -14,6 +14,8 @@ import expressAsyncHandler from "express-async-handler";
 import { PendingUser } from "../models/pendingUser.model.js";
 import { RefreshToken } from "../models/refreshToken.model.js";
 import { PasswordReset } from "../models/passwordReset.model.js";
+import passport from "../config/passport.js";
+import { Request, Response, NextFunction } from "express";
 
 /**
  * GENERATE JWT TOKEN
@@ -68,11 +70,20 @@ export const generateRefreshToken = (
 // <== USER SIGNUP ==>
 export const signup = expressAsyncHandler(async (req, res) => {
   // GETTING USER DATA FROM REQUEST BODY
-  const { name, email, password } = req.body;
+  const { name, email, password, acceptedTerms } = req.body;
   // VALIDATING REQUIRED FIELDS
   if (!name || !email || !password) {
     res.status(400).json({
       message: "Name, Email, and Password are Required!",
+      success: false,
+    });
+    return;
+  }
+  // VALIDATING TERMS ACCEPTANCE
+  if (!acceptedTerms || acceptedTerms !== true) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "You must accept the Terms & Conditions to create an account!",
       success: false,
     });
     return;
@@ -443,6 +454,101 @@ export const logout = expressAsyncHandler(async (req, res) => {
 });
 
 /**
+ * GOOGLE OAUTH CALLBACK MIDDLEWARE
+ * HANDLES GOOGLE OAUTH AUTHENTICATION AND ERROR HANDLING
+ * @param req - Request Object
+ * @param res - Response Object
+ * @param next - Next Function
+ * @returns Response Object or Next Function
+ */
+// <== GOOGLE OAUTH CALLBACK MIDDLEWARE ==>
+export const googleOAuthCallback = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void => {
+  passport.authenticate(
+    "google",
+    (err: Error | null, user: any, _info: any) => {
+      // IF ERROR OCCURRED, RETURN ERROR RESPONSE
+      if (err) {
+        // EXTRACT ERROR MESSAGE
+        const errorMessage = err.message || "OAuth authentication failed";
+        // ENCODING ERROR MESSAGE
+        const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+        // ENCODING ERROR MESSAGE
+        const encodedMessage = encodeURIComponent(errorMessage);
+        // REDIRECTING TO FRONTEND WITH ERROR MESSAGE
+        res.redirect(
+          `${frontendUrl}/login?error=oauth_failed&message=${encodedMessage}`
+        );
+        return;
+      }
+      // IF USER NOT FOUND, RETURN ERROR RESPONSE
+      if (!user) {
+        // NO USER RETURNED
+        const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+        // REDIRECTING TO FRONTEND WITH ERROR MESSAGE
+        res.redirect(`${frontendUrl}/login?error=oauth_failed`);
+        // RETURNING
+        return;
+      }
+      // USER FOUND - CONTINUE TO OAUTH CALLBACK
+      (req as any).user = user;
+      // CONTINUING TO OAUTH CALLBACK
+      next();
+    }
+  )(req, res, next);
+};
+
+/**
+ * GITHUB OAUTH CALLBACK MIDDLEWARE
+ * HANDLES GITHUB OAUTH AUTHENTICATION AND ERROR HANDLING
+ * @param req - Request Object
+ * @param res - Response Object
+ * @param next - Next Function
+ * @returns Response Object or Next Function
+ */
+// <== GITHUB OAUTH CALLBACK MIDDLEWARE ==>
+export const githubOAuthCallback = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void => {
+  passport.authenticate(
+    "github",
+    (err: Error | null, user: any, _info: any) => {
+      // IF ERROR OCCURRED, RETURN ERROR RESPONSE
+      if (err) {
+        // EXTRACT ERROR MESSAGE
+        const errorMessage = err.message || "OAuth authentication failed";
+        // ENCODING ERROR MESSAGE
+        const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+        // ENCODING ERROR MESSAGE
+        const encodedMessage = encodeURIComponent(errorMessage);
+        // REDIRECTING TO FRONTEND WITH ERROR MESSAGE
+        res.redirect(
+          `${frontendUrl}/login?error=oauth_failed&message=${encodedMessage}`
+        );
+        return;
+      }
+      // IF USER NOT FOUND, RETURN ERROR RESPONSE
+      if (!user) {
+        // NO USER RETURNED
+        const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+        // REDIRECTING TO FRONTEND WITH ERROR MESSAGE
+        res.redirect(`${frontendUrl}/login?error=oauth_failed`);
+        // RETURNING
+        return;
+      }
+      // USER FOUND - CONTINUING TO OAUTH CALLBACK
+      (req as any).user = user;
+      next();
+    }
+  )(req, res, next);
+};
+
+/**
  * OAUTH CALLBACK HANDLER
  * HANDLES OAUTH CALLBACK AFTER SUCCESSFUL AUTHENTICATION
  * GENERATES TOKENS AND REDIRECTS TO FRONTEND
@@ -521,6 +627,7 @@ export const oauthCallback = expressAsyncHandler(async (req, res) => {
   try {
     // FETCH USER FROM DATABASE TO GET CREATED AT TIMESTAMP
     const dbUser = await User.findById(userId).lean().exec();
+    // IF USER FOUND, CHECK IF USER WAS CREATED WITHIN LAST 10 SECONDS (NEW USER)
     if (dbUser) {
       // CHECK IF USER WAS CREATED WITHIN LAST 10 SECONDS (NEW USER)
       const userCreatedAt = new Date(dbUser.createdAt || Date.now());
