@@ -532,6 +532,55 @@ export const sendPasswordResetEmail = async (
  * @param changedAt - Timestamp when password was changed
  * @returns Promise with Email Result
  */
+/**
+ * SENDS PASSWORD CHANGE VERIFICATION CODE
+ * @param toEmail - Email Address of the User
+ * @param code - 6-Digit Verification Code
+ * @param userName - Name of the User
+ * @returns Promise with Email Result
+ */
+export const sendPasswordChangeVerificationCode = async (
+  toEmail: string,
+  code: string,
+  userName: string
+): Promise<nodemailer.SentMessageInfo> => {
+  // PRIMARY COLOR
+  const primaryColor = "#7c3aed";
+  // PRIMARY COLOR LIGHT
+  const primaryColorLight = "#ede9fe";
+  // EMAIL CONTENT
+  const content = `
+    <h2 style="color: #1f2937; margin-bottom: 20px;">Hello ${userName}!</h2>
+    <p style="color: #4b5563; margin-bottom: 20px;">
+      You recently requested to change your PlanOra account password.
+      To verify this change, please use the following code:
+    </p>
+    <div class="code-container">
+      <p style="color: #6b7280; font-size: 14px; margin-bottom: 10px;">Your verification code:</p>
+      <div class="verification-code">${code}</div>
+      <p style="color: #6b7280; font-size: 12px; margin-top: 10px;">
+        This code will expire in 10 minutes
+      </p>
+    </div>
+    <p style="color: #4b5563; margin-top: 30px;">
+      If you did not request this password change, please ignore this email or contact support immediately.
+    </p>
+    <p style="color: #4b5563; margin-top: 20px;">
+      Best regards,<br/>
+      <strong>The PlanOra Team</strong>
+    </p>
+  `;
+  // MAIL OPTIONS
+  const mailOptions: nodemailer.SendMailOptions = {
+    from: `PlanOra <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject: `Verify Your Password Change - PlanOra`,
+    html: generateEmailTemplate(content, "Password Change Verification"),
+  };
+  // SEND EMAIL WITH RETRY
+  return sendMailWithRetry(mailOptions);
+};
+
 export const sendPasswordChangeConfirmation = async (
   toEmail: string,
   userName: string,
