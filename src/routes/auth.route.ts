@@ -5,6 +5,8 @@ import {
   logout,
   refreshToken,
   oauthCallback,
+  googleOAuthCallback,
+  githubOAuthCallback,
   getCurrentUser,
   verifyEmail,
   resendVerificationCode,
@@ -26,34 +28,12 @@ router.get(
     scope: ["profile", "email"],
   })
 );
-// GOOGLE OAUTH CALLBACK
-router.get(
-  "/google/callback",
-  passport.authenticate("google", {
-    failureRedirect: process.env.FRONTEND_URL
-      ? `${process.env.FRONTEND_URL}/login?error=oauth_failed`
-      : "http://localhost:5173/login?error=oauth_failed",
-    session: false,
-  }),
-  oauthCallback
-);
 // GITHUB OAUTH INITIATION
 router.get(
   "/github",
   passport.authenticate("github", {
     scope: ["user:email"],
   })
-);
-// GITHUB OAUTH CALLBACK
-router.get(
-  "/github/callback",
-  passport.authenticate("github", {
-    failureRedirect: process.env.FRONTEND_URL
-      ? `${process.env.FRONTEND_URL}/login?error=oauth_failed`
-      : "http://localhost:5173/login?error=oauth_failed",
-    session: false,
-  }),
-  oauthCallback
 );
 // USER LOGIN ROUTE
 router.post("/login", login);
@@ -73,4 +53,9 @@ router.get("/me", isAuthenticated, getCurrentUser);
 router.post("/forgot-password", requestPasswordReset);
 // RESEND VERIFICATION CODE ROUTE
 router.post("/resend-verification", resendVerificationCode);
+// GOOGLE OAUTH CALLBACK
+router.get("/google/callback", googleOAuthCallback, oauthCallback);
+// GITHUB OAUTH CALLBACK
+router.get("/github/callback", githubOAuthCallback, oauthCallback);
+
 export default router;
