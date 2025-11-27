@@ -2,6 +2,7 @@
 import {
   sendPasswordChangeVerificationCode,
   sendPasswordChangeConfirmation,
+  sendPasswordChangeCodeVerified,
 } from "../utils/mailer.js";
 import bcrypt from "bcryptjs";
 import { User } from "../models/user.model.js";
@@ -205,6 +206,18 @@ export const verifyPasswordChangeCode = expressAsyncHandler(
     verificationRecord.emailVerified = true;
     // SAVING UPDATED RECORD
     await verificationRecord.save();
+    // FINDING USER TO GET NAME AND EMAIL FOR CONFIRMATION EMAIL
+    const user = await User.findById(userId).lean().exec();
+    // IF USER FOUND, SEND VERIFICATION CONFIRMATION EMAIL
+    if (user) {
+      try {
+        // SENDING VERIFICATION CONFIRMATION EMAIL
+        await sendPasswordChangeCodeVerified(user.email, user.name);
+      } catch (error) {
+        // LOGGING ERROR BUT DON'T FAIL THE REQUEST
+        console.error("Error sending verification confirmation email:", error);
+      }
+    }
     // RETURNING SUCCESS RESPONSE
     res.status(200).json({
       success: true,
