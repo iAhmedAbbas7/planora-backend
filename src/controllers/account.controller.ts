@@ -15,20 +15,24 @@ export const getAccount = expressAsyncHandler(async (req, res) => {
   const userId = (req as any).id;
   // IF USER ID NOT PROVIDED, RETURN 401 ERROR
   if (!userId) {
+    // RETURNING ERROR RESPONSE
     res.status(401).json({
       message: "Unauthorized!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // FINDING USER
   const user = await User.findById(userId).select("email").lean().exec();
   // IF USER NOT FOUND, RETURN 404 ERROR
   if (!user) {
+    // RETURNING ERROR RESPONSE
     res.status(404).json({
       message: "User not found!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // RETURNING RESPONSE
@@ -38,6 +42,7 @@ export const getAccount = expressAsyncHandler(async (req, res) => {
       email: user.email,
     },
   });
+  // RETURNING FROM FUNCTION
   return;
 });
 
@@ -53,10 +58,12 @@ export const updateAccount = expressAsyncHandler(async (req, res) => {
   const userId = (req as any).id;
   // IF USER ID NOT PROVIDED, RETURN 401 ERROR
   if (!userId) {
+    // RETURNING ERROR RESPONSE
     res.status(401).json({
       message: "Unauthorized!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // GETTING ACCOUNT DATA FROM REQUEST BODY
@@ -65,24 +72,30 @@ export const updateAccount = expressAsyncHandler(async (req, res) => {
   const user = await User.findById(userId).select("+password").exec();
   // IF USER NOT FOUND, RETURN 404 ERROR
   if (!user) {
+    // RETURNING ERROR RESPONSE
     res.status(404).json({
       message: "User not found!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // IF NEW EMAIL PROVIDED
   if (newEmail && newEmail !== user.email) {
     // CHECKING IF EMAIL ALREADY EXISTS
-    const existingUser = await User.findOne({ email: newEmail.toLowerCase().trim() })
+    const existingUser = await User.findOne({
+      email: newEmail.toLowerCase().trim(),
+    })
       .lean()
       .exec();
     // IF EMAIL ALREADY EXISTS, RETURN 409 ERROR
     if (existingUser) {
+      // RETURNING ERROR RESPONSE
       res.status(409).json({
         message: "Email already in use!",
         success: false,
       });
+      // RETURNING FROM FUNCTION
       return;
     }
     // UPDATING EMAIL
@@ -92,6 +105,7 @@ export const updateAccount = expressAsyncHandler(async (req, res) => {
   if (newPassword) {
     // IF CURRENT PASSWORD NOT PROVIDED, RETURN 400 ERROR
     if (!currentPassword) {
+      // RETURNING ERROR RESPONSE
       res.status(400).json({
         message: "Current password is required!",
         success: false,
@@ -99,21 +113,28 @@ export const updateAccount = expressAsyncHandler(async (req, res) => {
       return;
     }
     // COMPARING CURRENT PASSWORD
-    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    const isMatch = await bcrypt.compare(
+      currentPassword as string,
+      user.password as string
+    );
     // IF PASSWORD DOES NOT MATCH, RETURN 400 ERROR
     if (!isMatch) {
+      // RETURNING ERROR RESPONSE
       res.status(400).json({
         message: "Current password is incorrect!",
         success: false,
       });
+      // RETURNING FROM FUNCTION
       return;
     }
     // VALIDATING NEW PASSWORD LENGTH
     if (newPassword.length < 6) {
+      // RETURNING ERROR RESPONSE
       res.status(400).json({
         message: "New password must be at least 6 characters long!",
         success: false,
       });
+      // RETURNING FROM FUNCTION
       return;
     }
     // HASHING NEW PASSWORD
@@ -126,6 +147,7 @@ export const updateAccount = expressAsyncHandler(async (req, res) => {
     message: "Account updated successfully!",
     success: true,
   });
+  // RETURNING FROM FUNCTION
   return;
 });
 
@@ -141,40 +163,51 @@ export const deleteAccount = expressAsyncHandler(async (req, res) => {
   const userId = (req as any).id;
   // IF USER ID NOT PROVIDED, RETURN 401 ERROR
   if (!userId) {
+    // RETURNING ERROR RESPONSE
     res.status(401).json({
       message: "Unauthorized!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // GETTING PASSWORD FROM REQUEST BODY FOR CONFIRMATION
   const { password } = req.body;
   // IF PASSWORD NOT PROVIDED, RETURN 400 ERROR
   if (!password) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Password is required for account deletion!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // FINDING USER WITH PASSWORD
   const user = await User.findById(userId).select("+password").exec();
   // IF USER NOT FOUND, RETURN 404 ERROR
   if (!user) {
+    // RETURNING ERROR RESPONSE
     res.status(404).json({
       message: "User not found!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // COMPARING PASSWORD
-  const isMatch = await bcrypt.compare(password, user.password);
+  const isMatch = await bcrypt.compare(
+    password as string,
+    user.password as string
+  );
   // IF PASSWORD DOES NOT MATCH, RETURN 400 ERROR
   if (!isMatch) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Password is incorrect!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // DELETING USER
@@ -184,6 +217,6 @@ export const deleteAccount = expressAsyncHandler(async (req, res) => {
     message: "Account deleted successfully!",
     success: true,
   });
+  // RETURNING FROM FUNCTION
   return;
 });
-
