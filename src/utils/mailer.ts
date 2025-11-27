@@ -970,3 +970,286 @@ export const sendEmailChangeNotification = async (
   // SEND EMAIL WITH RETRY
   return sendMailWithRetry(mailOptions);
 };
+
+/**
+ * SENDS ACCOUNT DELETION VERIFICATION CODE
+ * @param toEmail - Email Address of the User
+ * @param code - 6-Digit Verification Code
+ * @param userName - Name of the User
+ * @returns Promise with Email Result
+ */
+export const sendAccountDeletionVerificationCode = async (
+  toEmail: string,
+  code: string,
+  userName: string
+): Promise<nodemailer.SentMessageInfo> => {
+  // PRIMARY COLOR
+  const primaryColor = "#7c3aed";
+  // PRIMARY COLOR LIGHT
+  const primaryColorLight = "#ede9fe";
+  // EMAIL CONTENT
+  const content = `
+    <h2 style="color: #1f2937; margin-bottom: 20px;">Hello ${userName}!</h2>
+    <p style="color: #4b5563; margin-bottom: 20px; font-size: 16px; line-height: 1.6;">
+      We received a request to delete your PlanOra account. This is an important action that requires verification.
+    </p>
+    <div style="background-color: ${primaryColorLight}; border-left: 4px solid ${primaryColor}; padding: 15px; margin: 20px 0; border-radius: 4px;">
+      <p style="color: #4b5563; font-size: 14px; margin: 0; line-height: 1.6;">
+        To proceed with the account deletion, please enter the verification code below:
+      </p>
+    </div>
+    <div class="code-container">
+      <p style="color: #6b7280; font-size: 14px; margin-bottom: 10px;">Your verification code:</p>
+      <div class="verification-code">${code}</div>
+      <p style="color: #6b7280; font-size: 12px; margin-top: 10px;">
+        This code will expire in 10 minutes
+      </p>
+    </div>
+    <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #991b1b; font-size: 14px; margin: 0; line-height: 1.6;">
+        <strong>⚠️ Important Notice:</strong> If you didn't request this account deletion, please ignore this email and contact our support team immediately to secure your account.
+      </p>
+    </div>
+    <p style="color: #4b5563; margin-top: 30px;">
+      If you have any questions or concerns, feel free to reach out to our support team.
+    </p>
+    <p style="color: #4b5563; margin-top: 20px;">
+      Best regards,<br/>
+      <strong>The PlanOra Team</strong>
+    </p>
+  `;
+  // MAIL OPTIONS
+  const mailOptions: nodemailer.SendMailOptions = {
+    from: `PlanOra <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject: `Account Deletion Verification - PlanOra`,
+    html: generateEmailTemplate(content, "Account Deletion Verification"),
+  };
+  // SEND EMAIL WITH RETRY
+  return sendMailWithRetry(mailOptions);
+};
+
+/**
+ * SENDS ACCOUNT DELETION CODE VERIFIED CONFIRMATION
+ * @param toEmail - Email Address of the User
+ * @param userName - Name of the User
+ * @returns Promise with Email Result
+ */
+export const sendAccountDeletionCodeVerified = async (
+  toEmail: string,
+  userName: string
+): Promise<nodemailer.SentMessageInfo> => {
+  // PRIMARY COLOR
+  const primaryColor = "#7c3aed";
+  // PRIMARY COLOR LIGHT
+  const primaryColorLight = "#ede9fe";
+  // EMAIL CONTENT
+  const content = `
+    <h2 style="color: #1f2937; margin-bottom: 20px;">Hello ${userName}!</h2>
+    <p style="color: #4b5563; margin-bottom: 20px; font-size: 16px; line-height: 1.6;">
+      ✅ Your verification code has been successfully verified!
+    </p>
+    <div style="background-color: ${primaryColorLight}; border-left: 4px solid ${primaryColor}; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #4b5563; font-size: 14px; margin: 0; line-height: 1.6;">
+        <strong>Next Step:</strong> You can now proceed to confirm the deletion of your account. Please note that this action will flag your account for deletion.
+      </p>
+    </div>
+    <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #991b1b; font-size: 14px; margin: 0; line-height: 1.6;">
+        <strong>⚠️ Important:</strong> Once you confirm deletion, your account will be flagged for deletion. You will have 30 days to log in and reactivate your account. After 30 days, your account and all associated data will be permanently deleted.
+      </p>
+    </div>
+    <p style="color: #4b5563; margin-top: 30px;">
+      If you didn't verify this code, please contact our support team immediately to secure your account.
+    </p>
+    <p style="color: #4b5563; margin-top: 20px;">
+      Best regards,<br/>
+      <strong>The PlanOra Team</strong>
+    </p>
+  `;
+  // MAIL OPTIONS
+  const mailOptions: nodemailer.SendMailOptions = {
+    from: `PlanOra <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject: `Verification Code Verified - PlanOra`,
+    html: generateEmailTemplate(content, "Code Verified"),
+  };
+  // SEND EMAIL WITH RETRY
+  return sendMailWithRetry(mailOptions);
+};
+
+/**
+ * SENDS ACCOUNT FLAGGED FOR DELETION NOTIFICATION
+ * @param toEmail - Email Address of the User
+ * @param userName - Name of the User
+ * @param flaggedAt - Timestamp when account was flagged
+ * @returns Promise with Email Result
+ */
+export const sendAccountFlaggedForDeletion = async (
+  toEmail: string,
+  userName: string,
+  flaggedAt: Date
+): Promise<nodemailer.SentMessageInfo> => {
+  // PRIMARY COLOR
+  const primaryColor = "#7c3aed";
+  // PRIMARY COLOR LIGHT
+  const primaryColorLight = "#ede9fe";
+  // FRONTEND URL
+  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+  // CALCULATE DELETION DATE (30 DAYS FROM FLAGGED DATE)
+  const deletionDate = new Date(flaggedAt);
+  deletionDate.setDate(deletionDate.getDate() + 30);
+  // FORMAT DATES
+  const formattedFlaggedDate = flaggedAt.toLocaleString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
+  const formattedDeletionDate = deletionDate.toLocaleString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
+  // EMAIL CONTENT
+  const content = `
+    <h2 style="color: #1f2937; margin-bottom: 20px;">Hello ${userName}!</h2>
+    <p style="color: #4b5563; margin-bottom: 20px; font-size: 16px; line-height: 1.6;">
+      Your PlanOra account has been flagged for deletion as requested.
+    </p>
+    <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 20px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #991b1b; font-size: 16px; font-weight: 600; margin: 0 0 15px 0;">
+        ⚠️ Account Deletion Scheduled
+      </p>
+      <p style="color: #991b1b; font-size: 14px; margin: 0 0 10px 0; line-height: 1.6;">
+        <strong>Account flagged on:</strong> ${formattedFlaggedDate}
+      </p>
+      <p style="color: #991b1b; font-size: 14px; margin: 0; line-height: 1.6;">
+        <strong>Permanent deletion scheduled for:</strong> ${formattedDeletionDate}
+      </p>
+    </div>
+    <div style="background-color: ${primaryColorLight}; border-left: 4px solid ${primaryColor}; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #4b5563; font-size: 14px; margin: 0 0 10px 0; line-height: 1.6;">
+        <strong>🔄 30-Day Grace Period:</strong>
+      </p>
+      <p style="color: #4b5563; font-size: 14px; margin: 0; line-height: 1.6;">
+        You have <strong>30 days</strong> from the date your account was flagged to log in and reactivate your account. If you log in before ${formattedDeletionDate}, your account will be automatically reactivated and all your data will be restored.
+      </p>
+    </div>
+    <p style="color: #4b5563; margin-bottom: 15px; font-size: 15px; line-height: 1.6;">
+      <strong>What happens next?</strong>
+    </p>
+    <ul style="color: #4b5563; margin-bottom: 20px; font-size: 14px; line-height: 1.8; padding-left: 20px;">
+      <li>Your account is currently inactive and you cannot log in</li>
+      <li>All your data (projects, tasks, settings) is preserved during the 30-day period</li>
+      <li>If you log in before the deletion date, your account will be reactivated automatically</li>
+      <li>After 30 days, your account and all associated data will be permanently deleted</li>
+    </ul>
+    <div style="text-align: center; margin: 30px 0;">
+      <a href="${frontendUrl}/login" class="button" style="color: #ffffff !important; text-decoration: none !important; display: inline-block; padding: 14px 28px; background-color: ${primaryColor}; border-radius: 8px; font-weight: 600;">
+        Log In to Reactivate Account
+      </a>
+    </div>
+    <p style="color: #4b5563; margin-top: 30px;">
+      If you have any questions or need assistance, please contact our support team. We're here to help!
+    </p>
+    <p style="color: #4b5563; margin-top: 20px;">
+      Best regards,<br/>
+      <strong>The PlanOra Team</strong>
+    </p>
+  `;
+  // MAIL OPTIONS
+  const mailOptions: nodemailer.SendMailOptions = {
+    from: `PlanOra <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject: `Account Flagged for Deletion - PlanOra`,
+    html: generateEmailTemplate(content, "Account Deletion"),
+  };
+  // SEND EMAIL WITH RETRY
+  return sendMailWithRetry(mailOptions);
+};
+
+/**
+ * SENDS ACCOUNT REACTIVATED NOTIFICATION
+ * @param toEmail - Email Address of the User
+ * @param userName - Name of the User
+ * @param reactivatedAt - Timestamp when account was reactivated
+ * @returns Promise with Email Result
+ */
+export const sendAccountReactivated = async (
+  toEmail: string,
+  userName: string,
+  reactivatedAt: Date
+): Promise<nodemailer.SentMessageInfo> => {
+  // PRIMARY COLOR
+  const primaryColor = "#7c3aed";
+  // PRIMARY COLOR LIGHT
+  const primaryColorLight = "#ede9fe";
+  // FRONTEND URL
+  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+  // FORMAT DATE
+  const formattedDate = reactivatedAt.toLocaleString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
+  // EMAIL CONTENT
+  const content = `
+    <h2 style="color: #1f2937; margin-bottom: 20px;">Hello ${userName}!</h2>
+    <p style="color: #4b5563; margin-bottom: 20px; font-size: 16px; line-height: 1.6;">
+      🎉 Great news! Your PlanOra account has been successfully reactivated!
+    </p>
+    <div style="background-color: ${primaryColorLight}; border-left: 4px solid ${primaryColor}; padding: 20px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #4b5563; font-size: 16px; font-weight: 600; margin: 0 0 15px 0;">
+        ✅ Account Reactivated
+      </p>
+      <p style="color: #4b5563; font-size: 14px; margin: 0 0 10px 0; line-height: 1.6;">
+        <strong>Reactivated on:</strong> ${formattedDate}
+      </p>
+      <p style="color: #4b5563; font-size: 14px; margin: 0; line-height: 1.6;">
+        Your account is now fully active and all your data has been restored. You can access all your projects, tasks, and settings as before.
+      </p>
+    </div>
+    <p style="color: #4b5563; margin-bottom: 15px; font-size: 15px; line-height: 1.6;">
+      <strong>What's been restored?</strong>
+    </p>
+    <ul style="color: #4b5563; margin-bottom: 20px; font-size: 14px; line-height: 1.8; padding-left: 20px;">
+      <li>All your projects and tasks</li>
+      <li>Your profile information and settings</li>
+      <li>Your notification preferences</li>
+      <li>All your account history</li>
+    </ul>
+    <div style="text-align: center; margin: 30px 0;">
+      <a href="${frontendUrl}/dashboard" class="button" style="color: #ffffff !important; text-decoration: none !important; display: inline-block; padding: 14px 28px; background-color: ${primaryColor}; border-radius: 8px; font-weight: 600;">
+        Go to Dashboard
+      </a>
+    </div>
+    <p style="color: #4b5563; margin-top: 30px;">
+      Thank you for choosing PlanOra! We're glad to have you back. If you have any questions or need assistance, feel free to reach out to our support team.
+    </p>
+    <p style="color: #4b5563; margin-top: 20px;">
+      Best regards,<br/>
+      <strong>The PlanOra Team</strong>
+    </p>
+  `;
+  // MAIL OPTIONS
+  const mailOptions: nodemailer.SendMailOptions = {
+    from: `PlanOra <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject: `Account Reactivated - Welcome Back to PlanOra!`,
+    html: generateEmailTemplate(content, "Account Reactivated"),
+  };
+  // SEND EMAIL WITH RETRY
+  return sendMailWithRetry(mailOptions);
+};
