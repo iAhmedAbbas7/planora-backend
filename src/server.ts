@@ -2,13 +2,11 @@
 import "./config/env.js";
 import path from "path";
 import cors from "cors";
-import cron from "node-cron";
 import express from "express";
 import mongoose from "mongoose";
 import session from "express-session";
 import cookieParser from "cookie-parser";
 import passport from "./config/passport.js";
-import { Task } from "./models/task.model.js";
 import rootRoute from "./routes/root.route.js";
 import authRoute from "./routes/auth.route.js";
 import taskRoute from "./routes/task.route.js";
@@ -21,13 +19,12 @@ import profileRoute from "./routes/profile.route.js";
 import projectRoute from "./routes/project.route.js";
 import accountRoute from "./routes/account.route.js";
 import settingsRoute from "./routes/settings.route.js";
+import { initializeCronJobs } from "./jobs/cronJobs.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import notificationRoute from "./routes/notification.route.js";
 import helmetMiddleware from "./middleware/helmetMiddleware.js";
 import { connectDB, disconnectDB } from "./config/dbConnection.js";
-import { createNotification } from "./controllers/notification.controller.js";
 import notificationSettingsRoute from "./routes/notificationSettings.route.js";
-import { broadcastNotification as broadcastNotificationUtil } from "./utils/broadcastNotification.js";
 
 // <== DATABASE CONNECTION ==>
 connectDB();
@@ -50,14 +47,21 @@ app.use(cookieParser());
 // SESSION MIDDLEWARE (REQUIRED FOR PASSPORT)
 app.use(
   session({
-    secret:
-      process.env.SESSION_SECRET || "your-secret-key-change-in-production",
+    // <==  SESSION SECRET ==>
+    secret: process.env.SESSION_SECRET as string,
+    // <== RESAVE SESSION ==>
     resave: false,
+    // <== SAVE UNINITIALIZED SESSION ==>
     saveUninitialized: false,
+    // <== COOKIE OPTIONS ==>
     cookie: {
+      // <== SECURE ==>
       secure: process.env.NODE_ENV === "production",
+      // <== HTTP ONLY ==>
       httpOnly: true,
+      // <== MAX AGE ==>
       maxAge: 24 * 60 * 60 * 1000,
+      // <== SAME SITE ==>
       sameSite: "lax",
     },
   })
@@ -113,53 +117,8 @@ app.all("*", (req, res) => {
 // <== ERROR HANDLER ==>
 app.use(errorHandler);
 
-// <== CRON JOB TO CHECK FOR DUE TASKS ==>
-cron.schedule("*/30 * * * *", async () => {
-  // GETTING CURRENT DATE
-  const now = new Date();
-  // GETTING SOON DATE (1 HOUR FROM NOW)
-  const soon = new Date(now.getTime() + 60 * 60 * 1000);
-  try {
-    // FINDING TASKS DUE SOON
-    const dueTasks = await Task.find({
-      dueDate: { $lte: soon, $gte: now },
-      status: { $ne: "completed" },
-      isTrashed: false,
-    })
-      .lean()
-      .exec();
-    // IF TASKS FOUND
-    if (dueTasks.length > 0) {
-      // GETTING IO INSTANCE FROM APP
-      const ioInstance = app.get("io");
-      // IF IO INSTANCE AVAILABLE
-      if (ioInstance) {
-        // EMITTING TASK DUE SOON EVENT
-        ioInstance.emit("task_due_soon", dueTasks);
-      }
-      // CREATING NOTIFICATIONS FOR EACH DUE TASK
-      for (const task of dueTasks) {
-        const notification = await createNotification(
-          task.userId.toString(),
-          "task_due_soon",
-          "Task Due Soon",
-          `Task "${
-            task.title
-          }" is due soon (${task.dueDate?.toLocaleString()}).`,
-          task._id.toString(),
-          app
-        );
-        // BROADCASTING NOTIFICATION IF CREATED
-        if (notification) {
-          broadcastNotificationUtil(app, task.userId.toString(), notification);
-        }
-      }
-    }
-  } catch (error: any) {
-    // LOGGING ERROR
-    console.error("Error in cron job:", error);
-  }
-});
+// <== INITIALIZE CRON JOBS ==>
+initializeCronJobs(app);
 
 // <== DATABASE & SERVER CONNECTION LISTENER ==>
 mongoose.connection.once("open", () => {
