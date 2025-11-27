@@ -70,6 +70,18 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    // FLAGGED FOR DELETION FIELD
+    flaggedForDeletion: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    // FLAGGED AT TIMESTAMP
+    flaggedAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
   },
   { timestamps: true }
 );
@@ -95,6 +107,11 @@ userSchema.index(
   { provider: 1, providerId: 1 },
   { unique: true, sparse: true }
 );
+/**
+ * COMPOUND INDEX FOR FLAGGED ACCOUNTS AND FLAGGED DATE (FOR CRON JOB)
+ */
+//<== COMPOUND INDEX FOR FLAGGED ACCOUNTS AND FLAGGED DATE ==>
+userSchema.index({ flaggedForDeletion: 1, flaggedAt: 1 });
 
 // <== EXPORTING THE USER MODEL ==>
 export const User = mongoose.model("User", userSchema);
