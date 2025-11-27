@@ -526,13 +526,6 @@ export const sendPasswordResetEmail = async (
 };
 
 /**
- * SENDS PASSWORD CHANGE CONFIRMATION EMAIL
- * @param toEmail - Email Address of the User
- * @param userName - Name of the User
- * @param changedAt - Timestamp when password was changed
- * @returns Promise with Email Result
- */
-/**
  * SENDS PASSWORD CHANGE VERIFICATION CODE
  * @param toEmail - Email Address of the User
  * @param code - 6-Digit Verification Code
@@ -581,6 +574,13 @@ export const sendPasswordChangeVerificationCode = async (
   return sendMailWithRetry(mailOptions);
 };
 
+/**
+ * SENDS PASSWORD CHANGE CONFIRMATION EMAIL
+ * @param toEmail - Email Address of the User
+ * @param userName - Name of the User
+ * @param changedAt - Timestamp when password was changed
+ * @returns Promise with Email Result
+ */
 export const sendPasswordChangeConfirmation = async (
   toEmail: string,
   userName: string,
@@ -636,6 +636,67 @@ export const sendPasswordChangeConfirmation = async (
     to: toEmail,
     subject: `Password Changed Successfully - PlanOra`,
     html: generateEmailTemplate(content, "Password Changed"),
+  };
+  // SEND EMAIL WITH RETRY
+  return sendMailWithRetry(mailOptions);
+};
+
+/**
+ * SENDS PASSWORD CHANGE CODE VERIFICATION CONFIRMATION
+ * @param toEmail - Email Address of the User
+ * @param userName - Name of the User
+ * @returns Promise with Email Result
+ */
+export const sendPasswordChangeCodeVerified = async (
+  toEmail: string,
+  userName: string
+): Promise<nodemailer.SentMessageInfo> => {
+  // PRIMARY COLOR
+  const primaryColor = "#7c3aed";
+  // PRIMARY COLOR LIGHT
+  const primaryColorLight = "#ede9fe";
+  // FRONTEND URL
+  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+  // EMAIL CONTENT
+  const content = `
+    <h2 style="color: #1f2937; margin-bottom: 20px;">Hello ${userName}!</h2>
+    <p style="color: #4b5563; margin-bottom: 20px; font-size: 16px; line-height: 1.6;">
+      ✅ Your verification code has been successfully verified!
+    </p>
+    <div style="background-color: ${primaryColorLight}; border-left: 4px solid ${primaryColor}; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #4b5563; font-size: 14px; margin: 0; line-height: 1.6;">
+        <strong>Next Step:</strong> You can now proceed to change your password. Please enter your new password in the password change form.
+      </p>
+    </div>
+    <p style="color: #4b5563; margin-bottom: 20px; font-size: 15px; line-height: 1.6;">
+      <strong>Password Requirements:</strong>
+    </p>
+    <ul style="color: #4b5563; margin-bottom: 20px; font-size: 14px; line-height: 1.8; padding-left: 20px;">
+      <li>At least 8 characters long</li>
+      <li>Contains at least one uppercase letter</li>
+      <li>Contains at least one lowercase letter</li>
+      <li>Contains at least one digit</li>
+      <li>Contains at least one special character</li>
+    </ul>
+    <div style="background-color: ${primaryColorLight}; border-left: 4px solid ${primaryColor}; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #4b5563; font-size: 14px; margin: 0; line-height: 1.6;">
+        <strong>Security Tip:</strong> Choose a strong, unique password that you haven't used before. This helps keep your account secure.
+      </p>
+    </div>
+    <p style="color: #4b5563; margin-top: 30px;">
+      If you didn't verify this code, please contact our support team immediately to secure your account.
+    </p>
+    <p style="color: #4b5563; margin-top: 20px;">
+      Best regards,<br/>
+      <strong>The PlanOra Team</strong>
+    </p>
+  `;
+  // MAIL OPTIONS
+  const mailOptions: nodemailer.SendMailOptions = {
+    from: `PlanOra <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject: `Verification Code Verified - PlanOra`,
+    html: generateEmailTemplate(content, "Code Verified"),
   };
   // SEND EMAIL WITH RETRY
   return sendMailWithRetry(mailOptions);
