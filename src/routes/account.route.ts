@@ -2,7 +2,6 @@
 import {
   getAccount,
   updateAccount,
-  deleteAccount,
 } from "../controllers/account.controller.js";
 import {
   sendCurrentEmailCode,
@@ -18,6 +17,13 @@ import {
   resendPasswordChangeCode,
   cancelPasswordChange,
 } from "../controllers/passwordChange.controller.js";
+import {
+  sendDeletionCode,
+  verifyDeletionCode,
+  deleteAccount as flagAccountForDeletion,
+  resendDeletionCode,
+  cancelAccountDeletion,
+} from "../controllers/accountDeletion.controller.js";
 import express from "express";
 import isAuthenticated from "../middleware/isAuthenticated.js";
 
@@ -31,14 +37,22 @@ router.use(isAuthenticated);
 router.get("/info", getAccount);
 // UPDATE ACCOUNT
 router.put("/update", updateAccount);
-// DELETE ACCOUNT
-router.delete("/delete", deleteAccount);
 // CHANGE PASSWORD
 router.post("/password/change", changePassword);
 // CANCEL EMAIL CHANGE
 router.delete("/email/cancel", cancelEmailChange);
+// SEND ACCOUNT DELETION VERIFICATION CODE
+router.post("/deletion/send-code", sendDeletionCode);
 // CANCEL PASSWORD CHANGE
 router.delete("/password/cancel", cancelPasswordChange);
+// VERIFY ACCOUNT DELETION CODE
+router.post("/deletion/verify-code", verifyDeletionCode);
+// FLAG ACCOUNT FOR DELETION (SOFT DELETE)
+router.post("/deletion/confirm", flagAccountForDeletion);
+// RESEND ACCOUNT DELETION CODE
+router.post("/deletion/resend-code", resendDeletionCode);
+// CANCEL ACCOUNT DELETION
+router.delete("/deletion/cancel", cancelAccountDeletion);
 // VERIFY NEW EMAIL CODE AND UPDATE EMAIL
 router.post("/email/verify-new-code", verifyNewEmailCode);
 // RESEND VERIFICATION CODE
