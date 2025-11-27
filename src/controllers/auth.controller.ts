@@ -5,17 +5,18 @@ import {
   sendWelcomeEmail,
   sendPasswordResetEmail,
   sendPasswordChangeConfirmation,
+  sendAccountReactivated,
 } from "../utils/mailer.js";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import passport from "../config/passport.js";
 import { User } from "../models/user.model.js";
 import expressAsyncHandler from "express-async-handler";
+import { Request, Response, NextFunction } from "express";
 import { PendingUser } from "../models/pendingUser.model.js";
 import { RefreshToken } from "../models/refreshToken.model.js";
 import { PasswordReset } from "../models/passwordReset.model.js";
-import passport from "../config/passport.js";
-import { Request, Response, NextFunction } from "express";
 
 /**
  * GENERATE JWT TOKEN
@@ -73,10 +74,12 @@ export const signup = expressAsyncHandler(async (req, res) => {
   const { name, email, password, acceptedTerms } = req.body;
   // VALIDATING REQUIRED FIELDS
   if (!name || !email || !password) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Name, Email, and Password are Required!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // VALIDATING TERMS ACCEPTANCE
@@ -86,66 +89,81 @@ export const signup = expressAsyncHandler(async (req, res) => {
       message: "You must accept the Terms & Conditions to create an account!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // VALIDATING EMAIL FORMAT (IMPROVED VALIDATION)
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   // IF EMAIL FORMAT IS INVALID, RETURN 400 ERROR
   if (!emailRegex.test(email)) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Please provide a valid email address!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // VALIDATING PASSWORD STRENGTH (8+ CHARACTERS, UPPERCASE, LOWERCASE, DIGIT, SPECIAL)
   if (password.length < 8) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Password must be at least 8 characters long!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // CHECK FOR UPPERCASE LETTER
   if (!/[A-Z]/.test(password)) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Password must contain at least one uppercase letter!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // CHECK FOR LOWERCASE LETTER
   if (!/[a-z]/.test(password)) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Password must contain at least one lowercase letter!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // CHECK FOR DIGIT
   if (!/[0-9]/.test(password)) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Password must contain at least one digit!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // CHECK FOR SPECIAL CHARACTER
   if (!/[^A-Za-z0-9]/.test(password)) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Password must contain at least one special character!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // CHECKING IF USER ALREADY EXISTS (VERIFIED USER)
   const existingUser = await User.findOne({ email }).lean().exec();
   // IF USER ALREADY EXISTS, RETURN 409 ERROR
   if (existingUser) {
+    // RETURNING ERROR RESPONSE
     res.status(409).json({
       message: "User with this email already exists!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // CHECKING IF PENDING USER EXISTS
@@ -190,6 +208,7 @@ export const signup = expressAsyncHandler(async (req, res) => {
       message: "Failed to send verification email. Please try again later.",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // RETURNING RESPONSE (NO SENSITIVE DATA)
@@ -215,31 +234,80 @@ export const login = expressAsyncHandler(async (req, res) => {
   const { email, password } = req.body;
   // VALIDATING REQUIRED FIELDS
   if (!email || !password) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Email and Password are Required!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // FINDING USER BY EMAIL WITH PASSWORD FIELD
   const user = await User.findOne({ email }).select("+password").lean().exec();
   // IF USER NOT FOUND, RETURN 401 ERROR
   if (!user) {
+    // RETURNING ERROR RESPONSE
     res.status(401).json({
       message: "Invalid email or password!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // COMPARING PASSWORD
   const isMatch = await bcrypt.compare(password, user.password || "");
   // IF PASSWORD DOES NOT MATCH, RETURN 401 ERROR
   if (!isMatch) {
+    // RETURNING ERROR RESPONSE
     res.status(401).json({
       message: "Invalid email or password!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
+  }
+  // CHECK IF USER IS FLAGGED FOR DELETION
+  let accountReactivated = false;
+  // IF USER IS FLAGGED FOR DELETION
+  if (user.flaggedForDeletion && user.flaggedAt) {
+    // CALCULATING DAYS SINCE FLAGGED
+    const daysSinceFlagged = Math.floor(
+      (new Date().getTime() - new Date(user.flaggedAt).getTime()) /
+        (1000 * 60 * 60 * 24)
+    );
+    // IF WITHIN 30 DAYS, REACTIVATE ACCOUNT
+    if (daysSinceFlagged < 30) {
+      // FINDING USER DOCUMENT TO UPDATE
+      const userDoc = await User.findById(user._id).exec();
+      // IF USER DOCUMENT FOUND
+      if (userDoc) {
+        // REACTIVATING ACCOUNT
+        userDoc.flaggedForDeletion = false;
+        // SETTING FLAGGED AT TO NULL
+        userDoc.flaggedAt = null as unknown as Date;
+        // SAVING USER DOCUMENT
+        await userDoc.save();
+        // SETTING ACCOUNT REACTIVATED TO TRUE
+        accountReactivated = true;
+        // SENDING REACTIVATION EMAIL
+        try {
+          // SENDING REACTIVATION EMAIL
+          await sendAccountReactivated(userDoc.email, userDoc.name, new Date());
+        } catch (error) {
+          // LOGGING ERROR
+          console.error("Error sending account reactivation email:", error);
+        }
+      }
+    } else {
+      // RETURNING ERROR RESPONSE
+      res.status(403).json({
+        message:
+          "Your account has been permanently deleted. Please contact support if you believe this is an error.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
   }
   // CLEANING UP ANY EXISTING REFRESH TOKENS (ALL TOKENS - REVOKED, EXPIRED, OR ACTIVE)
   await RefreshToken.deleteMany({ userId: user._id }).exec();
@@ -288,12 +356,15 @@ export const login = expressAsyncHandler(async (req, res) => {
   });
   // RETURNING RESPONSE (NO TOKENS IN BODY FOR SECURITY)
   res.status(200).json({
-    message: "Login successful!",
+    message: accountReactivated
+      ? "Login successful! Your account has been reactivated."
+      : "Login successful!",
     success: true,
     data: {
       id: user._id,
       name: user.name,
       email: user.email,
+      accountReactivated: accountReactivated,
     },
   });
   return;
@@ -311,16 +382,18 @@ export const refreshToken = expressAsyncHandler(async (req, res) => {
   const refreshTokenFromCookie = req.cookies.refreshToken;
   // IF NO REFRESH TOKEN FOUND, RETURN 401 ERROR
   if (!refreshTokenFromCookie) {
+    // RETURNING ERROR RESPONSE
     res.status(401).json({
       message: "Refresh token not found!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // DECODING REFRESH TOKEN
   let decodedToken: jwt.JwtPayload | undefined;
   try {
-    // VERIFYING REFRESH TOKEN
+    // DECODING REFRESH TOKEN
     decodedToken = jwt.verify(
       refreshTokenFromCookie,
       process.env.RT_SECRET!
@@ -331,6 +404,7 @@ export const refreshToken = expressAsyncHandler(async (req, res) => {
       message: "Invalid or expired refresh token!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // GETTING USER ID FROM DECODED TOKEN
@@ -339,10 +413,12 @@ export const refreshToken = expressAsyncHandler(async (req, res) => {
   const tokenId = decodedToken.tokenId;
   // IF TOKEN ID NOT FOUND, RETURN 401 ERROR
   if (!tokenId) {
+    // RETURNING ERROR RESPONSE
     res.status(401).json({
       message: "Invalid refresh token format!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // FINDING REFRESH TOKEN IN DATABASE BY TOKEN ID
@@ -355,10 +431,12 @@ export const refreshToken = expressAsyncHandler(async (req, res) => {
     .exec();
   // IF TOKEN NOT FOUND IN DATABASE OR EXPIRED, RETURN 401 ERROR
   if (!storedToken || storedToken.expiresAt < new Date()) {
+    // RETURNING ERROR RESPONSE
     res.status(401).json({
       message: "Refresh token not found or expired!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // DELETING OLD REFRESH TOKEN BEING USED FOR REFRESH
@@ -562,20 +640,24 @@ export const oauthCallback = expressAsyncHandler(async (req, res) => {
   const user = (req as any).user;
   // IF USER NOT FOUND, RETURN ERROR
   if (!user) {
+    // RETURNING ERROR RESPONSE
     res.status(401).json({
       message: "OAuth authentication failed!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // GET USER ID (HANDLE BOTH OBJECTID AND STRING)
   const userId = user._id?.toString() || user._id || user.id;
   // IF USER ID NOT FOUND, RETURN ERROR
   if (!userId) {
+    // RETURNING ERROR RESPONSE
     res.status(401).json({
       message: "OAuth authentication failed!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // CLEANING UP ALL EXISTING REFRESH TOKENS (ALL TOKENS - REVOKED, EXPIRED, OR ACTIVE)
@@ -668,20 +750,24 @@ export const getCurrentUser = expressAsyncHandler(async (req, res) => {
   const userId = (req as any).id;
   // IF USER ID NOT FOUND, RETURN ERROR
   if (!userId) {
+    // RETURNING ERROR RESPONSE
     res.status(401).json({
       message: "Unauthorized!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // FIND USER BY ID
   const user = await User.findById(userId).select("-password").lean().exec();
   // IF USER NOT FOUND, RETURN ERROR
   if (!user) {
+    // RETURNING ERROR RESPONSE
     res.status(404).json({
       message: "User not found!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // RETURN USER DATA
@@ -694,6 +780,7 @@ export const getCurrentUser = expressAsyncHandler(async (req, res) => {
       email: user.email,
     },
   });
+  // RETURNING FROM FUNCTION
   return;
 });
 
@@ -710,18 +797,22 @@ export const verifyEmail = expressAsyncHandler(async (req, res) => {
   const { email, code } = req.body;
   // VALIDATING REQUIRED FIELDS
   if (!email || !code) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Email and Verification Code are Required!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // VALIDATING CODE FORMAT (6 DIGITS)
   if (!/^\d{6}$/.test(code)) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Verification code must be 6 digits!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // FINDING PENDING USER BY EMAIL AND CODE
@@ -731,20 +822,24 @@ export const verifyEmail = expressAsyncHandler(async (req, res) => {
   }).exec();
   // IF PENDING USER NOT FOUND, RETURN ERROR
   if (!pendingUser) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Invalid email or verification code!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // CHECKING IF CODE HAS EXPIRED
   if (pendingUser.verificationCodeExpiresAt < new Date()) {
     // DELETE EXPIRED PENDING USER
     await pendingUser.deleteOne();
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Verification code has expired! Please request a new one.",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // CHECKING IF USER ALREADY EXISTS (RACE CONDITION CHECK)
@@ -754,10 +849,12 @@ export const verifyEmail = expressAsyncHandler(async (req, res) => {
   if (existingUser) {
     // DELETE PENDING USER IF USER ALREADY EXISTS
     await pendingUser.deleteOne();
+    // RETURNING ERROR RESPONSE
     res.status(409).json({
       message: "User with this email already exists!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // CREATING VERIFIED USER
@@ -855,19 +952,24 @@ export const resendVerificationCode = expressAsyncHandler(async (req, res) => {
   const { email } = req.body;
   // VALIDATING REQUIRED FIELDS
   if (!email) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Email is Required!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // VALIDATING EMAIL FORMAT
   const emailRegex = /^\S+@\S+\.\S+$/;
+  // IF EMAIL FORMAT IS INVALID, RETURN 400 ERROR
   if (!emailRegex.test(email)) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Please provide a valid email address!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // FINDING PENDING USER BY EMAIL
@@ -876,10 +978,12 @@ export const resendVerificationCode = expressAsyncHandler(async (req, res) => {
   }).exec();
   // IF PENDING USER NOT FOUND, RETURN ERROR
   if (!pendingUser) {
+    // RETURNING ERROR RESPONSE
     res.status(404).json({
       message: "No pending verification found for this email!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // RATE LIMITING: CHECK IF USER HAS EXCEEDED RESEND LIMIT (MAX 3 RESENDS PER 5 MINUTES)
@@ -888,11 +992,13 @@ export const resendVerificationCode = expressAsyncHandler(async (req, res) => {
     pendingUser.lastResendAt > fiveMinutesAgo &&
     pendingUser.resendAttempts >= 3
   ) {
+    // RETURNING ERROR RESPONSE
     res.status(429).json({
       message:
         "Too many resend attempts! Please wait 5 minutes before requesting again.",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // RESET RESEND ATTEMPTS IF 5 MINUTES HAVE PASSED
@@ -934,6 +1040,7 @@ export const resendVerificationCode = expressAsyncHandler(async (req, res) => {
       message: "Failed to send verification email. Please try again later.",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // RETURNING RESPONSE
@@ -941,6 +1048,7 @@ export const resendVerificationCode = expressAsyncHandler(async (req, res) => {
     message: "Verification code resent successfully! Please check your inbox.",
     success: true,
   });
+  // RETURNING FROM FUNCTION
   return;
 });
 
@@ -957,20 +1065,24 @@ export const requestPasswordReset = expressAsyncHandler(async (req, res) => {
   const { email } = req.body;
   // VALIDATING REQUIRED FIELDS
   if (!email) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Email is required!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // VALIDATING EMAIL FORMAT
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   // IF EMAIL FORMAT IS INVALID, RETURN ERROR RESPONSE
   if (!emailRegex.test(email)) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Please provide a valid email address!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // FINDING USER BY EMAIL
@@ -985,6 +1097,7 @@ export const requestPasswordReset = expressAsyncHandler(async (req, res) => {
         "If an account exists with this email, a password reset code has been sent.",
       success: true,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // CHECKING IF PASSWORD RESET REQUEST ALREADY EXISTS
@@ -1006,6 +1119,7 @@ export const requestPasswordReset = expressAsyncHandler(async (req, res) => {
           "Too many reset requests! Please wait 5 minutes before requesting again.",
         success: false,
       });
+      // RETURNING FROM FUNCTION
       return;
     }
     // RESET RESEND ATTEMPTS IF 5 MINUTES HAVE PASSED
@@ -1047,6 +1161,7 @@ export const requestPasswordReset = expressAsyncHandler(async (req, res) => {
       message: "Failed to send password reset email. Please try again later.",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // RETURNING RESPONSE (SECURITY: DON'T REVEAL IF EMAIL EXISTS)
@@ -1055,6 +1170,7 @@ export const requestPasswordReset = expressAsyncHandler(async (req, res) => {
       "If an account exists with this email, a password reset code has been sent.",
     success: true,
   });
+  // RETURNING FROM FUNCTION
   return;
 });
 
@@ -1071,68 +1187,84 @@ export const resetPassword = expressAsyncHandler(async (req, res) => {
   const { email, code, newPassword } = req.body;
   // VALIDATING REQUIRED FIELDS
   if (!email || !code || !newPassword) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Email, code, and new password are required!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // VALIDATING EMAIL FORMAT
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   // IF EMAIL IS NOT VALID, RETURN ERROR
   if (!emailRegex.test(email)) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Please provide a valid email address!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // VALIDATING CODE FORMAT (6 DIGITS)
   if (!/^\d{6}$/.test(code)) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Reset code must be 6 digits!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // VALIDATING PASSWORD STRENGTH (8+ CHARACTERS, UPPERCASE, LOWERCASE, DIGIT, SPECIAL)
   if (newPassword.length < 8) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Password must be at least 8 characters long!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // CHECK FOR UPPERCASE LETTER
   if (!/[A-Z]/.test(newPassword)) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Password must contain at least one uppercase letter!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // CHECK FOR LOWERCASE LETTER
   if (!/[a-z]/.test(newPassword)) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Password must contain at least one lowercase letter!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // CHECK FOR DIGIT
   if (!/[0-9]/.test(newPassword)) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Password must contain at least one digit!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // CHECK FOR SPECIAL CHARACTER
   if (!/[^A-Za-z0-9]/.test(newPassword)) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Password must contain at least one special character!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // FINDING PASSWORD RESET REQUEST
@@ -1141,20 +1273,24 @@ export const resetPassword = expressAsyncHandler(async (req, res) => {
   }).exec();
   // IF PASSWORD RESET REQUEST NOT FOUND, RETURN ERROR
   if (!passwordReset) {
+    // RETURNING ERROR RESPONSE
     res.status(404).json({
       message:
         "No password reset request found for this email. Please request a new code.",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // CHECK IF CODE HAS BEEN USED
   if (passwordReset.used) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message:
         "This reset code has already been used. Please request a new code.",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // CHECK IF CODE HAS EXPIRED
@@ -1166,6 +1302,7 @@ export const resetPassword = expressAsyncHandler(async (req, res) => {
       message: "Reset code has expired! Please request a new code.",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // RATE LIMITING: CHECK VERIFICATION ATTEMPTS (MAX 5 ATTEMPTS PER 15 MINUTES)
@@ -1180,6 +1317,7 @@ export const resetPassword = expressAsyncHandler(async (req, res) => {
         "Too many verification attempts! Please wait 15 minutes before trying again.",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // RESET VERIFICATION ATTEMPTS IF 15 MINUTES HAVE PASSED
@@ -1199,6 +1337,7 @@ export const resetPassword = expressAsyncHandler(async (req, res) => {
       message: "Invalid reset code! Please check and try again.",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // FINDING USER BY EMAIL
@@ -1209,20 +1348,24 @@ export const resetPassword = expressAsyncHandler(async (req, res) => {
   if (!user) {
     // DELETE PASSWORD RESET REQUEST
     await passwordReset.deleteOne().exec();
+    // RETURNING ERROR RESPONSE
     res.status(404).json({
       message: "User not found!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // CHECK IF NEW PASSWORD IS SAME AS CURRENT PASSWORD
   const isSamePassword = await bcrypt.compare(newPassword, user.password || "");
   // IF NEW PASSWORD IS SAME AS CURRENT PASSWORD, RETURN ERROR RESPONSE
   if (isSamePassword) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "New password must be different from your current password!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // HASHING NEW PASSWORD
@@ -1248,5 +1391,6 @@ export const resetPassword = expressAsyncHandler(async (req, res) => {
       "Password reset successfully! Please login with your new password.",
     success: true,
   });
+  // RETURNING FROM FUNCTION
   return;
 });
