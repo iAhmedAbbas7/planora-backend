@@ -82,6 +82,42 @@ const userSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+    // TWO-FACTOR AUTHENTICATION ENABLED FIELD
+    isTwoFactorEnabled: {
+      type: Boolean,
+      default: false,
+    },
+    // TOTP SECRET FIELD (ENCRYPTED)
+    totpSecret: {
+      type: String,
+      default: null,
+      select: false,
+    },
+    // BACKUP CODES FIELD
+    backupCodes: [
+      {
+        // CODE FIELD
+        code: {
+          type: String,
+          required: true,
+        },
+        // USED FIELD
+        used: {
+          type: Boolean,
+          default: false,
+        },
+        // USED AT TIMESTAMP FIELD
+        usedAt: {
+          type: Date,
+          default: null,
+        },
+      },
+    ],
+    // BACKUP CODES GENERATED AT TIMESTAMP
+    backupCodesGeneratedAt: {
+      type: Date,
+      default: null,
+    },
   },
   { timestamps: true }
 );
@@ -112,6 +148,11 @@ userSchema.index(
  */
 //<== COMPOUND INDEX FOR FLAGGED ACCOUNTS AND FLAGGED DATE ==>
 userSchema.index({ flaggedForDeletion: 1, flaggedAt: 1 });
+/**
+ * INDEX FOR TWO-FACTOR AUTHENTICATION STATUS
+ */
+//<== INDEX FOR TWO-FACTOR AUTHENTICATION STATUS ==>
+userSchema.index({ isTwoFactorEnabled: 1 });
 
 // <== EXPORTING THE USER MODEL ==>
 export const User = mongoose.model("User", userSchema);
