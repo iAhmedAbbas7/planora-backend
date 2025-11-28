@@ -1253,3 +1253,454 @@ export const sendAccountReactivated = async (
   // SEND EMAIL WITH RETRY
   return sendMailWithRetry(mailOptions);
 };
+
+/**
+ * SEND 2FA ENABLE REQUEST EMAIL
+ * @param toEmail - Recipient Email Address
+ * @param userName - User Name
+ * @param code - 6-Digit Verification Code
+ * @returns Promise with Email Result
+ */
+export const send2FAEnableRequestEmail = async (
+  toEmail: string,
+  userName: string,
+  code: string
+): Promise<nodemailer.SentMessageInfo> => {
+  // PRIMARY COLOR
+  const primaryColor = "#7c3aed";
+  // PRIMARY COLOR LIGHT
+  const primaryColorLight = "#ede9fe";
+  // EMAIL CONTENT
+  const content = `
+    <h2 style="color: #1f2937; margin-bottom: 20px;">Hello ${userName}!</h2>
+    <p style="color: #4b5563; margin-bottom: 20px; font-size: 16px; line-height: 1.6;">
+      You've requested to enable Two-Factor Authentication (2FA) for your PlanOra account. This adds an extra layer of security to protect your account.
+    </p>
+    <div style="background-color: ${primaryColorLight}; border-left: 4px solid ${primaryColor}; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #4b5563; font-size: 14px; margin: 0 0 10px 0; line-height: 1.6;">
+        <strong>Next Step:</strong> Please verify your email address by entering the verification code below:
+      </p>
+    </div>
+    <div class="code-container">
+      <p style="color: #6b7280; font-size: 14px; margin-bottom: 10px;">Your verification code:</p>
+      <div class="verification-code">${code}</div>
+      <p style="color: #6b7280; font-size: 12px; margin-top: 10px;">
+        This code will expire in 10 minutes
+      </p>
+    </div>
+    <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #991b1b; font-size: 14px; margin: 0; line-height: 1.6;">
+        <strong>⚠️ Security Notice:</strong> If you didn't request to enable 2FA, please ignore this email and contact our support team immediately to secure your account.
+      </p>
+    </div>
+    <p style="color: #4b5563; margin-top: 30px;">
+      After verifying your email, you'll be able to set up 2FA using an authenticator app like Google Authenticator or Authy.
+    </p>
+    <p style="color: #4b5563; margin-top: 20px;">
+      Best regards,<br/>
+      <strong>The PlanOra Team</strong>
+    </p>
+  `;
+  // MAIL OPTIONS
+  const mailOptions: nodemailer.SendMailOptions = {
+    from: `PlanOra <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject: `Enable Two-Factor Authentication - PlanOra`,
+    html: generateEmailTemplate(content, "Enable Two-Factor Authentication"),
+  };
+  // SEND EMAIL WITH RETRY
+  return sendMailWithRetry(mailOptions);
+};
+
+/**
+ * SEND 2FA ENABLE CODE VERIFIED EMAIL
+ * @param toEmail - Recipient Email Address
+ * @param userName - User Name
+ * @returns Promise with Email Result
+ */
+export const send2FAEnableCodeVerifiedEmail = async (
+  toEmail: string,
+  userName: string
+): Promise<nodemailer.SentMessageInfo> => {
+  // PRIMARY COLOR
+  const primaryColor = "#7c3aed";
+  // PRIMARY COLOR LIGHT
+  const primaryColorLight = "#ede9fe";
+  // EMAIL CONTENT
+  const content = `
+    <h2 style="color: #1f2937; margin-bottom: 20px;">Hello ${userName}!</h2>
+    <p style="color: #4b5563; margin-bottom: 20px; font-size: 16px; line-height: 1.6;">
+      ✅ Your email has been verified successfully! You can now complete the 2FA setup process.
+    </p>
+    <div style="background-color: ${primaryColorLight}; border-left: 4px solid ${primaryColor}; padding: 20px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #4b5563; font-size: 16px; font-weight: 600; margin: 0 0 15px 0;">
+        📱 Next Step: Scan QR Code
+      </p>
+      <p style="color: #4b5563; font-size: 14px; margin: 0 0 10px 0; line-height: 1.6;">
+        <strong>Instructions:</strong>
+      </p>
+      <ol style="color: #4b5563; font-size: 14px; margin: 0; padding-left: 20px; line-height: 1.8;">
+        <li>Open your authenticator app (Google Authenticator, Authy, or similar)</li>
+        <li>Scan the QR code displayed on your screen</li>
+        <li>Enter the 6-digit code from your app to complete the setup</li>
+      </ol>
+    </div>
+    <div style="background-color: #f0f9ff; border-left: 4px solid #0ea5e9; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #0c4a6e; font-size: 14px; margin: 0; line-height: 1.6;">
+        <strong>💡 Security Tip:</strong> Keep your authenticator app secure and don't share your 2FA codes with anyone. PlanOra will never ask for your 2FA code via email or phone.
+      </p>
+    </div>
+    <p style="color: #4b5563; margin-top: 30px;">
+      If you have any questions or need assistance, feel free to reach out to our support team.
+    </p>
+    <p style="color: #4b5563; margin-top: 20px;">
+      Best regards,<br/>
+      <strong>The PlanOra Team</strong>
+    </p>
+  `;
+  // MAIL OPTIONS
+  const mailOptions: nodemailer.SendMailOptions = {
+    from: `PlanOra <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject: `Email Verified - Scan QR Code to Enable 2FA - PlanOra`,
+    html: generateEmailTemplate(content, "Email Verified - Enable 2FA"),
+  };
+  // SEND EMAIL WITH RETRY
+  return sendMailWithRetry(mailOptions);
+};
+
+/**
+ * SEND 2FA ENABLED EMAIL
+ * @param toEmail - Recipient Email Address
+ * @param userName - User Name
+ * @param enabledAt - Date when 2FA was enabled
+ * @returns Promise with Email Result
+ */
+export const send2FAEnabledEmail = async (
+  toEmail: string,
+  userName: string,
+  enabledAt: Date
+): Promise<nodemailer.SentMessageInfo> => {
+  // PRIMARY COLOR
+  const primaryColor = "#7c3aed";
+  // PRIMARY COLOR LIGHT
+  const primaryColorLight = "#ede9fe";
+  // FORMATTED DATE
+  const formattedDate = enabledAt.toLocaleString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
+  // EMAIL CONTENT
+  const content = `
+    <h2 style="color: #1f2937; margin-bottom: 20px;">Hello ${userName}!</h2>
+    <p style="color: #4b5563; margin-bottom: 20px; font-size: 16px; line-height: 1.6;">
+      🎉 Congratulations! Two-Factor Authentication (2FA) has been successfully enabled for your PlanOra account.
+    </p>
+    <div style="background-color: ${primaryColorLight}; border-left: 4px solid ${primaryColor}; padding: 20px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #4b5563; font-size: 16px; font-weight: 600; margin: 0 0 15px 0;">
+        ✅ 2FA Enabled Successfully
+      </p>
+      <p style="color: #4b5563; font-size: 14px; margin: 0 0 10px 0; line-height: 1.6;">
+        <strong>Enabled on:</strong> ${formattedDate}
+      </p>
+      <p style="color: #4b5563; font-size: 14px; margin: 0; line-height: 1.6;">
+        Your account is now protected with an additional layer of security. You'll need to enter a code from your authenticator app each time you log in.
+      </p>
+    </div>
+    <p style="color: #4b5563; margin-bottom: 15px; font-size: 15px; line-height: 1.6;">
+      <strong>What's Next?</strong>
+    </p>
+    <ul style="color: #4b5563; margin-bottom: 20px; font-size: 14px; line-height: 1.8; padding-left: 20px;">
+      <li>Save your backup codes in a secure location</li>
+      <li>Use your authenticator app to generate codes when logging in</li>
+      <li>Keep your authenticator app and backup codes secure</li>
+    </ul>
+    <div style="background-color: #f0f9ff; border-left: 4px solid #0ea5e9; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #0c4a6e; font-size: 14px; margin: 0; line-height: 1.6;">
+        <strong>🔐 Security Benefits:</strong> 2FA significantly reduces the risk of unauthorized access to your account, even if someone knows your password.
+      </p>
+    </div>
+    <p style="color: #4b5563; margin-top: 30px;">
+      If you have any questions or need assistance, feel free to reach out to our support team.
+    </p>
+    <p style="color: #4b5563; margin-top: 20px;">
+      Best regards,<br/>
+      <strong>The PlanOra Team</strong>
+    </p>
+  `;
+  // MAIL OPTIONS
+  const mailOptions: nodemailer.SendMailOptions = {
+    from: `PlanOra <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject: `Two-Factor Authentication Enabled - PlanOra`,
+    html: generateEmailTemplate(content, "2FA Enabled"),
+  };
+  // SEND EMAIL WITH RETRY
+  return sendMailWithRetry(mailOptions);
+};
+
+/**
+ * SEND 2FA DISABLE REQUEST EMAIL
+ * @param toEmail - Recipient Email Address
+ * @param userName - User Name
+ * @param code - 6-Digit Verification Code
+ * @returns Promise with Email Result
+ */
+export const send2FADisableRequestEmail = async (
+  toEmail: string,
+  userName: string,
+  code: string
+): Promise<nodemailer.SentMessageInfo> => {
+  // PRIMARY COLOR
+  const primaryColor = "#7c3aed";
+  // PRIMARY COLOR LIGHT
+  const primaryColorLight = "#ede9fe";
+  // EMAIL CONTENT
+  const content = `
+    <h2 style="color: #1f2937; margin-bottom: 20px;">Hello ${userName}!</h2>
+    <p style="color: #4b5563; margin-bottom: 20px; font-size: 16px; line-height: 1.6;">
+      You've requested to disable Two-Factor Authentication (2FA) for your PlanOra account.
+    </p>
+    <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 20px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #991b1b; font-size: 16px; font-weight: 600; margin: 0 0 15px 0;">
+        ⚠️ Security Warning
+      </p>
+      <p style="color: #991b1b; font-size: 14px; margin: 0; line-height: 1.6;">
+        Disabling 2FA will reduce the security of your account. Your account will only be protected by your password. We strongly recommend keeping 2FA enabled for better security.
+      </p>
+    </div>
+    <div style="background-color: ${primaryColorLight}; border-left: 4px solid ${primaryColor}; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #4b5563; font-size: 14px; margin: 0 0 10px 0; line-height: 1.6;">
+        <strong>Next Step:</strong> Please verify your email address by entering the verification code below:
+      </p>
+    </div>
+    <div class="code-container">
+      <p style="color: #6b7280; font-size: 14px; margin-bottom: 10px;">Your verification code:</p>
+      <div class="verification-code">${code}</div>
+      <p style="color: #6b7280; font-size: 12px; margin-top: 10px;">
+        This code will expire in 10 minutes
+      </p>
+    </div>
+    <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #991b1b; font-size: 14px; margin: 0; line-height: 1.6;">
+        <strong>⚠️ Security Notice:</strong> If you didn't request to disable 2FA, please ignore this email and contact our support team immediately to secure your account.
+      </p>
+    </div>
+    <p style="color: #4b5563; margin-top: 30px;">
+      After verifying your email, you'll need to enter a code from your authenticator app to complete the disable process.
+    </p>
+    <p style="color: #4b5563; margin-top: 20px;">
+      Best regards,<br/>
+      <strong>The PlanOra Team</strong>
+    </p>
+  `;
+  // MAIL OPTIONS
+  const mailOptions: nodemailer.SendMailOptions = {
+    from: `PlanOra <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject: `Disable Two-Factor Authentication - PlanOra`,
+    html: generateEmailTemplate(content, "Disable Two-Factor Authentication"),
+  };
+  // SEND EMAIL WITH RETRY
+  return sendMailWithRetry(mailOptions);
+};
+
+/**
+ * SEND 2FA DISABLE CODE VERIFIED EMAIL
+ * @param toEmail - Recipient Email Address
+ * @param userName - User Name
+ * @returns Promise with Email Result
+ */
+export const send2FADisableCodeVerifiedEmail = async (
+  toEmail: string,
+  userName: string
+): Promise<nodemailer.SentMessageInfo> => {
+  // PRIMARY COLOR
+  const primaryColor = "#7c3aed";
+  // PRIMARY COLOR LIGHT
+  const primaryColorLight = "#ede9fe";
+  // EMAIL CONTENT
+  const content = `
+    <h2 style="color: #1f2937; margin-bottom: 20px;">Hello ${userName}!</h2>
+    <p style="color: #4b5563; margin-bottom: 20px; font-size: 16px; line-height: 1.6;">
+      ✅ Your email has been verified successfully! You can now complete the 2FA disable process.
+    </p>
+    <div style="background-color: ${primaryColorLight}; border-left: 4px solid ${primaryColor}; padding: 20px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #4b5563; font-size: 16px; font-weight: 600; margin: 0 0 15px 0;">
+        📱 Final Step: Enter Authenticator Code
+      </p>
+      <p style="color: #4b5563; font-size: 14px; margin: 0; line-height: 1.6;">
+        To complete the disable process, please enter the 6-digit code from your authenticator app. This ensures that only you can disable 2FA on your account.
+      </p>
+    </div>
+    <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #991b1b; font-size: 14px; margin: 0; line-height: 1.6;">
+        <strong>⚠️ Reminder:</strong> Disabling 2FA will reduce your account security. Consider keeping it enabled for better protection.
+      </p>
+    </div>
+    <p style="color: #4b5563; margin-top: 30px;">
+      If you have any questions or need assistance, feel free to reach out to our support team.
+    </p>
+    <p style="color: #4b5563; margin-top: 20px;">
+      Best regards,<br/>
+      <strong>The PlanOra Team</strong>
+    </p>
+  `;
+  // MAIL OPTIONS
+  const mailOptions: nodemailer.SendMailOptions = {
+    from: `PlanOra <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject: `Email Verified - Enter Authenticator Code - PlanOra`,
+    html: generateEmailTemplate(content, "Email Verified - Disable 2FA"),
+  };
+  // SEND EMAIL WITH RETRY
+  return sendMailWithRetry(mailOptions);
+};
+
+/**
+ * SEND 2FA DISABLED EMAIL
+ * @param toEmail - Recipient Email Address
+ * @param userName - User Name
+ * @param disabledAt - Date when 2FA was disabled
+ * @returns Promise with Email Result
+ */
+export const send2FADisabledEmail = async (
+  toEmail: string,
+  userName: string,
+  disabledAt: Date
+): Promise<nodemailer.SentMessageInfo> => {
+  // PRIMARY COLOR
+  const primaryColor = "#7c3aed";
+  // PRIMARY COLOR LIGHT
+  const primaryColorLight = "#ede9fe";
+  // FORMATTED DATE
+  const formattedDate = disabledAt.toLocaleString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
+  // FRONTEND URL
+  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+  // EMAIL CONTENT
+  const content = `
+    <h2 style="color: #1f2937; margin-bottom: 20px;">Hello ${userName}!</h2>
+    <p style="color: #4b5563; margin-bottom: 20px; font-size: 16px; line-height: 1.6;">
+      Two-Factor Authentication (2FA) has been successfully disabled for your PlanOra account.
+    </p>
+    <div style="background-color: ${primaryColorLight}; border-left: 4px solid ${primaryColor}; padding: 20px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #4b5563; font-size: 16px; font-weight: 600; margin: 0 0 15px 0;">
+        ℹ️ 2FA Disabled
+      </p>
+      <p style="color: #4b5563; font-size: 14px; margin: 0 0 10px 0; line-height: 1.6;">
+        <strong>Disabled on:</strong> ${formattedDate}
+      </p>
+      <p style="color: #4b5563; font-size: 14px; margin: 0; line-height: 1.6;">
+        Your account is now protected only by your password. You will no longer need to enter a code from your authenticator app when logging in.
+      </p>
+    </div>
+    <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #991b1b; font-size: 14px; margin: 0; line-height: 1.6;">
+        <strong>⚠️ Security Reminder:</strong> Your account security has been reduced. We strongly recommend re-enabling 2FA for better protection. You can do this anytime from your account settings.
+      </p>
+    </div>
+    <div style="text-align: center; margin: 30px 0;">
+      <a href="${frontendUrl}/settings?tab=Security" class="button" style="color: #ffffff !important; text-decoration: none !important; display: inline-block; padding: 14px 28px; background-color: ${primaryColor}; border-radius: 8px; font-weight: 600;">
+        Re-enable 2FA
+      </a>
+    </div>
+    <p style="color: #4b5563; margin-top: 30px;">
+      If you have any questions or need assistance, feel free to reach out to our support team.
+    </p>
+    <p style="color: #4b5563; margin-top: 20px;">
+      Best regards,<br/>
+      <strong>The PlanOra Team</strong>
+    </p>
+  `;
+  // MAIL OPTIONS
+  const mailOptions: nodemailer.SendMailOptions = {
+    from: `PlanOra <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject: `Two-Factor Authentication Disabled - PlanOra`,
+    html: generateEmailTemplate(content, "2FA Disabled"),
+  };
+  // SEND EMAIL WITH RETRY
+  return sendMailWithRetry(mailOptions);
+};
+
+/**
+ * SEND 2FA BACKUP CODES EMAIL
+ * @param toEmail - Recipient Email Address
+ * @param userName - User Name
+ * @param backupCodes - Array of Backup Codes
+ * @returns Promise with Email Result
+ */
+export const send2FABackupCodesEmail = async (
+  toEmail: string,
+  userName: string,
+  backupCodes: string[]
+): Promise<nodemailer.SentMessageInfo> => {
+  // PRIMARY COLOR
+  const primaryColor = "#7c3aed";
+  // PRIMARY COLOR LIGHT
+  const primaryColorLight = "#ede9fe";
+  // BACKUP CODES HTML
+  const backupCodesHTML = backupCodes
+    .map(
+      (code, index) => `
+    <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px; margin: 8px 0; font-family: 'Courier New', monospace; font-size: 16px; font-weight: 600; color: ${primaryColor}; text-align: center;">
+      ${code}
+    </div>
+  `
+    )
+    .join("");
+  // EMAIL CONTENT
+  const content = `
+    <h2 style="color: #1f2937; margin-bottom: 20px;">Hello ${userName}!</h2>
+    <p style="color: #4b5563; margin-bottom: 20px; font-size: 16px; line-height: 1.6;">
+      Here are your Two-Factor Authentication (2FA) backup codes. Save these codes in a secure location - you'll need them if you lose access to your authenticator app.
+    </p>
+    <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 20px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #991b1b; font-size: 16px; font-weight: 600; margin: 0 0 15px 0;">
+        ⚠️ Important Security Information
+      </p>
+      <ul style="color: #991b1b; font-size: 14px; margin: 0; padding-left: 20px; line-height: 1.8;">
+        <li>Each backup code can only be used once</li>
+        <li>Store these codes in a secure location (password manager, safe, etc.)</li>
+        <li>Do not share these codes with anyone</li>
+        <li>If you lose these codes, you can regenerate new ones from your account settings</li>
+      </ul>
+    </div>
+    <div style="background-color: ${primaryColorLight}; border-left: 4px solid ${primaryColor}; padding: 20px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #4b5563; font-size: 16px; font-weight: 600; margin: 0 0 20px 0; text-align: center;">
+        Your Backup Codes
+      </p>
+      ${backupCodesHTML}
+    </div>
+    <p style="color: #4b5563; margin-top: 30px; font-size: 14px; line-height: 1.6;">
+      <strong>How to use backup codes:</strong> If you lose access to your authenticator app, you can use one of these codes instead of the 6-digit code when logging in. Each code can only be used once.
+    </p>
+    <p style="color: #4b5563; margin-top: 20px;">
+      If you have any questions or need assistance, feel free to reach out to our support team.
+    </p>
+    <p style="color: #4b5563; margin-top: 20px;">
+      Best regards,<br/>
+      <strong>The PlanOra Team</strong>
+    </p>
+  `;
+  // MAIL OPTIONS
+  const mailOptions: nodemailer.SendMailOptions = {
+    from: `PlanOra <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject: `Your 2FA Backup Codes - PlanOra`,
+    html: generateEmailTemplate(content, "2FA Backup Codes"),
+  };
+  // SEND EMAIL WITH RETRY
+  return sendMailWithRetry(mailOptions);
+};
