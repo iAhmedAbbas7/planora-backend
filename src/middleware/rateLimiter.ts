@@ -6,38 +6,63 @@ import rateLimit from "express-rate-limit";
  * @returns Auth Limiter
  */
 export const authLimiter = rateLimit({
-  // WINDOW MS
+  // <== WINDOW MS ==>
   windowMs: 10 * 60 * 1000,
-  // LIMIT
+  // <== LIMIT ==>
   limit: 5,
-  // MESSAGE
+  // <== MESSAGE ==>
   message: {
+    // <== SUCCESS FIELD ==>
     success: false,
+    // <== MESSAGE FIELD ==>
     message: "Too many Attempts, Please try again after 15 Minutes.",
   },
-  // STANDARD HEADERS
+  // <== STANDARD HEADERS ==>
   standardHeaders: true,
-  // LEGACY HEADERS
+  // <== LEGACY HEADERS ==>
   legacyHeaders: false,
 });
 
-// GLOBAL RATE LIMITER
 /**
  * GLOBAL RATE LIMITER
  * @returns Global Limiter
  */
 export const globalLimiter = rateLimit({
-  // WINDOW MS
+  // <== WINDOW MS ==>
   windowMs: 60 * 60 * 1000,
-  // LIMIT
+  // <== LIMIT ==>
   limit: 10000,
-  // MESSAGE
+  // <== MESSAGE ==>
   message: {
+    // <== SUCCESS FIELD ==>
     success: false,
+    // <== MESSAGE FIELD ==>
     message: "Too many Attempts, Please try again after 1 Hour.",
   },
-  // STANDARD HEADERS
+  // <== STANDARD HEADERS ==>
   standardHeaders: true,
-  // LEGACY HEADERS
+  // <== LEGACY HEADERS ==>
+  legacyHeaders: false,
+});
+
+/**
+ * TWO FACTOR AUTHENTICATION RATE LIMITER
+ * @returns 2FA Limiter
+ */
+export const twoFactorLimiter = rateLimit({
+  // <== WINDOW MS ==>
+  windowMs: 15 * 60 * 1000,
+  // <== LIMIT ==>
+  limit: 3,
+  // <== MESSAGE ==>
+  message: {
+    // <== SUCCESS FIELD ==>
+    success: false,
+    // <== MESSAGE FIELD ==>
+    message: "Too many attempts. Please try again after 15 minutes.",
+  },
+  // <== STANDARD HEADERS ==>
+  standardHeaders: true,
+  // <== LEGACY HEADERS ==>
   legacyHeaders: false,
 });
