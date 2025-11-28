@@ -10,9 +10,12 @@ import {
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import speakeasy from "speakeasy";
 import passport from "../config/passport.js";
 import { User } from "../models/user.model.js";
+import { decryptSecret } from "../utils/encryption.js";
 import expressAsyncHandler from "express-async-handler";
+import { verifyBackupCode } from "../utils/encryption.js";
 import { Request, Response, NextFunction } from "express";
 import { PendingUser } from "../models/pendingUser.model.js";
 import { RefreshToken } from "../models/refreshToken.model.js";
@@ -309,6 +312,21 @@ export const login = expressAsyncHandler(async (req, res) => {
       return;
     }
   }
+  // CHECK IF 2FA IS ENABLED
+  if (user.isTwoFactorEnabled) {
+    // RETURNING RESPONSE REQUIRING 2FA
+    res.status(200).json({
+      message:
+        "Two-Factor Authentication required. Please enter your 2FA code.",
+      success: true,
+      requires2FA: true,
+      data: {
+        email: user.email,
+      },
+    });
+    // RETURNING FROM THE FUNCTION
+    return;
+  }
   // CLEANING UP ANY EXISTING REFRESH TOKENS (ALL TOKENS - REVOKED, EXPIRED, OR ACTIVE)
   await RefreshToken.deleteMany({ userId: user._id }).exec();
   // GENERATING UNIQUE TOKEN ID FOR DATABASE STORAGE
@@ -367,6 +385,293 @@ export const login = expressAsyncHandler(async (req, res) => {
       accountReactivated: accountReactivated,
     },
   });
+  return;
+});
+
+/**
+ * VERIFY 2FA AND COMPLETE LOGIN
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== VERIFY 2FA AND COMPLETE LOGIN ==>
+export const verify2FA = expressAsyncHandler(async (req, res) => {
+  // GETTING DATA FROM REQUEST BODY
+  const { email, password, token, twoFactorToken, backupCode } = req.body;
+  // VALIDATING REQUIRED FIELDS
+  if (!email || !password) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Email and Password are Required!",
+      success: false,
+    });
+    // RETURNING FROM THE FUNCTION
+    return;
+  }
+  // VALIDATING 2FA TOKEN OR CODE
+  if (!token && !backupCode) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "TOTP token or backup code is required!",
+      success: false,
+    });
+    // RETURNING FROM THE FUNCTION
+    return;
+  }
+  // FINDING USER BY EMAIL WITH PASSWORD AND TOTP SECRET
+  const user = await User.findOne({ email })
+    .select("+password +totpSecret")
+    .lean()
+    .exec();
+  // IF USER NOT FOUND, RETURN 401 ERROR
+  if (!user) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Invalid email or password!",
+      success: false,
+    });
+    // RETURNING FROM THE FUNCTION
+    return;
+  }
+  // CHECK IF 2FA IS ENABLED
+  if (!user.isTwoFactorEnabled) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Two-Factor Authentication is not enabled for this account.",
+      success: false,
+    });
+    // RETURNING FROM THE FUNCTION
+    return;
+  }
+  // COMPARING PASSWORD
+  const isMatch = await bcrypt.compare(password, user.password || "");
+  // IF PASSWORD DOES NOT MATCH, RETURN 401 ERROR
+  if (!isMatch) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Invalid email or password!",
+      success: false,
+    });
+    // RETURNING FROM THE FUNCTION
+    return;
+  }
+  // CHECK IF USER IS FLAGGED FOR DELETION
+  let accountReactivated = false;
+  // IF USER IS FLAGGED FOR DELETION
+  if (user.flaggedForDeletion && user.flaggedAt) {
+    // CALCULATING DAYS SINCE FLAGGED
+    const daysSinceFlagged = Math.floor(
+      (new Date().getTime() - new Date(user.flaggedAt).getTime()) /
+        (1000 * 60 * 60 * 24)
+    );
+    // IF WITHIN 30 DAYS, REACTIVATE ACCOUNT
+    if (daysSinceFlagged < 30) {
+      // FINDING USER DOCUMENT TO UPDATE
+      const userDoc = await User.findById(user._id).exec();
+      // IF USER DOCUMENT FOUND
+      if (userDoc) {
+        // REACTIVATING ACCOUNT
+        userDoc.flaggedForDeletion = false;
+        // SETTING FLAGGED AT TO NULL
+        userDoc.flaggedAt = null as unknown as Date;
+        // SAVING USER DOCUMENT
+        await userDoc.save();
+        // SETTING ACCOUNT REACTIVATED TO TRUE
+        accountReactivated = true;
+        // SENDING REACTIVATION EMAIL
+        try {
+          // SENDING REACTIVATION EMAIL
+          await sendAccountReactivated(userDoc.email, userDoc.name, new Date());
+        } catch (error) {
+          // LOGGING ERROR
+          console.error("Error sending account reactivation email:", error);
+        }
+      }
+    } else {
+      // RETURNING ERROR RESPONSE
+      res.status(403).json({
+        message:
+          "Your account has been permanently deleted. Please contact support if you believe this is an error.",
+        success: false,
+      });
+      // RETURNING FROM THE FUNCTION
+      return;
+    }
+  }
+  // VERIFYING 2FA
+  let twoFactorVerified = false;
+  // IF TOTP TOKEN PROVIDED
+  if (token) {
+    // CHECK IF TOTP SECRET EXISTS
+    if (!user.totpSecret) {
+      // RETURNING ERROR RESPONSE
+      res.status(400).json({
+        message: "2FA is not properly configured for this account.",
+        success: false,
+      });
+      // RETURNING FROM THE FUNCTION
+      return;
+    }
+    // DECRYPTING TOTP SECRET
+    let decryptedSecret: string;
+    try {
+      // DECRYPTING TOTP SECRET
+      decryptedSecret = decryptSecret(user.totpSecret);
+    } catch (error) {
+      // RETURNING ERROR RESPONSE
+      res.status(500).json({
+        message: "Error processing 2FA secret. Please contact support.",
+        success: false,
+      });
+      // RETURNING FROM THE FUNCTION
+      return;
+    }
+    // VERIFYING TOTP TOKEN
+    const verified = speakeasy.totp.verify({
+      secret: decryptedSecret,
+      encoding: "base32",
+      token,
+      window: 2,
+    });
+    // IF VERIFIED, SET FLAG
+    if (verified) {
+      // SETTING VERIFIED FLAG TO TRUE
+      twoFactorVerified = true;
+    }
+  }
+  // IF BACKUP CODE PROVIDED
+  if (backupCode && !twoFactorVerified) {
+    // FINDING USER WITH BACKUP CODES
+    const userWithCodes = await User.findById(user._id).exec();
+    // IF USER NOT FOUND
+    if (!userWithCodes || !userWithCodes.backupCodes) {
+      // RETURNING ERROR RESPONSE
+      res.status(400).json({
+        message: "No backup codes available for this account.",
+        success: false,
+      });
+      // RETURNING FROM THE FUNCTION
+      return;
+    }
+    // FINDING UNUSED BACKUP CODE
+    let backupCodeIndex = -1;
+    // ITERATING THROUGH BACKUP CODES
+    for (let i = 0; i < userWithCodes.backupCodes.length; i++) {
+      // GETTING CODE OBJECT
+      const codeObj = userWithCodes.backupCodes[i];
+      // CHECKING IF CODE OBJECT EXISTS AND IS NOT USED
+      if (codeObj && !codeObj.used && codeObj.code) {
+        // VERIFYING BACKUP CODE
+        const isValid = await verifyBackupCode(backupCode, codeObj.code);
+        // IF BACKUP CODE IS VALID, SET BACKUP CODE INDEX
+        if (isValid) {
+          // SETTING BACKUP CODE INDEX
+          backupCodeIndex = i;
+          // BREAKING OUT OF LOOP
+          break;
+        }
+      }
+    }
+    // IF BACKUP CODE NOT FOUND OR INVALID
+    if (backupCodeIndex === -1) {
+      // RETURNING ERROR RESPONSE
+      res.status(400).json({
+        message: "Invalid or already used backup code.",
+        success: false,
+      });
+      // RETURNING FROM THE FUNCTION
+      return;
+    }
+    // GETTING BACKUP CODE OBJECT AT INDEX
+    const backupCodeObj = userWithCodes.backupCodes[backupCodeIndex];
+    // CHECKING IF BACKUP CODE OBJECT EXISTS
+    if (!backupCodeObj) {
+      // RETURNING ERROR RESPONSE
+      res.status(400).json({
+        message: "Backup code not found.",
+        success: false,
+      });
+      // RETURNING FROM THE FUNCTION
+      return;
+    }
+    // MARKING BACKUP CODE AS USED
+    backupCodeObj.used = true;
+    // SETTING USED AT TO CURRENT DATE
+    backupCodeObj.usedAt = new Date();
+    // UPDATING USER
+    await userWithCodes.save();
+    // SETTING VERIFIED FLAG
+    twoFactorVerified = true;
+  }
+  // IF 2FA NOT VERIFIED, RETURN ERROR
+  if (!twoFactorVerified) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Invalid 2FA code. Please try again.",
+      success: false,
+    });
+    // RETURNING FROM THE FUNCTION
+    return;
+  }
+  // CLEANING UP ANY EXISTING REFRESH TOKENS (ALL TOKENS - REVOKED, EXPIRED, OR ACTIVE)
+  await RefreshToken.deleteMany({ userId: user._id }).exec();
+  // GENERATING UNIQUE TOKEN ID FOR DATABASE STORAGE
+  const tokenId = crypto.randomUUID();
+  // GENERATING ACCESS TOKEN
+  const accessToken = generateToken(user._id.toString());
+  // GENERATING REFRESH TOKEN WITH TOKEN ID
+  const refreshToken = generateRefreshToken(user._id.toString(), tokenId);
+  // CALCULATING REFRESH TOKEN EXPIRATION DATE
+  const expiresIn = process.env.RT_EXPIRES_IN || "30d";
+  // CALCULATING EXPIRATION DAYS
+  const expiresInDays = expiresIn.includes("d") ? parseInt(expiresIn) : 30;
+  // CALCULATING EXPIRATION DATE
+  const expiresAt = new Date();
+  // SETTING EXPIRATION DATE
+  expiresAt.setDate(expiresAt.getDate() + expiresInDays);
+  // STORING REFRESH TOKEN IN DATABASE
+  await RefreshToken.create({
+    tokenId,
+    userId: user._id,
+    expiresAt,
+    revoked: false,
+  });
+  // SETTING ACCESS TOKEN IN HTTP-ONLY COOKIE
+  const accessTokenExpiresIn = process.env.AT_EXPIRES_IN || "15m";
+  // CALCULATING ACCESS TOKEN MAX AGE
+  const accessTokenMaxAge = accessTokenExpiresIn.includes("m")
+    ? parseInt(accessTokenExpiresIn) * 60 * 1000
+    : 15 * 60 * 1000;
+  // SETTING ACCESS TOKEN IN HTTP-ONLY COOKIE
+  res.cookie("accessToken", accessToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: accessTokenMaxAge,
+  });
+  // SETTING REFRESH TOKEN IN HTTP-ONLY COOKIE
+  const refreshTokenMaxAge = expiresInDays * 24 * 60 * 60 * 1000;
+  // SETTING REFRESH TOKEN IN HTTP-ONLY COOKIE
+  res.cookie("refreshToken", refreshToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: refreshTokenMaxAge,
+  });
+  // RETURNING RESPONSE (NO TOKENS IN BODY FOR SECURITY)
+  res.status(200).json({
+    message: accountReactivated
+      ? "Login successful! Your account has been reactivated."
+      : "Login successful!",
+    success: true,
+    data: {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      accountReactivated: accountReactivated,
+    },
+  });
+  // RETURNING FROM THE FUNCTION
   return;
 });
 
