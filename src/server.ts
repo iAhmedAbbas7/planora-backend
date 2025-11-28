@@ -19,6 +19,7 @@ import profileRoute from "./routes/profile.route.js";
 import projectRoute from "./routes/project.route.js";
 import accountRoute from "./routes/account.route.js";
 import settingsRoute from "./routes/settings.route.js";
+import securityRoute from "./routes/security.route.js";
 import { initializeCronJobs } from "./jobs/cronJobs.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import notificationRoute from "./routes/notification.route.js";
@@ -90,6 +91,8 @@ app.use("/api/v1/profile", profileRoute);
 app.use("/api/v1/account", accountRoute);
 // <== PROJECT ROUTE ==>
 app.use("/api/v1/projects", projectRoute);
+// <== SECURITY ROUTE ==>
+app.use("/api/v1/security", securityRoute);
 // <== SETTINGS ROUTE ==>
 app.use("/api/v1/settings", settingsRoute);
 // <== NOTIFICATION ROUTE ==>
