@@ -12,6 +12,7 @@ import {
   resendVerificationCode,
   requestPasswordReset,
   resetPassword,
+  verify2FA,
 } from "../controllers/auth.controller.js";
 import express from "express";
 import passport from "../config/passport.js";
@@ -41,13 +42,15 @@ router.post("/login", login);
 router.post("/signup", signup);
 // USER LOGOUT ROUTE
 router.post("/logout", logout);
+// VERIFY 2FA ROUTE
+router.post("/verify-2fa", verify2FA);
 // REFRESH TOKEN ROUTE
 router.post("/refresh", refreshToken);
 // VERIFY EMAIL ROUTE
 router.post("/verify-email", verifyEmail);
 // RESET PASSWORD ROUTE
 router.post("/reset-password", resetPassword);
-// GET CURRENT USER ROUTE (REQUIRES AUTHENTICATION)
+// GET CURRENT USER ROUTE
 router.get("/me", isAuthenticated, getCurrentUser);
 // REQUEST PASSWORD RESET ROUTE
 router.post("/forgot-password", requestPasswordReset);
