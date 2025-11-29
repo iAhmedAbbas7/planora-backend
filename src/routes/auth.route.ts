@@ -13,6 +13,8 @@ import {
   requestPasswordReset,
   resetPassword,
   verify2FA,
+  requestAccountRecovery,
+  verifyAccountRecovery,
 } from "../controllers/auth.controller.js";
 import express from "express";
 import passport from "../config/passport.js";
@@ -56,6 +58,10 @@ router.get("/me", isAuthenticated, getCurrentUser);
 router.post("/forgot-password", requestPasswordReset);
 // RESEND VERIFICATION CODE ROUTE
 router.post("/resend-verification", resendVerificationCode);
+// VERIFY ACCOUNT RECOVERY ROUTE
+router.post("/account-recovery/verify", verifyAccountRecovery);
+// REQUEST ACCOUNT RECOVERY ROUTE
+router.post("/account-recovery/request", requestAccountRecovery);
 // GOOGLE OAUTH CALLBACK
 router.get("/google/callback", googleOAuthCallback, oauthCallback);
 // GITHUB OAUTH CALLBACK
