@@ -6,6 +6,8 @@ import {
   sendPasswordResetEmail,
   sendPasswordChangeConfirmation,
   sendAccountReactivated,
+  sendPasswordResetRecoveryEmail,
+  sendAccountRecoveryCode,
 } from "../utils/mailer.js";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
@@ -20,6 +22,7 @@ import { Request, Response, NextFunction } from "express";
 import { PendingUser } from "../models/pendingUser.model.js";
 import { RefreshToken } from "../models/refreshToken.model.js";
 import { PasswordReset } from "../models/passwordReset.model.js";
+import { AccountRecovery } from "../models/accountRecovery.model.js";
 
 /**
  * GENERATE JWT TOKEN
@@ -1083,6 +1086,8 @@ export const getCurrentUser = expressAsyncHandler(async (req, res) => {
       id: user._id.toString(),
       name: user.name,
       email: user.email,
+      recoveryEmail: user.recoveryEmail || null,
+      recoveryEmailVerified: user.recoveryEmailVerified || false,
     },
   });
   // RETURNING FROM FUNCTION
@@ -1366,8 +1371,8 @@ export const resendVerificationCode = expressAsyncHandler(async (req, res) => {
  */
 // <== REQUEST PASSWORD RESET ==>
 export const requestPasswordReset = expressAsyncHandler(async (req, res) => {
-  // GETTING EMAIL FROM REQUEST BODY
-  const { email } = req.body;
+  // GETTING EMAIL AND USE RECOVERY EMAIL FROM REQUEST BODY
+  const { email, useRecoveryEmail } = req.body;
   // VALIDATING REQUIRED FIELDS
   if (!email) {
     // RETURNING ERROR RESPONSE
@@ -1392,6 +1397,7 @@ export const requestPasswordReset = expressAsyncHandler(async (req, res) => {
   }
   // FINDING USER BY EMAIL
   const user = await User.findOne({ email: email.toLowerCase().trim() })
+    .select("recoveryEmail recoveryEmailVerified")
     .lean()
     .exec();
   // IF USER NOT FOUND, STILL RETURN SUCCESS (SECURITY: DON'T REVEAL IF EMAIL EXISTS)
@@ -1401,6 +1407,25 @@ export const requestPasswordReset = expressAsyncHandler(async (req, res) => {
       message:
         "If an account exists with this email, a password reset code has been sent.",
       success: true,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // CHECKING IF USER WANTS TO USE RECOVERY EMAIL
+  const shouldUseRecoveryEmail =
+    useRecoveryEmail === true &&
+    user.recoveryEmail &&
+    user.recoveryEmailVerified;
+  // IF USER REQUESTED RECOVERY EMAIL BUT DOESN'T HAVE ONE, RETURN ERROR
+  if (
+    useRecoveryEmail === true &&
+    (!user.recoveryEmail || !user.recoveryEmailVerified)
+  ) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message:
+        "You don't have a verified recovery email. Please use your primary email.",
+      success: false,
     });
     // RETURNING FROM FUNCTION
     return;
@@ -1454,8 +1479,19 @@ export const requestPasswordReset = expressAsyncHandler(async (req, res) => {
   });
   // SENDING PASSWORD RESET EMAIL
   try {
-    // SENDING PASSWORD RESET EMAIL
-    await sendPasswordResetEmail(user.email, resetCode, user.name);
+    // IF USING RECOVERY EMAIL, SEND TO RECOVERY EMAIL
+    if (shouldUseRecoveryEmail) {
+      // SENDING PASSWORD RESET EMAIL TO RECOVERY EMAIL
+      await sendPasswordResetRecoveryEmail(
+        user.recoveryEmail!,
+        user.name,
+        resetCode,
+        user.email
+      );
+    } else {
+      // SENDING PASSWORD RESET EMAIL TO PRIMARY EMAIL
+      await sendPasswordResetEmail(user.email, resetCode, user.name);
+    }
   } catch (error) {
     // DELETING PASSWORD RESET REQUEST IF EMAIL SENDING FAILS
     await passwordReset.deleteOne().exec();
@@ -1474,6 +1510,9 @@ export const requestPasswordReset = expressAsyncHandler(async (req, res) => {
     message:
       "If an account exists with this email, a password reset code has been sent.",
     success: true,
+    data: {
+      sentToRecoveryEmail: shouldUseRecoveryEmail,
+    },
   });
   // RETURNING FROM FUNCTION
   return;
@@ -1695,6 +1734,288 @@ export const resetPassword = expressAsyncHandler(async (req, res) => {
     message:
       "Password reset successfully! Please login with your new password.",
     success: true,
+  });
+  // RETURNING FROM FUNCTION
+  return;
+});
+
+/**
+ * REQUEST ACCOUNT RECOVERY
+ * SENDS RECOVERY CODE TO USER'S RECOVERY EMAIL
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== REQUEST ACCOUNT RECOVERY ==>
+export const requestAccountRecovery = expressAsyncHandler(async (req, res) => {
+  // GETTING RECOVERY EMAIL FROM REQUEST BODY
+  const { recoveryEmail } = req.body;
+  // VALIDATING REQUIRED FIELDS
+  if (!recoveryEmail) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Recovery email is required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // VALIDATING EMAIL FORMAT
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  // IF EMAIL FORMAT IS INVALID, RETURN ERROR RESPONSE
+  if (!emailRegex.test(recoveryEmail)) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Please provide a valid email address!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FINDING USER BY RECOVERY EMAIL
+  const user = await User.findOne({
+    recoveryEmail: recoveryEmail.toLowerCase().trim(),
+    recoveryEmailVerified: true,
+  })
+    .select("email recoveryEmail name")
+    .lean()
+    .exec();
+  // IF USER NOT FOUND, STILL RETURN SUCCESS (SECURITY: DON'T REVEAL IF EMAIL EXISTS)
+  if (!user) {
+    // RETURN SUCCESS TO PREVENT EMAIL ENUMERATION
+    res.status(200).json({
+      message:
+        "If an account exists with this recovery email, a recovery code has been sent.",
+      success: true,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // CHECKING IF ACCOUNT RECOVERY REQUEST ALREADY EXISTS
+  const existingRecovery = await AccountRecovery.findOne({
+    recoveryEmail: recoveryEmail.toLowerCase().trim(),
+  }).exec();
+  // RATE LIMITING: CHECK IF USER HAS EXCEEDED RESEND LIMIT (MAX 3 REQUESTS PER 15 MINUTES)
+  if (existingRecovery) {
+    // CALCULATING 15 MINUTES AGO
+    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+    // CHECK IF USER HAS EXCEEDED RESEND LIMIT
+    if (
+      existingRecovery.lastResendAt > fifteenMinutesAgo &&
+      existingRecovery.resendAttempts >= 3
+    ) {
+      // RETURN ERROR RESPONSE
+      res.status(429).json({
+        message:
+          "Too many recovery requests! Please wait 15 minutes before requesting again.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // RESET RESEND ATTEMPTS IF 15 MINUTES HAVE PASSED
+    if (existingRecovery.lastResendAt <= fifteenMinutesAgo) {
+      // RESET RESEND ATTEMPTS
+      existingRecovery.resendAttempts = 0;
+    }
+    // DELETE EXISTING RECOVERY REQUEST TO CREATE NEW ONE
+    await existingRecovery.deleteOne().exec();
+  }
+  // GENERATING 6-DIGIT RECOVERY CODE
+  const recoveryCode = Math.floor(100000 + Math.random() * 900000).toString();
+  // CALCULATING EXPIRY TIME (10 MINUTES FROM NOW)
+  const recoveryCodeExpiresAt = new Date();
+  // SETTING EXPIRY TIME TO 10 MINUTES
+  recoveryCodeExpiresAt.setMinutes(recoveryCodeExpiresAt.getMinutes() + 10);
+  // CREATING ACCOUNT RECOVERY REQUEST
+  const accountRecovery = await AccountRecovery.create({
+    recoveryEmail: recoveryEmail.toLowerCase().trim(),
+    primaryEmail: user.email.toLowerCase(),
+    recoveryCode,
+    recoveryCodeExpiresAt,
+    resendAttempts: existingRecovery ? existingRecovery.resendAttempts + 1 : 1,
+    lastResendAt: new Date(),
+    verificationAttempts: 0,
+    lastVerificationAttemptAt: new Date(),
+    used: false,
+  });
+  // SENDING ACCOUNT RECOVERY EMAIL
+  try {
+    // SENDING ACCOUNT RECOVERY EMAIL
+    await sendAccountRecoveryCode(
+      user.recoveryEmail!,
+      user.name,
+      recoveryCode,
+      user.email
+    );
+  } catch (error) {
+    // DELETING ACCOUNT RECOVERY REQUEST IF EMAIL SENDING FAILS
+    await accountRecovery.deleteOne().exec();
+    // LOGGING ERROR
+    console.error("Error sending account recovery email:", error);
+    // RETURNING ERROR RESPONSE
+    res.status(500).json({
+      message: "Failed to send account recovery email. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // RETURNING RESPONSE (SECURITY: DON'T REVEAL IF EMAIL EXISTS)
+  res.status(200).json({
+    message:
+      "If an account exists with this recovery email, a recovery code has been sent.",
+    success: true,
+  });
+  // RETURNING FROM FUNCTION
+  return;
+});
+
+/**
+ * VERIFY ACCOUNT RECOVERY CODE
+ * VERIFIES RECOVERY CODE AND RETURNS ACCOUNT INFO
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== VERIFY ACCOUNT RECOVERY ==>
+export const verifyAccountRecovery = expressAsyncHandler(async (req, res) => {
+  // GETTING DATA FROM REQUEST BODY
+  const { recoveryEmail, code } = req.body;
+  // VALIDATING REQUIRED FIELDS
+  if (!recoveryEmail || !code) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Recovery email and code are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // VALIDATING EMAIL FORMAT
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  // IF EMAIL IS NOT VALID, RETURN ERROR
+  if (!emailRegex.test(recoveryEmail)) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Please provide a valid email address!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // VALIDATING CODE FORMAT (6 DIGITS)
+  if (!/^\d{6}$/.test(code)) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Recovery code must be 6 digits!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FINDING ACCOUNT RECOVERY REQUEST
+  const accountRecovery = await AccountRecovery.findOne({
+    recoveryEmail: recoveryEmail.toLowerCase().trim(),
+  }).exec();
+  // IF RECOVERY REQUEST NOT FOUND, RETURN ERROR
+  if (!accountRecovery) {
+    // RETURNING ERROR RESPONSE
+    res.status(404).json({
+      message: "Recovery request not found. Please request a new code.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // CHECK IF CODE HAS EXPIRED
+  if (new Date() > accountRecovery.recoveryCodeExpiresAt) {
+    // DELETE EXPIRED RECOVERY REQUEST
+    await accountRecovery.deleteOne().exec();
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Recovery code has expired! Please request a new one.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // CHECK IF CODE HAS BEEN USED
+  if (accountRecovery.used) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Recovery code has already been used. Please request a new one.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // RATE LIMITING: CHECK VERIFICATION ATTEMPTS (MAX 5 ATTEMPTS PER 15 MINUTES)
+  const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+  if (
+    accountRecovery.lastVerificationAttemptAt > fifteenMinutesAgo &&
+    accountRecovery.verificationAttempts >= 5
+  ) {
+    // RETURN ERROR RESPONSE
+    res.status(429).json({
+      message:
+        "Too many verification attempts! Please wait 15 minutes before trying again.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // RESET VERIFICATION ATTEMPTS IF 15 MINUTES HAVE PASSED
+  if (accountRecovery.lastVerificationAttemptAt <= fifteenMinutesAgo) {
+    // RESET VERIFICATION ATTEMPTS
+    accountRecovery.verificationAttempts = 0;
+  }
+  // INCREMENT VERIFICATION ATTEMPTS
+  accountRecovery.verificationAttempts += 1;
+  // SET LAST VERIFICATION ATTEMPT TIMESTAMP
+  accountRecovery.lastVerificationAttemptAt = new Date();
+  // SAVING ACCOUNT RECOVERY REQUEST
+  await accountRecovery.save();
+  // CHECK IF CODE MATCHES
+  if (accountRecovery.recoveryCode !== code) {
+    res.status(400).json({
+      message: "Invalid recovery code! Please check and try again.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FINDING USER BY PRIMARY EMAIL
+  const user = await User.findOne({
+    email: accountRecovery.primaryEmail,
+  })
+    .select("email name")
+    .lean()
+    .exec();
+  // IF USER NOT FOUND, RETURN ERROR
+  if (!user) {
+    // DELETE ACCOUNT RECOVERY REQUEST
+    await accountRecovery.deleteOne().exec();
+    // RETURNING ERROR RESPONSE
+    res.status(404).json({
+      message: "User not found!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // MARKING RECOVERY CODE AS USED
+  accountRecovery.used = true;
+  // SAVING ACCOUNT RECOVERY REQUEST
+  await accountRecovery.save();
+  // RETURNING SUCCESS RESPONSE WITH ACCOUNT INFO
+  res.status(200).json({
+    message: "Account recovery verified successfully!",
+    success: true,
+    data: {
+      primaryEmail: user.email,
+      name: user.name,
+    },
   });
   // RETURNING FROM FUNCTION
   return;
