@@ -23,8 +23,11 @@ export const getAccount = expressAsyncHandler(async (req, res) => {
     // RETURNING FROM FUNCTION
     return;
   }
-  // FINDING USER
-  const user = await User.findById(userId).select("email").lean().exec();
+  // GETTING USER BY ID
+  const user = await User.findById(userId)
+    .select("email recoveryEmail recoveryEmailVerified")
+    .lean()
+    .exec();
   // IF USER NOT FOUND, RETURN 404 ERROR
   if (!user) {
     // RETURNING ERROR RESPONSE
@@ -40,6 +43,8 @@ export const getAccount = expressAsyncHandler(async (req, res) => {
     success: true,
     data: {
       email: user.email,
+      recoveryEmail: user.recoveryEmail || null,
+      recoveryEmailVerified: user.recoveryEmailVerified || false,
     },
   });
   // RETURNING FROM FUNCTION
