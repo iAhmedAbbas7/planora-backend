@@ -1704,3 +1704,467 @@ export const send2FABackupCodesEmail = async (
   // SEND EMAIL WITH RETRY
   return sendMailWithRetry(mailOptions);
 };
+
+/**
+ * SEND RECOVERY EMAIL VERIFICATION CODE
+ * @param toEmail - Recipient Email Address
+ * @param userName - User Name
+ * @param code - 6-Digit Verification Code
+ * @param type - Type of Operation (add, update, remove)
+ * @returns Promise with Email Result
+ */
+export const sendRecoveryEmailVerificationCode = async (
+  toEmail: string,
+  userName: string,
+  code: string,
+  type: "add" | "update" | "remove"
+): Promise<nodemailer.SentMessageInfo> => {
+  // PRIMARY COLOR
+  const primaryColor = "#7c3aed";
+  // PRIMARY COLOR LIGHT
+  const primaryColorLight = "#ede9fe";
+  // TYPE MESSAGES
+  const typeMessages = {
+    add: {
+      title: "Add Recovery Email",
+      action: "add a recovery email",
+      description: "You've requested to add a recovery email to your PlanOra account. This email will be used as a backup for account recovery and security notifications.",
+    },
+    update: {
+      title: "Update Recovery Email",
+      action: "update your recovery email",
+      description: "You've requested to update your recovery email address. Please verify the new recovery email address below.",
+    },
+    remove: {
+      title: "Remove Recovery Email",
+      action: "remove your recovery email",
+      description: "You've requested to remove your recovery email from your PlanOra account. Please verify your identity by entering the code below.",
+    },
+  };
+  // GET TYPE MESSAGE
+  const typeMessage = typeMessages[type];
+  // EMAIL CONTENT
+  const content = `
+    <h2 style="color: #1f2937; margin-bottom: 20px;">Hello ${userName}!</h2>
+    <p style="color: #4b5563; margin-bottom: 20px; font-size: 16px; line-height: 1.6;">
+      ${typeMessage.description}
+    </p>
+    <div style="background-color: ${primaryColorLight}; border-left: 4px solid ${primaryColor}; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #4b5563; font-size: 14px; margin: 0 0 10px 0; line-height: 1.6;">
+        <strong>Next Step:</strong> Please verify by entering the verification code below:
+      </p>
+    </div>
+    <div class="code-container">
+      <p style="color: #6b7280; font-size: 14px; margin-bottom: 10px;">Your verification code:</p>
+      <div class="verification-code">${code}</div>
+      <p style="color: #6b7280; font-size: 12px; margin-top: 10px;">
+        This code will expire in 10 minutes
+      </p>
+    </div>
+    <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #991b1b; font-size: 14px; margin: 0; line-height: 1.6;">
+        <strong>⚠️ Security Notice:</strong> If you didn't request to ${typeMessage.action}, please ignore this email and contact our support team immediately to secure your account.
+      </p>
+    </div>
+    <p style="color: #4b5563; margin-top: 30px;">
+      If you have any questions or need assistance, feel free to reach out to our support team.
+    </p>
+    <p style="color: #4b5563; margin-top: 20px;">
+      Best regards,<br/>
+      <strong>The PlanOra Team</strong>
+    </p>
+  `;
+  // MAIL OPTIONS
+  const mailOptions: nodemailer.SendMailOptions = {
+    from: `PlanOra <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject: `${typeMessage.title} - PlanOra`,
+    html: generateEmailTemplate(content, typeMessage.title),
+  };
+  // SEND EMAIL WITH RETRY
+  return sendMailWithRetry(mailOptions);
+};
+
+/**
+ * SEND RECOVERY EMAIL ADDED CONFIRMATION
+ * @param toEmail - Recipient Email Address (Primary Email)
+ * @param recoveryEmail - Recovery Email Address
+ * @param userName - User Name
+ * @param addedAt - Timestamp when recovery email was added
+ * @returns Promise with Email Result
+ */
+export const sendRecoveryEmailAdded = async (
+  toEmail: string,
+  recoveryEmail: string,
+  userName: string,
+  addedAt: Date
+): Promise<nodemailer.SentMessageInfo> => {
+  // PRIMARY COLOR
+  const primaryColor = "#7c3aed";
+  // PRIMARY COLOR LIGHT
+  const primaryColorLight = "#ede9fe";
+  // FRONTEND URL
+  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+  // FORMAT DATE
+  const formattedDate = addedAt.toLocaleString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
+  // EMAIL CONTENT
+  const content = `
+    <h2 style="color: #1f2937; margin-bottom: 20px;">Hello ${userName}!</h2>
+    <p style="color: #4b5563; margin-bottom: 20px; font-size: 16px; line-height: 1.6;">
+      ✅ Your recovery email has been successfully added to your PlanOra account!
+    </p>
+    <div style="background-color: ${primaryColorLight}; border-left: 4px solid ${primaryColor}; padding: 20px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #4b5563; font-size: 16px; font-weight: 600; margin: 0 0 15px 0;">
+        ✅ Recovery Email Added
+      </p>
+      <p style="color: #4b5563; font-size: 14px; margin: 0 0 10px 0; line-height: 1.6;">
+        <strong>Recovery Email:</strong> ${recoveryEmail}
+      </p>
+      <p style="color: #4b5563; font-size: 14px; margin: 0 0 10px 0; line-height: 1.6;">
+        <strong>Added on:</strong> ${formattedDate}
+      </p>
+      <p style="color: #4b5563; font-size: 14px; margin: 0; line-height: 1.6;">
+        Your recovery email is now active and can be used for account recovery and security notifications.
+      </p>
+    </div>
+    <p style="color: #4b5563; margin-bottom: 15px; font-size: 15px; line-height: 1.6;">
+      <strong>What can you do with a recovery email?</strong>
+    </p>
+    <ul style="color: #4b5563; margin-bottom: 20px; font-size: 14px; line-height: 1.8; padding-left: 20px;">
+      <li>Reset your password if you lose access to your primary email</li>
+      <li>Recover your account if your primary email is compromised</li>
+      <li>Receive security notifications about account changes</li>
+      <li>Verify your identity for sensitive account operations</li>
+    </ul>
+    <div style="text-align: center; margin: 30px 0;">
+      <a href="${frontendUrl}/settings?tab=Account" class="button" style="color: #ffffff !important; text-decoration: none !important; display: inline-block; padding: 14px 28px; background-color: ${primaryColor}; border-radius: 8px; font-weight: 600;">
+        Manage Account Settings
+      </a>
+    </div>
+    <p style="color: #4b5563; margin-top: 30px;">
+      If you have any questions or need assistance, feel free to reach out to our support team.
+    </p>
+    <p style="color: #4b5563; margin-top: 20px;">
+      Best regards,<br/>
+      <strong>The PlanOra Team</strong>
+    </p>
+  `;
+  // MAIL OPTIONS
+  const mailOptions: nodemailer.SendMailOptions = {
+    from: `PlanOra <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject: `Recovery Email Added - PlanOra`,
+    html: generateEmailTemplate(content, "Recovery Email Added"),
+  };
+  // SEND EMAIL WITH RETRY
+  return sendMailWithRetry(mailOptions);
+};
+
+/**
+ * SEND RECOVERY EMAIL UPDATED CONFIRMATION
+ * @param toEmail - Recipient Email Address (Primary Email)
+ * @param oldRecoveryEmail - Old Recovery Email Address
+ * @param newRecoveryEmail - New Recovery Email Address
+ * @param userName - User Name
+ * @param updatedAt - Timestamp when recovery email was updated
+ * @returns Promise with Email Result
+ */
+export const sendRecoveryEmailUpdated = async (
+  toEmail: string,
+  oldRecoveryEmail: string,
+  newRecoveryEmail: string,
+  userName: string,
+  updatedAt: Date
+): Promise<nodemailer.SentMessageInfo> => {
+  // PRIMARY COLOR
+  const primaryColor = "#7c3aed";
+  // PRIMARY COLOR LIGHT
+  const primaryColorLight = "#ede9fe";
+  // FRONTEND URL
+  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+  // FORMAT DATE
+  const formattedDate = updatedAt.toLocaleString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
+  // EMAIL CONTENT
+  const content = `
+    <h2 style="color: #1f2937; margin-bottom: 20px;">Hello ${userName}!</h2>
+    <p style="color: #4b5563; margin-bottom: 20px; font-size: 16px; line-height: 1.6;">
+      ✅ Your recovery email has been successfully updated!
+    </p>
+    <div style="background-color: ${primaryColorLight}; border-left: 4px solid ${primaryColor}; padding: 20px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #4b5563; font-size: 16px; font-weight: 600; margin: 0 0 15px 0;">
+        ✅ Recovery Email Updated
+      </p>
+      <p style="color: #4b5563; font-size: 14px; margin: 0 0 10px 0; line-height: 1.6;">
+        <strong>Old Recovery Email:</strong> ${oldRecoveryEmail}
+      </p>
+      <p style="color: #4b5563; font-size: 14px; margin: 0 0 10px 0; line-height: 1.6;">
+        <strong>New Recovery Email:</strong> ${newRecoveryEmail}
+      </p>
+      <p style="color: #4b5563; font-size: 14px; margin: 0 0 10px 0; line-height: 1.6;">
+        <strong>Updated on:</strong> ${formattedDate}
+      </p>
+      <p style="color: #4b5563; font-size: 14px; margin: 0; line-height: 1.6;">
+        Your new recovery email is now active and will be used for account recovery and security notifications.
+      </p>
+    </div>
+    <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #991b1b; font-size: 14px; margin: 0; line-height: 1.6;">
+        <strong>⚠️ Security Notice:</strong> If you didn't update your recovery email, please contact our support team immediately to secure your account.
+      </p>
+    </div>
+    <div style="text-align: center; margin: 30px 0;">
+      <a href="${frontendUrl}/settings?tab=Account" class="button" style="color: #ffffff !important; text-decoration: none !important; display: inline-block; padding: 14px 28px; background-color: ${primaryColor}; border-radius: 8px; font-weight: 600;">
+        Manage Account Settings
+      </a>
+    </div>
+    <p style="color: #4b5563; margin-top: 30px;">
+      If you have any questions or need assistance, feel free to reach out to our support team.
+    </p>
+    <p style="color: #4b5563; margin-top: 20px;">
+      Best regards,<br/>
+      <strong>The PlanOra Team</strong>
+    </p>
+  `;
+  // MAIL OPTIONS
+  const mailOptions: nodemailer.SendMailOptions = {
+    from: `PlanOra <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject: `Recovery Email Updated - PlanOra`,
+    html: generateEmailTemplate(content, "Recovery Email Updated"),
+  };
+  // SEND EMAIL WITH RETRY
+  return sendMailWithRetry(mailOptions);
+};
+
+/**
+ * SEND RECOVERY EMAIL REMOVED CONFIRMATION
+ * @param toEmail - Recipient Email Address (Primary Email)
+ * @param userName - User Name
+ * @param removedAt - Timestamp when recovery email was removed
+ * @returns Promise with Email Result
+ */
+export const sendRecoveryEmailRemoved = async (
+  toEmail: string,
+  userName: string,
+  removedAt: Date
+): Promise<nodemailer.SentMessageInfo> => {
+  // PRIMARY COLOR
+  const primaryColor = "#7c3aed";
+  // PRIMARY COLOR LIGHT
+  const primaryColorLight = "#ede9fe";
+  // FRONTEND URL
+  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+  // FORMAT DATE
+  const formattedDate = removedAt.toLocaleString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
+  // EMAIL CONTENT
+  const content = `
+    <h2 style="color: #1f2937; margin-bottom: 20px;">Hello ${userName}!</h2>
+    <p style="color: #4b5563; margin-bottom: 20px; font-size: 16px; line-height: 1.6;">
+      Your recovery email has been successfully removed from your PlanOra account.
+    </p>
+    <div style="background-color: ${primaryColorLight}; border-left: 4px solid ${primaryColor}; padding: 20px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #4b5563; font-size: 16px; font-weight: 600; margin: 0 0 15px 0;">
+        ✅ Recovery Email Removed
+      </p>
+      <p style="color: #4b5563; font-size: 14px; margin: 0 0 10px 0; line-height: 1.6;">
+        <strong>Removed on:</strong> ${formattedDate}
+      </p>
+      <p style="color: #4b5563; font-size: 14px; margin: 0; line-height: 1.6;">
+        Your recovery email has been removed and will no longer be used for account recovery or security notifications.
+      </p>
+    </div>
+    <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #991b1b; font-size: 14px; margin: 0; line-height: 1.6;">
+        <strong>⚠️ Security Reminder:</strong> Without a recovery email, you may have difficulty recovering your account if you lose access to your primary email. We recommend adding a recovery email for better account security.
+      </p>
+    </div>
+    <div style="text-align: center; margin: 30px 0;">
+      <a href="${frontendUrl}/settings?tab=Account" class="button" style="color: #ffffff !important; text-decoration: none !important; display: inline-block; padding: 14px 28px; background-color: ${primaryColor}; border-radius: 8px; font-weight: 600;">
+        Add Recovery Email
+      </a>
+    </div>
+    <p style="color: #4b5563; margin-top: 30px;">
+      If you have any questions or need assistance, feel free to reach out to our support team.
+    </p>
+    <p style="color: #4b5563; margin-top: 20px;">
+      Best regards,<br/>
+      <strong>The PlanOra Team</strong>
+    </p>
+  `;
+  // MAIL OPTIONS
+  const mailOptions: nodemailer.SendMailOptions = {
+    from: `PlanOra <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject: `Recovery Email Removed - PlanOra`,
+    html: generateEmailTemplate(content, "Recovery Email Removed"),
+  };
+  // SEND EMAIL WITH RETRY
+  return sendMailWithRetry(mailOptions);
+};
+
+/**
+ * SEND PASSWORD RESET CODE TO RECOVERY EMAIL
+ * @param toEmail - Recipient Email Address (Recovery Email)
+ * @param userName - User Name
+ * @param code - 6-Digit Reset Code
+ * @param primaryEmail - Primary Email Address
+ * @returns Promise with Email Result
+ */
+export const sendPasswordResetRecoveryEmail = async (
+  toEmail: string,
+  userName: string,
+  code: string,
+  primaryEmail: string
+): Promise<nodemailer.SentMessageInfo> => {
+  // PRIMARY COLOR
+  const primaryColor = "#7c3aed";
+  // PRIMARY COLOR LIGHT
+  const primaryColorLight = "#ede9fe";
+  // FRONTEND URL
+  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+  // EMAIL CONTENT
+  const content = `
+    <h2 style="color: #1f2937; margin-bottom: 20px;">Hello ${userName}!</h2>
+    <p style="color: #4b5563; margin-bottom: 20px; font-size: 16px; line-height: 1.6;">
+      You've requested to reset your password for your PlanOra account. Since you're using your recovery email, we're sending the reset code here.
+    </p>
+    <div style="background-color: ${primaryColorLight}; border-left: 4px solid ${primaryColor}; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #4b5563; font-size: 14px; margin: 0 0 10px 0; line-height: 1.6;">
+        <strong>Account:</strong> ${primaryEmail}
+      </p>
+      <p style="color: #4b5563; font-size: 14px; margin: 0; line-height: 1.6;">
+        <strong>Recovery Email:</strong> ${toEmail}
+      </p>
+    </div>
+    <div class="code-container">
+      <p style="color: #6b7280; font-size: 14px; margin-bottom: 10px;">Your password reset code:</p>
+      <div class="verification-code">${code}</div>
+      <p style="color: #6b7280; font-size: 12px; margin-top: 10px;">
+        This code will expire in 2 minutes
+      </p>
+    </div>
+    <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #991b1b; font-size: 14px; margin: 0; line-height: 1.6;">
+        <strong>⚠️ Security Notice:</strong> If you didn't request a password reset, please ignore this email and contact our support team immediately to secure your account.
+      </p>
+    </div>
+    <div style="text-align: center; margin: 30px 0;">
+      <a href="${frontendUrl}/forgot-password" class="button" style="color: #ffffff !important; text-decoration: none !important; display: inline-block; padding: 14px 28px; background-color: ${primaryColor}; border-radius: 8px; font-weight: 600;">
+        Reset Password
+      </a>
+    </div>
+    <p style="color: #4b5563; margin-top: 30px;">
+      If you have any questions or need assistance, feel free to reach out to our support team.
+    </p>
+    <p style="color: #4b5563; margin-top: 20px;">
+      Best regards,<br/>
+      <strong>The PlanOra Team</strong>
+    </p>
+  `;
+  // MAIL OPTIONS
+  const mailOptions: nodemailer.SendMailOptions = {
+    from: `PlanOra <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject: `Password Reset Code - PlanOra`,
+    html: generateEmailTemplate(content, "Password Reset"),
+  };
+  // SEND EMAIL WITH RETRY
+  return sendMailWithRetry(mailOptions);
+};
+
+/**
+ * SEND ACCOUNT RECOVERY CODE TO RECOVERY EMAIL
+ * @param toEmail - Recipient Email Address (Recovery Email)
+ * @param userName - User Name
+ * @param code - 6-Digit Recovery Code
+ * @param primaryEmail - Primary Email Address
+ * @returns Promise with Email Result
+ */
+export const sendAccountRecoveryCode = async (
+  toEmail: string,
+  userName: string,
+  code: string,
+  primaryEmail: string
+): Promise<nodemailer.SentMessageInfo> => {
+  // PRIMARY COLOR
+  const primaryColor = "#7c3aed";
+  // PRIMARY COLOR LIGHT
+  const primaryColorLight = "#ede9fe";
+  // FRONTEND URL
+  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+  // EMAIL CONTENT
+  const content = `
+    <h2 style="color: #1f2937; margin-bottom: 20px;">Hello ${userName}!</h2>
+    <p style="color: #4b5563; margin-bottom: 20px; font-size: 16px; line-height: 1.6;">
+      You've requested to recover your PlanOra account using your recovery email. This code will help you regain access to your account.
+    </p>
+    <div style="background-color: ${primaryColorLight}; border-left: 4px solid ${primaryColor}; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #4b5563; font-size: 14px; margin: 0 0 10px 0; line-height: 1.6;">
+        <strong>Account:</strong> ${primaryEmail}
+      </p>
+      <p style="color: #4b5563; font-size: 14px; margin: 0; line-height: 1.6;">
+        <strong>Recovery Email:</strong> ${toEmail}
+      </p>
+    </div>
+    <div class="code-container">
+      <p style="color: #6b7280; font-size: 14px; margin-bottom: 10px;">Your account recovery code:</p>
+      <div class="verification-code">${code}</div>
+      <p style="color: #6b7280; font-size: 12px; margin-top: 10px;">
+        This code will expire in 10 minutes
+      </p>
+    </div>
+    <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #991b1b; font-size: 14px; margin: 0; line-height: 1.6;">
+        <strong>⚠️ Security Notice:</strong> If you didn't request account recovery, please ignore this email and contact our support team immediately to secure your account.
+      </p>
+    </div>
+    <p style="color: #4b5563; margin-top: 30px; font-size: 14px; line-height: 1.6;">
+      <strong>What happens next?</strong> After verifying this code, you'll be able to regain access to your account and update your account settings if needed.
+    </p>
+    <div style="text-align: center; margin: 30px 0;">
+      <a href="${frontendUrl}/login" class="button" style="color: #ffffff !important; text-decoration: none !important; display: inline-block; padding: 14px 28px; background-color: ${primaryColor}; border-radius: 8px; font-weight: 600;">
+        Recover Account
+      </a>
+    </div>
+    <p style="color: #4b5563; margin-top: 30px;">
+      If you have any questions or need assistance, feel free to reach out to our support team.
+    </p>
+    <p style="color: #4b5563; margin-top: 20px;">
+      Best regards,<br/>
+      <strong>The PlanOra Team</strong>
+    </p>
+  `;
+  // MAIL OPTIONS
+  const mailOptions: nodemailer.SendMailOptions = {
+    from: `PlanOra <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject: `Account Recovery Code - PlanOra`,
+    html: generateEmailTemplate(content, "Account Recovery"),
+  };
+  // SEND EMAIL WITH RETRY
+  return sendMailWithRetry(mailOptions);
+};
