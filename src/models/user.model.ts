@@ -118,6 +118,25 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // RECOVERY EMAIL FIELD
+    recoveryEmail: {
+      type: String,
+      default: null,
+      trim: true,
+      lowercase: true,
+      sparse: true,
+      match: [/^\S+@\S+\.\S+$/, "Please provide a valid email address"],
+    },
+    // RECOVERY EMAIL VERIFIED FIELD
+    recoveryEmailVerified: {
+      type: Boolean,
+      default: false,
+    },
+    // RECOVERY EMAIL VERIFIED AT TIMESTAMP
+    recoveryEmailVerifiedAt: {
+      type: Date,
+      default: null,
+    },
   },
   { timestamps: true }
 );
@@ -153,6 +172,11 @@ userSchema.index({ flaggedForDeletion: 1, flaggedAt: 1 });
  */
 //<== INDEX FOR TWO-FACTOR AUTHENTICATION STATUS ==>
 userSchema.index({ isTwoFactorEnabled: 1 });
+/**
+ * INDEX FOR RECOVERY EMAIL
+ */
+//<== INDEX FOR RECOVERY EMAIL ==>
+userSchema.index({ recoveryEmail: 1 }, { sparse: true });
 
 // <== EXPORTING THE USER MODEL ==>
 export const User = mongoose.model("User", userSchema);
