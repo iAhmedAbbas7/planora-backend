@@ -12,18 +12,22 @@ import {
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import mongoose from "mongoose";
 import speakeasy from "speakeasy";
 import passport from "../config/passport.js";
 import { User } from "../models/user.model.js";
+import { Session } from "../models/session.model.js";
 import { decryptSecret } from "../utils/encryption.js";
 import expressAsyncHandler from "express-async-handler";
 import { verifyBackupCode } from "../utils/encryption.js";
 import { Request, Response, NextFunction } from "express";
+import { createSession } from "../utils/sessionManager.js";
 import { PendingUser } from "../models/pendingUser.model.js";
+import { getLocationFromIp } from "../utils/ipGeolocation.js";
 import { RefreshToken } from "../models/refreshToken.model.js";
 import { PasswordReset } from "../models/passwordReset.model.js";
 import { AccountRecovery } from "../models/accountRecovery.model.js";
-
+import { extractDeviceInfo, getIpAddress } from "../utils/deviceFingerprint.js";
 /**
  * GENERATE JWT TOKEN
  * @param userId - User ID
@@ -77,7 +81,7 @@ export const generateRefreshToken = (
 // <== USER SIGNUP ==>
 export const signup = expressAsyncHandler(async (req, res) => {
   // GETTING USER DATA FROM REQUEST BODY
-  const { name, email, password, acceptedTerms } = req.body;
+  const { name, email, password, acceptedTerms, phoneNumber } = req.body;
   // VALIDATING REQUIRED FIELDS
   if (!name || !email || !password) {
     // RETURNING ERROR RESPONSE
@@ -160,6 +164,44 @@ export const signup = expressAsyncHandler(async (req, res) => {
     // RETURNING FROM FUNCTION
     return;
   }
+  // VALIDATING PHONE NUMBER IF PROVIDED
+  let formattedPhoneNumber: string | null = null;
+  // IF PHONE NUMBER IS PROVIDED
+  if (phoneNumber) {
+    // TRIM PHONE NUMBER
+    const trimmedPhone = phoneNumber.trim();
+    // VALIDATE PHONE NUMBER FORMAT
+    const phoneRegex = /^\+[1-9]\d{1,14}$/;
+    // IF PHONE NUMBER FORMAT IS INVALID, RETURN 400 ERROR
+    if (!phoneRegex.test(trimmedPhone)) {
+      // RETURNING ERROR RESPONSE
+      res.status(400).json({
+        message:
+          "Please provide a valid phone number with country code (e.g., +1234567890)!",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // SET FORMATTED PHONE NUMBER
+    formattedPhoneNumber = trimmedPhone;
+    // CHECK IF PHONE NUMBER ALREADY EXISTS
+    const existingUserWithPhone = await User.findOne({
+      phoneNumber: formattedPhoneNumber,
+    })
+      .lean()
+      .exec();
+    // IF PHONE NUMBER ALREADY EXISTS, RETURN 409 ERROR
+    if (existingUserWithPhone) {
+      // RETURNING ERROR RESPONSE
+      res.status(409).json({
+        message: "User with this phone number already exists!",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+  }
   // CHECKING IF USER ALREADY EXISTS (VERIFIED USER)
   const existingUser = await User.findOne({ email }).lean().exec();
   // IF USER ALREADY EXISTS, RETURN 409 ERROR
@@ -200,6 +242,7 @@ export const signup = expressAsyncHandler(async (req, res) => {
     verificationCodeExpiresAt,
     resendAttempts: 0,
     lastResendAt: new Date(),
+    phoneNumber: formattedPhoneNumber,
   });
   // SENDING VERIFICATION EMAIL
   try {
@@ -315,6 +358,95 @@ export const login = expressAsyncHandler(async (req, res) => {
       return;
     }
   }
+  // CHECK IF USER HAS PREVIOUS SESSIONS (ACTIVE OR REVOKED)
+  const hasPreviousSessions = await Session.countDocuments({
+    userId: user._id,
+    expiresAt: { $gt: new Date() },
+  }).exec();
+  // IF USER HAS PREVIOUS SESSIONS, CHECK DEVICE MATCHING
+  if (hasPreviousSessions > 0) {
+    // EXTRACT DEVICE INFO FROM REQUEST
+    const deviceInfo = extractDeviceInfo(req);
+    // GET IP ADDRESS FROM REQUEST
+    const ipAddress = getIpAddress(req);
+    // GET LOCATION INFO FROM IP
+    const locationInfo = await getLocationFromIp(ipAddress);
+    // FIND ALL PREVIOUS SESSIONS (ACTIVE AND REVOKED)
+    const allSessions = await Session.find({
+      userId: user._id,
+      expiresAt: { $gt: new Date() },
+    })
+      .lean()
+      .exec();
+    // CHECK IF THIS IS THE SAME DEVICE AS ANY PREVIOUS SESSION
+    const isSameDevice = allSessions.some((session) => {
+      // CHECK IF THE DEVICE IS THE SAME BY CHECKING THE DEVICE FINGERPRINT (BROWSER, OS, DEVICE TYPE)
+      const deviceMatch =
+        session.browserName === deviceInfo.browserName &&
+        session.operatingSystem === deviceInfo.operatingSystem &&
+        session.deviceType === deviceInfo.deviceType;
+      // CHECK IF THE IP ADDRESS IS THE SAME
+      const ipMatch = session.ipAddress === ipAddress;
+      // CHECK IF THE LOCATION IS THE SAME
+      const locationMatch =
+        session.locationCountry === (locationInfo?.country || "Unknown") &&
+        session.locationCity === (locationInfo?.city || "Unknown");
+      // RETURN TRUE IF THE DEVICE IS THE SAME
+      return deviceMatch && (ipMatch || locationMatch);
+    });
+    // CHECK IF THERE ARE ACTIVE SESSIONS FROM OTHER DEVICES
+    const hasActiveOtherDevices = await Session.countDocuments({
+      userId: user._id,
+      revoked: false,
+      expiresAt: { $gt: new Date() },
+      $or: [
+        { browserName: { $ne: deviceInfo.browserName } },
+        { operatingSystem: { $ne: deviceInfo.operatingSystem } },
+        { deviceType: { $ne: deviceInfo.deviceType } },
+      ],
+    }).exec();
+    // CHECK IF SAME DEVICE WAS PREVIOUSLY TRUSTED
+    const wasDeviceTrusted = allSessions.some((session) => {
+      const deviceMatch =
+        session.browserName === deviceInfo.browserName &&
+        session.operatingSystem === deviceInfo.operatingSystem &&
+        session.deviceType === deviceInfo.deviceType;
+      const ipMatch = session.ipAddress === ipAddress;
+      const locationMatch =
+        session.locationCountry === (locationInfo?.country || "Unknown") &&
+        session.locationCity === (locationInfo?.city || "Unknown");
+      return (
+        deviceMatch && (ipMatch || locationMatch) && session.isTrusted === true
+      );
+    });
+    // REQUIRE DEVICE VERIFICATION IF THE DEVICE IS NOT THE SAME, THERE ARE ACTIVE SESSIONS FROM OTHER DEVICES, OR THE DEVICE IS NOT PREVIOUSLY TRUSTED
+    if (!isSameDevice || hasActiveOtherDevices > 0 || !wasDeviceTrusted) {
+      // RETURNING RESPONSE REQUIRING DEVICE VERIFICATION
+      res.status(200).json({
+        message:
+          "Device verification required. Please verify your device to continue.",
+        success: true,
+        requiresDeviceVerification: true,
+        requires2FA: user.isTwoFactorEnabled || false,
+        data: {
+          email: user.email,
+          deviceInfo: {
+            deviceType: deviceInfo.deviceType,
+            deviceName: deviceInfo.deviceName,
+            browserName: deviceInfo.browserName,
+            operatingSystem: deviceInfo.operatingSystem,
+            location: {
+              country: locationInfo?.country || "Unknown",
+              city: locationInfo?.city || "Unknown",
+              region: locationInfo?.region || "Unknown",
+            },
+          },
+        },
+      });
+      // RETURNING FROM THE FUNCTION
+      return;
+    }
+  }
   // CHECK IF 2FA IS ENABLED
   if (user.isTwoFactorEnabled) {
     // RETURNING RESPONSE REQUIRING 2FA
@@ -330,13 +462,38 @@ export const login = expressAsyncHandler(async (req, res) => {
     // RETURNING FROM THE FUNCTION
     return;
   }
-  // CLEANING UP ANY EXISTING REFRESH TOKENS (ALL TOKENS - REVOKED, EXPIRED, OR ACTIVE)
-  await RefreshToken.deleteMany({ userId: user._id }).exec();
-  // GENERATING UNIQUE TOKEN ID FOR DATABASE STORAGE
+  // EXTRACT DEVICE INFO FROM REQUEST
+  const deviceInfo = extractDeviceInfo(req);
+  // GET IP ADDRESS FROM REQUEST
+  const ipAddress = getIpAddress(req);
+  // GET LOCATION INFO FROM IP ADDRESS
+  const locationInfo = await getLocationFromIp(ipAddress);
+  // CREATE SESSION
+  const session = await createSession(
+    user._id,
+    deviceInfo,
+    ipAddress,
+    locationInfo || {
+      country: "Unknown",
+      city: "Unknown",
+      region: "Unknown",
+      countryCode: "XX",
+    },
+    true,
+    false,
+    false,
+    ""
+  );
+  // CLEAN UP REFRESH TOKENS FOR OTHER SESSIONS (NOT THE CURRENT ONE)
+  await RefreshToken.deleteMany({
+    userId: user._id,
+    sessionId: { $ne: session._id },
+  }).exec();
+  // GENERATE UNIQUE TOKEN ID
   const tokenId = crypto.randomUUID();
-  // GENERATING ACCESS TOKEN
+  // GENERATE ACCESS TOKEN
   const accessToken = generateToken(user._id.toString());
-  // GENERATING REFRESH TOKEN WITH TOKEN ID
+  // GENERATE REFRESH TOKEN WITH TOKEN ID
   const refreshToken = generateRefreshToken(user._id.toString(), tokenId);
   // CALCULATING REFRESH TOKEN EXPIRATION DATE
   const expiresIn = process.env.RT_EXPIRES_IN || "30d";
@@ -346,10 +503,11 @@ export const login = expressAsyncHandler(async (req, res) => {
   const expiresAt = new Date();
   // SETTING EXPIRATION DATE
   expiresAt.setDate(expiresAt.getDate() + expiresInDays);
-  // STORING REFRESH TOKEN IN DATABASE
+  // STORE REFRESH TOKEN IN DATABASE WITH SESSION ID
   await RefreshToken.create({
     tokenId,
     userId: user._id,
+    sessionId: session._id,
     expiresAt,
     revoked: false,
   });
@@ -358,7 +516,7 @@ export const login = expressAsyncHandler(async (req, res) => {
   // CALCULATING ACCESS TOKEN MAX AGE
   const accessTokenMaxAge = accessTokenExpiresIn.includes("m")
     ? parseInt(accessTokenExpiresIn) * 60 * 1000
-    : 15 * 60 * 1000; // Default 15 minutes
+    : 15 * 60 * 1000;
   // SETTING ACCESS TOKEN IN HTTP-ONLY COOKIE
   res.cookie("accessToken", accessToken, {
     httpOnly: true,
@@ -400,7 +558,7 @@ export const login = expressAsyncHandler(async (req, res) => {
 // <== VERIFY 2FA AND COMPLETE LOGIN ==>
 export const verify2FA = expressAsyncHandler(async (req, res) => {
   // GETTING DATA FROM REQUEST BODY
-  const { email, password, token, twoFactorToken, backupCode } = req.body;
+  const { email, password, token, backupCode } = req.body;
   // VALIDATING REQUIRED FIELDS
   if (!email || !password) {
     // RETURNING ERROR RESPONSE
@@ -616,26 +774,52 @@ export const verify2FA = expressAsyncHandler(async (req, res) => {
     // RETURNING FROM THE FUNCTION
     return;
   }
-  // CLEANING UP ANY EXISTING REFRESH TOKENS (ALL TOKENS - REVOKED, EXPIRED, OR ACTIVE)
-  await RefreshToken.deleteMany({ userId: user._id }).exec();
-  // GENERATING UNIQUE TOKEN ID FOR DATABASE STORAGE
+  // EXTRACT DEVICE INFO FROM REQUEST
+  const deviceInfo = extractDeviceInfo(req);
+  // GET IP ADDRESS FROM REQUEST
+  const ipAddress = getIpAddress(req);
+  // GET LOCATION INFO FROM IP
+  const locationInfo = await getLocationFromIp(ipAddress);
+  // CREATE SESSION FOR 2FA LOGIN
+  const session = await createSession(
+    user._id,
+    deviceInfo,
+    ipAddress,
+    locationInfo || {
+      country: "Unknown",
+      city: "Unknown",
+      region: "Unknown",
+      countryCode: "XX",
+    },
+    true,
+    false,
+    false,
+    ""
+  );
+  // CLEAN UP REFRESH TOKENS FOR OTHER SESSIONS (NOT THE CURRENT ONE)
+  await RefreshToken.deleteMany({
+    userId: user._id,
+    sessionId: { $ne: session._id },
+  }).exec();
+  // GENERATE UNIQUE TOKEN ID
   const tokenId = crypto.randomUUID();
-  // GENERATING ACCESS TOKEN
+  // GENERATE ACCESS TOKEN
   const accessToken = generateToken(user._id.toString());
-  // GENERATING REFRESH TOKEN WITH TOKEN ID
+  // GENERATE REFRESH TOKEN WITH TOKEN ID
   const refreshToken = generateRefreshToken(user._id.toString(), tokenId);
-  // CALCULATING REFRESH TOKEN EXPIRATION DATE
+  // CALCULATE REFRESH TOKEN EXPIRATION DATE
   const expiresIn = process.env.RT_EXPIRES_IN || "30d";
-  // CALCULATING EXPIRATION DAYS
+  // CALCULATE EXPIRATION DAYS
   const expiresInDays = expiresIn.includes("d") ? parseInt(expiresIn) : 30;
-  // CALCULATING EXPIRATION DATE
+  // CALCULATE EXPIRATION DATE
   const expiresAt = new Date();
   // SETTING EXPIRATION DATE
   expiresAt.setDate(expiresAt.getDate() + expiresInDays);
-  // STORING REFRESH TOKEN IN DATABASE
+  // STORING REFRESH TOKEN IN DATABASE WITH SESSION ID
   await RefreshToken.create({
     tokenId,
     userId: user._id,
+    sessionId: session._id,
     expiresAt,
     revoked: false,
   });
@@ -747,6 +931,8 @@ export const refreshToken = expressAsyncHandler(async (req, res) => {
     // RETURNING FROM FUNCTION
     return;
   }
+  // GET SESSION ID FROM STORED TOKEN (IF EXISTS)
+  const sessionId = storedToken.sessionId || null;
   // DELETING OLD REFRESH TOKEN BEING USED FOR REFRESH
   await RefreshToken.deleteOne({ _id: storedToken._id }).exec();
   // CLEANING UP ANY OTHER REVOKED OR EXPIRED TOKENS FOR THIS USER
@@ -768,10 +954,11 @@ export const refreshToken = expressAsyncHandler(async (req, res) => {
   const expiresAt = new Date();
   // SETTING EXPIRATION DATE
   expiresAt.setDate(expiresAt.getDate() + expiresInDays);
-  // STORING NEW REFRESH TOKEN IN DATABASE
+  // STORING NEW REFRESH TOKEN IN DATABASE WITH SESSION ID
   await RefreshToken.create({
     tokenId: newTokenId,
     userId,
+    sessionId: sessionId,
     expiresAt,
     revoked: false,
   });
@@ -780,7 +967,7 @@ export const refreshToken = expressAsyncHandler(async (req, res) => {
   // CALCULATING ACCESS TOKEN MAX AGE
   const accessTokenMaxAge = accessTokenExpiresIn.includes("m")
     ? parseInt(accessTokenExpiresIn) * 60 * 1000
-    : 15 * 60 * 1000; // Default 15 minutes
+    : 15 * 60 * 1000;
   // SETTING NEW ACCESS TOKEN IN HTTP-ONLY COOKIE
   res.cookie("accessToken", newAccessToken, {
     httpOnly: true,
@@ -813,11 +1000,70 @@ export const refreshToken = expressAsyncHandler(async (req, res) => {
  */
 // <== USER LOGOUT ==>
 export const logout = expressAsyncHandler(async (req, res) => {
-  // GETTING USER ID FROM REQUEST (IF AUTHENTICATED)
-  const userId = (req as any).id;
-  // IF USER ID EXISTS, DELETE ALL REFRESH TOKENS FOR THIS USER
-  if (userId) {
-    await RefreshToken.deleteMany({ userId }).exec();
+  // GETTING REFRESH TOKEN FROM COOKIES
+  const refreshTokenCookie = req.cookies.refreshToken;
+  // IF REFRESH TOKEN EXISTS, REVOKE CURRENT SESSION AND ITS REFRESH TOKENS
+  if (refreshTokenCookie) {
+    try {
+      // DECODE REFRESH TOKEN TO GET USER ID AND TOKEN ID
+      const decoded: any = jwt.verify(
+        refreshTokenCookie,
+        process.env.RT_SECRET!
+      );
+      // GET USER ID FROM DECODED TOKEN
+      const userId = decoded.userId;
+      // GET TOKEN ID FROM DECODED TOKEN
+      const tokenId = decoded.tokenId;
+      // IF USER ID OR TOKEN ID NOT FOUND, RETURN ERROR
+      if (!userId || !tokenId) {
+        // RETURN ERROR RESPONSE
+        res.status(401).json({
+          message: "Invalid refresh token!",
+          success: false,
+        });
+        // RETURN FROM FUNCTION
+        return;
+      }
+      // CONVERT USER ID TO OBJECT ID
+      const userIdObjectId =
+        typeof userId === "string"
+          ? new mongoose.Types.ObjectId(userId)
+          : userId;
+      // FIND REFRESH TOKEN IN DATABASE TO GET SESSION ID
+      const storedRefreshToken = await RefreshToken.findOne({
+        tokenId,
+        userId: userIdObjectId,
+        revoked: false,
+      }).exec();
+      // IF REFRESH TOKEN FOUND, REVOKE ITS SESSION
+      if (storedRefreshToken && storedRefreshToken.sessionId) {
+        // FIND AND REVOKE THE SESSION LINKED TO THIS REFRESH TOKEN
+        const currentSession = await Session.findOne({
+          _id: storedRefreshToken.sessionId,
+          userId: userIdObjectId,
+          revoked: false,
+        }).exec();
+        // IF CURRENT SESSION FOUND, REVOKE IT AND ALL REFRESH TOKENS LINKED TO THIS SESSION
+        if (currentSession) {
+          // REVOKE CURRENT SESSION
+          currentSession.revoked = true;
+          // SET REVOKED AT DATE
+          currentSession.revokedAt = new Date();
+          // SET IS CURRENT TO FALSE
+          currentSession.isCurrent = false;
+          // SAVE CURRENT SESSION
+          await currentSession.save();
+        }
+        // REVOKE ALL REFRESH TOKENS LINKED TO THIS SESSION
+        await RefreshToken.updateMany(
+          { sessionId: storedRefreshToken.sessionId, revoked: false },
+          { revoked: true }
+        ).exec();
+      }
+    } catch (error) {
+      // LOG ERROR
+      console.error("Error processing logout:", error);
+    }
   }
   // CLEARING ACCESS TOKEN COOKIE
   res.clearCookie("accessToken", {
@@ -1088,6 +1334,8 @@ export const getCurrentUser = expressAsyncHandler(async (req, res) => {
       email: user.email,
       recoveryEmail: user.recoveryEmail || null,
       recoveryEmailVerified: user.recoveryEmailVerified || false,
+      phoneNumber: user.phoneNumber || null,
+      phoneNumberVerified: user.phoneNumberVerified || false,
     },
   });
   // RETURNING FROM FUNCTION
@@ -1172,9 +1420,36 @@ export const verifyEmail = expressAsyncHandler(async (req, res) => {
     name: pendingUser.name,
     email: pendingUser.email,
     password: pendingUser.password,
+    phoneNumber: pendingUser.phoneNumber || null,
+    phoneNumberVerified: pendingUser.phoneNumber ? false : false,
   });
-  // CLEANING UP ANY EXISTING REFRESH TOKENS
-  await RefreshToken.deleteMany({ userId: newUser._id }).exec();
+  // EXTRACT DEVICE INFO FROM REQUEST
+  const deviceInfo = extractDeviceInfo(req);
+  // GET IP ADDRESS FROM REQUEST
+  const ipAddress = getIpAddress(req);
+  // GET LOCATION INFO FROM IP ADDRESS
+  const locationInfo = await getLocationFromIp(ipAddress);
+  // CREATE SESSION
+  const session = await createSession(
+    newUser._id,
+    deviceInfo,
+    ipAddress,
+    locationInfo || {
+      country: "Unknown",
+      city: "Unknown",
+      region: "Unknown",
+      countryCode: "XX",
+    },
+    true,
+    false,
+    false,
+    ""
+  );
+  // CLEANING UP ANY EXISTING REFRESH TOKENS FOR OTHER SESSIONS (NOT THE CURRENT ONE)
+  await RefreshToken.deleteMany({
+    userId: newUser._id,
+    sessionId: { $ne: session._id },
+  }).exec();
   // GENERATING UNIQUE TOKEN ID FOR DATABASE STORAGE
   const tokenId = crypto.randomUUID();
   // GENERATING ACCESS TOKEN
@@ -1189,10 +1464,11 @@ export const verifyEmail = expressAsyncHandler(async (req, res) => {
   const expiresAt = new Date();
   // SETTING EXPIRATION DATE
   expiresAt.setDate(expiresAt.getDate() + expiresInDays);
-  // STORING REFRESH TOKEN IN DATABASE
+  // STORING REFRESH TOKEN IN DATABASE WITH SESSION ID
   await RefreshToken.create({
     tokenId,
     userId: newUser._id,
+    sessionId: session._id,
     expiresAt,
     revoked: false,
   });
