@@ -1,5 +1,9 @@
 // <== IMPORTS ==>
 import {
+  deviceVerificationLimiter,
+  deviceVerificationCodeLimiter,
+} from "../middleware/rateLimiter.js";
+import {
   signup,
   login,
   logout,
@@ -16,6 +20,12 @@ import {
   requestAccountRecovery,
   verifyAccountRecovery,
 } from "../controllers/auth.controller.js";
+import {
+  requestDeviceVerification,
+  verifyDeviceCode,
+  verifyDevice2FA,
+  completeDeviceLogin,
+} from "../controllers/deviceVerification.controller.js";
 import express from "express";
 import passport from "../config/passport.js";
 import isAuthenticated from "../middleware/isAuthenticated.js";
@@ -38,12 +48,36 @@ router.get(
     scope: ["user:email"],
   })
 );
+// REQUEST DEVICE VERIFICATION ROUTE
+router.post(
+  "/device-verification/request",
+  deviceVerificationLimiter,
+  requestDeviceVerification
+);
+// VERIFY DEVICE CODE ROUTE
+router.post(
+  "/device-verification/verify-code",
+  deviceVerificationCodeLimiter,
+  verifyDeviceCode
+);
+// VERIFY DEVICE 2FA ROUTE
+router.post(
+  "/device-verification/verify-2fa",
+  deviceVerificationCodeLimiter,
+  verifyDevice2FA
+);
+// COMPLETE DEVICE LOGIN ROUTE
+router.post(
+  "/device-verification/complete",
+  deviceVerificationCodeLimiter,
+  completeDeviceLogin
+);
 // USER LOGIN ROUTE
 router.post("/login", login);
-// USER SIGNUP ROUTE
-router.post("/signup", signup);
 // USER LOGOUT ROUTE
 router.post("/logout", logout);
+// USER SIGNUP ROUTE
+router.post("/signup", signup);
 // VERIFY 2FA ROUTE
 router.post("/verify-2fa", verify2FA);
 // REFRESH TOKEN ROUTE
