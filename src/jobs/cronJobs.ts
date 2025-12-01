@@ -3,8 +3,10 @@ import cron from "node-cron";
 import { Express } from "express";
 import { Task } from "../models/task.model.js";
 import { User } from "../models/user.model.js";
-import { createNotification } from "../controllers/notification.controller.js";
+import { Session } from "../models/session.model.js";
+import { RefreshToken } from "../models/refreshToken.model.js";
 import { broadcastNotification } from "../utils/broadcastNotification.js";
+import { createNotification } from "../controllers/notification.controller.js";
 
 /**
  * INITIALIZE ALL CRON JOBS
@@ -95,6 +97,54 @@ export const initializeCronJobs = (app: Express): void => {
     } catch (error: any) {
       // LOGGING ERROR
       console.error("Error in Account Deletion Cron Job:", error);
+    }
+  });
+
+  // <== CRON JOB TO AUTO-REVOKE INACTIVE SESSIONS ==>
+  // RUNS DAILY AT 3 AM
+  cron.schedule("0 3 * * *", async () => {
+    try {
+      // GETTING CURRENT DATE
+      const now = new Date();
+      // CALCULATING DATE 30 DAYS AGO (INACTIVE THRESHOLD)
+      const inactiveThreshold = new Date(
+        now.getTime() - 30 * 24 * 60 * 60 * 1000
+      );
+      // FINDING INACTIVE SESSIONS (NO ACTIVITY FOR 30 DAYS)
+      const inactiveSessions = await Session.find({
+        revoked: false,
+        lastActivity: { $lt: inactiveThreshold },
+        expiresAt: { $gt: now },
+      })
+        .lean()
+        .exec();
+      // IF INACTIVE SESSIONS FOUND
+      if (inactiveSessions.length > 0) {
+        // REVOKING EACH INACTIVE SESSION
+        for (const session of inactiveSessions) {
+          // UPDATING SESSION
+          await Session.updateOne(
+            { _id: session._id },
+            {
+              revoked: true,
+              revokedAt: now,
+              isCurrent: false,
+            }
+          ).exec();
+          // REVOKING ALL REFRESH TOKENS FOR THIS SESSION
+          await RefreshToken.updateMany(
+            { sessionId: session._id },
+            { revoked: true }
+          ).exec();
+        }
+        // LOGGING SUCCESS
+        console.log(
+          `Session Cleanup Cron Job: Revoked ${inactiveSessions.length} Inactive Session(s)`
+        );
+      }
+    } catch (error: any) {
+      // LOGGING ERROR
+      console.error("Error in Session Cleanup Cron Job:", error);
     }
   });
   // LOGGING SUCCESS
