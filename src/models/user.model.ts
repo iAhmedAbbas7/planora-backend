@@ -41,7 +41,6 @@ const userSchema = new mongoose.Schema(
       unique: true,
       trim: true,
       lowercase: true,
-      index: true,
       match: [/^\S+@\S+\.\S+$/, "Please provide a valid email address"],
     },
     // PASSWORD FIELD (OPTIONAL FOR OAUTH USERS)
@@ -63,7 +62,6 @@ const userSchema = new mongoose.Schema(
     providerId: {
       type: String,
       default: null,
-      sparse: true,
     },
     // OAUTH PROVIDER EMAIL FIELD
     providerEmail: {
@@ -124,7 +122,6 @@ const userSchema = new mongoose.Schema(
       default: null,
       trim: true,
       lowercase: true,
-      sparse: true,
       match: [/^\S+@\S+\.\S+$/, "Please provide a valid email address"],
     },
     // RECOVERY EMAIL VERIFIED FIELD
@@ -137,16 +134,31 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // PHONE NUMBER FIELD
+    phoneNumber: {
+      type: String,
+      default: null,
+      trim: true,
+      match: [
+        /^\+[1-9]\d{1,14}$/,
+        "Please provide a valid phone number with country code",
+      ],
+    },
+    // PHONE NUMBER VERIFIED FIELD
+    phoneNumberVerified: {
+      type: Boolean,
+      default: false,
+    },
+    // PHONE NUMBER VERIFIED AT TIMESTAMP
+    phoneNumberVerifiedAt: {
+      type: Date,
+      default: null,
+    },
   },
   { timestamps: true }
 );
 
 // <== INDEXES ==>
-/**
- * COMPOUND INDEX FOR EMAIL AND NAME SEARCHES
- */
-//<== COMPOUND INDEX FOR EMAIL AND NAME SEARCHES ==>
-userSchema.index({ email: 1, name: 1 });
 /**
  * TEXT INDEX FOR SEARCH FUNCTIONALITY
  */
@@ -158,10 +170,16 @@ userSchema.index({
 /**
  * COMPOUND INDEX FOR OAUTH PROVIDER AND PROVIDER ID
  */
+//<== COMPOUND INDEX FOR OAUTH PROVIDER AND PROVIDER ID ==>
 userSchema.index(
   { provider: 1, providerId: 1 },
   { unique: true, sparse: true }
 );
+/**
+ * COMPOUND INDEX FOR EMAIL AND NAME SEARCHES
+ */
+//<== COMPOUND INDEX FOR EMAIL AND NAME SEARCHES ==>
+userSchema.index({ email: 1, name: 1 });
 /**
  * COMPOUND INDEX FOR FLAGGED ACCOUNTS AND FLAGGED DATE (FOR CRON JOB)
  */
@@ -177,6 +195,11 @@ userSchema.index({ isTwoFactorEnabled: 1 });
  */
 //<== INDEX FOR RECOVERY EMAIL ==>
 userSchema.index({ recoveryEmail: 1 }, { sparse: true });
+/**
+ * INDEX FOR PHONE NUMBER
+ */
+//<== INDEX FOR PHONE NUMBER ==>
+userSchema.index({ phoneNumber: 1 }, { sparse: true });
 
 // <== EXPORTING THE USER MODEL ==>
 export const User = mongoose.model("User", userSchema);
