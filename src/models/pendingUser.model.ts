@@ -45,6 +45,13 @@ const pendingUserSchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
+    // PHONE NUMBER FIELD (OPTIONAL)
+    phoneNumber: {
+      type: String,
+      default: null,
+      trim: true,
+      match: [/^\+[1-9]\d{1,14}$/, "Please provide a valid phone number with country code"],
+    },
   },
   { timestamps: true }
 );
