@@ -66,3 +66,49 @@ export const twoFactorLimiter = rateLimit({
   // <== LEGACY HEADERS ==>
   legacyHeaders: false,
 });
+
+/**
+ * DEVICE VERIFICATION RATE LIMITER
+ * @returns Device Verification Limiter
+ */
+export const deviceVerificationLimiter = rateLimit({
+  // <== WINDOW MS ==>
+  windowMs: 15 * 60 * 1000,
+  // <== LIMIT ==>
+  limit: 5,
+  // <== MESSAGE ==>
+  message: {
+    // <== SUCCESS FIELD ==>
+    success: false,
+    // <== MESSAGE FIELD ==>
+    message:
+      "Too many verification attempts. Please try again after 15 minutes.",
+  },
+  // <== STANDARD HEADERS ==>
+  standardHeaders: true,
+  // <== LEGACY HEADERS ==>
+  legacyHeaders: false,
+});
+
+/**
+ * DEVICE VERIFICATION CODE RATE LIMITER (FOR CODE VERIFICATION)
+ * @returns Device Verification Code Limiter
+ */
+export const deviceVerificationCodeLimiter = rateLimit({
+  // <== WINDOW MS ==>
+  windowMs: 10 * 60 * 1000,
+  // <== LIMIT ==>
+  limit: 10,
+  // <== MESSAGE ==>
+  message: {
+    // <== SUCCESS FIELD ==>
+    success: false,
+    // <== MESSAGE FIELD ==>
+    message:
+      "Too many code verification attempts. Please try again after 10 minutes.",
+  },
+  // <== STANDARD HEADERS ==>
+  standardHeaders: true,
+  // <== LEGACY HEADERS ==>
+  legacyHeaders: false,
+});
