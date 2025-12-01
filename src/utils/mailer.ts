@@ -1,4 +1,6 @@
 // <== IMPORTS ==>
+import { LocationInfo } from "./ipGeolocation.js";
+import { DeviceInfo } from "./deviceFingerprint.js";
 import nodemailer, { Transporter } from "nodemailer";
 
 // <== MAILER CONFIGURATION ==>
@@ -1728,17 +1730,20 @@ export const sendRecoveryEmailVerificationCode = async (
     add: {
       title: "Add Recovery Email",
       action: "add a recovery email",
-      description: "You've requested to add a recovery email to your PlanOra account. This email will be used as a backup for account recovery and security notifications.",
+      description:
+        "You've requested to add a recovery email to your PlanOra account. This email will be used as a backup for account recovery and security notifications.",
     },
     update: {
       title: "Update Recovery Email",
       action: "update your recovery email",
-      description: "You've requested to update your recovery email address. Please verify the new recovery email address below.",
+      description:
+        "You've requested to update your recovery email address. Please verify the new recovery email address below.",
     },
     remove: {
       title: "Remove Recovery Email",
       action: "remove your recovery email",
-      description: "You've requested to remove your recovery email from your PlanOra account. Please verify your identity by entering the code below.",
+      description:
+        "You've requested to remove your recovery email from your PlanOra account. Please verify your identity by entering the code below.",
     },
   };
   // GET TYPE MESSAGE
@@ -2164,6 +2169,369 @@ export const sendAccountRecoveryCode = async (
     to: toEmail,
     subject: `Account Recovery Code - PlanOra`,
     html: generateEmailTemplate(content, "Account Recovery"),
+  };
+  // SEND EMAIL WITH RETRY
+  return sendMailWithRetry(mailOptions);
+};
+
+/**
+ * SEND DEVICE VERIFICATION CODE
+ * @param toEmail - Recipient Email Address
+ * @param userName - User Name
+ * @param code - 6-Digit Verification Code
+ * @param deviceInfo - Device Info Object
+ * @param locationInfo - Location Info Object
+ * @returns Promise with Email Result
+ */
+export const sendDeviceVerificationCode = async (
+  toEmail: string,
+  userName: string,
+  code: string,
+  deviceInfo: DeviceInfo,
+  locationInfo: LocationInfo
+): Promise<nodemailer.SentMessageInfo> => {
+  // PRIMARY COLOR
+  const primaryColor = "#7c3aed";
+  // PRIMARY COLOR LIGHT
+  const primaryColorLight = "#ede9fe";
+  // EMAIL CONTENT
+  const content = `
+    <h2 style="color: #1f2937; margin-bottom: 20px;">Hello ${userName}!</h2>
+    <p style="color: #4b5563; margin-bottom: 20px; font-size: 16px; line-height: 1.6;">
+      We detected a login attempt from a new device. To ensure the security of your account, 
+      please verify this login attempt by entering the verification code below.
+    </p>
+    <div style="background-color: ${primaryColorLight}; border-left: 4px solid ${primaryColor}; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #4b5563; font-size: 14px; margin: 0 0 10px 0; line-height: 1.6;">
+        <strong>Device Information:</strong>
+      </p>
+      <ul style="color: #4b5563; font-size: 14px; margin: 0; padding-left: 20px; line-height: 1.8;">
+        <li><strong>Device:</strong> ${deviceInfo.deviceName}</li>
+        <li><strong>Browser:</strong> ${deviceInfo.browserName} ${deviceInfo.browserVersion}</li>
+        <li><strong>Operating System:</strong> ${deviceInfo.operatingSystem}</li>
+        <li><strong>Location:</strong> ${locationInfo.city}, ${locationInfo.region}, ${locationInfo.country}</li>
+      </ul>
+    </div>
+    <div class="code-container">
+      <p style="color: #6b7280; font-size: 14px; margin-bottom: 10px;">Your verification code:</p>
+      <div class="verification-code">${code}</div>
+      <p style="color: #6b7280; font-size: 12px; margin-top: 10px;">
+        This code will expire in 10 minutes
+      </p>
+    </div>
+    <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #991b1b; font-size: 14px; margin: 0; line-height: 1.6;">
+        <strong>⚠️ Security Notice:</strong> If you didn't attempt to login from this device, 
+        please ignore this email and contact our support team immediately to secure your account.
+      </p>
+    </div>
+    <p style="color: #4b5563; margin-top: 30px;">
+      If you have any questions or need assistance, feel free to reach out to our support team.
+    </p>
+    <p style="color: #4b5563; margin-top: 20px;">
+      Best regards,<br/>
+      <strong>The PlanOra Team</strong>
+    </p>
+  `;
+  // MAIL OPTIONS
+  const mailOptions: nodemailer.SendMailOptions = {
+    from: `PlanOra <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject: `Device Verification Required - PlanOra`,
+    html: generateEmailTemplate(content, "Device Verification"),
+  };
+  // SEND EMAIL WITH RETRY
+  return sendMailWithRetry(mailOptions);
+};
+
+/**
+ * SEND DEVICE TRUST VERIFICATION CODE
+ * @param toEmail - Recipient Email Address
+ * @param userName - User Name
+ * @param code - Verification Code
+ * @param deviceInfo - Device Info Object
+ * @param locationInfo - Location Info Object
+ * @returns Promise with Email Result
+ */
+export const sendDeviceTrustVerificationCode = async (
+  toEmail: string,
+  userName: string,
+  code: string,
+  deviceInfo: DeviceInfo,
+  locationInfo: LocationInfo
+): Promise<nodemailer.SentMessageInfo> => {
+  // PRIMARY COLOR
+  const primaryColor = "#7c3aed";
+  // PRIMARY COLOR LIGHT
+  const primaryColorLight = "#ede9fe";
+  // EMAIL CONTENT
+  const content = `
+    <h2 style="color: #1f2937; margin-bottom: 20px;">Hello ${userName}!</h2>
+    <p style="color: #4b5563; margin-bottom: 20px; font-size: 16px; line-height: 1.6;">
+      You've logged in from a device we recognize. To mark this device as trusted and 
+      skip verification in the future, please enter the verification code below.
+    </p>
+    <div style="background-color: ${primaryColorLight}; border-left: 4px solid ${primaryColor}; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #4b5563; font-size: 14px; margin: 0 0 10px 0; line-height: 1.6;">
+        <strong>Device Information:</strong>
+      </p>
+      <ul style="color: #4b5563; font-size: 14px; margin: 0; padding-left: 20px; line-height: 1.8;">
+        <li><strong>Device:</strong> ${deviceInfo.deviceName}</li>
+        <li><strong>Browser:</strong> ${deviceInfo.browserName} ${deviceInfo.browserVersion}</li>
+        <li><strong>Operating System:</strong> ${deviceInfo.operatingSystem}</li>
+        <li><strong>Location:</strong> ${locationInfo.city}, ${locationInfo.region}, ${locationInfo.country}</li>
+      </ul>
+    </div>
+    <div class="code-container">
+      <p style="color: #6b7280; font-size: 14px; margin-bottom: 10px;">Your verification code:</p>
+      <div class="verification-code">${code}</div>
+      <p style="color: #6b7280; font-size: 12px; margin-top: 10px;">
+        This code will expire in 10 minutes
+      </p>
+    </div>
+    <p style="color: #4b5563; margin-top: 30px;">
+      If you have any questions or need assistance, feel free to reach out to our support team.
+    </p>
+    <p style="color: #4b5563; margin-top: 20px;">
+      Best regards,<br/>
+      <strong>The PlanOra Team</strong>
+    </p>
+  `;
+  // MAIL OPTIONS
+  const mailOptions: nodemailer.SendMailOptions = {
+    from: `PlanOra <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject: `Mark Device as Trusted - PlanOra`,
+    html: generateEmailTemplate(content, "Device Verification"),
+  };
+  // SEND EMAIL WITH RETRY
+  return sendMailWithRetry(mailOptions);
+};
+
+/**
+ * SEND NEW DEVICE LOGIN ALERT
+ * @param toEmail - Recipient Email Address
+ * @param userName - User Name
+ * @param deviceInfo - Device Info Object
+ * @param locationInfo - Location Info Object
+ * @param ipAddress - IP Address
+ * @returns Promise with Email Result
+ */
+export const sendNewDeviceLoginAlert = async (
+  toEmail: string,
+  userName: string,
+  deviceInfo: DeviceInfo,
+  locationInfo: LocationInfo,
+  ipAddress: string
+): Promise<nodemailer.SentMessageInfo> => {
+  // PRIMARY COLOR
+  const primaryColor = "#7c3aed";
+  // PRIMARY COLOR LIGHT
+  const primaryColorLight = "#ede9fe";
+  // EMAIL CONTENT
+  const content = `
+    <h2 style="color: #1f2937; margin-bottom: 20px;">Security Alert: New Device Login</h2>
+    <p style="color: #4b5563; margin-bottom: 20px; font-size: 16px; line-height: 1.6;">
+      Hello ${userName},
+    </p>
+    <p style="color: #4b5563; margin-bottom: 20px; font-size: 16px; line-height: 1.6;">
+      We detected a login attempt from a new device. If this was you, no action is needed. 
+      However, if you don't recognize this activity, please secure your account immediately.
+    </p>
+    <div style="background-color: ${primaryColorLight}; border-left: 4px solid ${primaryColor}; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #4b5563; font-size: 14px; margin: 0 0 10px 0; line-height: 1.6;">
+        <strong>Login Details:</strong>
+      </p>
+      <ul style="color: #4b5563; font-size: 14px; margin: 0; padding-left: 20px; line-height: 1.8;">
+        <li><strong>Device:</strong> ${deviceInfo.deviceName}</li>
+        <li><strong>Browser:</strong> ${deviceInfo.browserName} ${
+    deviceInfo.browserVersion
+  }</li>
+        <li><strong>Operating System:</strong> ${
+          deviceInfo.operatingSystem
+        }</li>
+        <li><strong>Location:</strong> ${locationInfo.city}, ${
+    locationInfo.region
+  }, ${locationInfo.country}</li>
+        <li><strong>IP Address:</strong> ${ipAddress}</li>
+        <li><strong>Time:</strong> ${new Date().toLocaleString()}</li>
+      </ul>
+    </div>
+    <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #991b1b; font-size: 14px; margin: 0 0 10px 0; line-height: 1.6;">
+        <strong>⚠️ Didn't recognize this login?</strong>
+      </p>
+      <p style="color: #991b1b; font-size: 14px; margin: 0; line-height: 1.6;">
+        If you didn't attempt to login from this device, please:
+      </p>
+      <ol style="color: #991b1b; font-size: 14px; margin: 10px 0 0 0; padding-left: 20px; line-height: 1.8;">
+        <li>Change your password immediately</li>
+        <li>Review your active sessions in account settings</li>
+        <li>Contact our support team if you need assistance</li>
+      </ol>
+    </div>
+    <div style="text-align: center; margin: 30px 0;">
+      <a href="${process.env.FRONTEND_URL || "http://localhost:5173"}/settings" 
+         style="display: inline-block; padding: 12px 24px; background-color: ${primaryColor}; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600;">
+        Review Active Sessions
+      </a>
+    </div>
+    <p style="color: #4b5563; margin-top: 30px;">
+      If you have any questions or concerns, feel free to reach out to our support team.
+    </p>
+    <p style="color: #4b5563; margin-top: 20px;">
+      Best regards,<br/>
+      <strong>The PlanOra Team</strong>
+    </p>
+  `;
+  // MAIL OPTIONS
+  const mailOptions: nodemailer.SendMailOptions = {
+    from: `PlanOra <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject: `Security Alert: New Device Login - PlanOra`,
+    html: generateEmailTemplate(content, "Security Alert"),
+  };
+  // SEND EMAIL WITH RETRY
+  return sendMailWithRetry(mailOptions);
+};
+
+/**
+ * SEND SESSION REVOKED EMAIL
+ * @param toEmail - Recipient Email Address
+ * @param userName - User Name
+ * @param deviceInfo - Device Info Object
+ * @param locationInfo - Location Info Object
+ * @param revokedAt - Timestamp when session was revoked
+ * @returns Promise with Email Result
+ */
+export const sendSessionRevoked = async (
+  toEmail: string,
+  userName: string,
+  deviceInfo: DeviceInfo,
+  locationInfo: LocationInfo,
+  revokedAt: Date
+): Promise<nodemailer.SentMessageInfo> => {
+  // PRIMARY COLOR
+  const primaryColor = "#7c3aed";
+  // EMAIL CONTENT
+  const content = `
+    <h2 style="color: #1f2937; margin-bottom: 20px;">Session Revoked</h2>
+    <p style="color: #4b5563; margin-bottom: 20px; font-size: 16px; line-height: 1.6;">
+      Hello ${userName},
+    </p>
+    <p style="color: #4b5563; margin-bottom: 20px; font-size: 16px; line-height: 1.6;">
+      A session from one of your devices has been revoked. This could be because you logged out, 
+      revoked the session manually, or it expired.
+    </p>
+    <div style="background-color: #f9fafb; border-left: 4px solid ${primaryColor}; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #4b5563; font-size: 14px; margin: 0 0 10px 0; line-height: 1.6;">
+        <strong>Revoked Session Details:</strong>
+      </p>
+      <ul style="color: #4b5563; font-size: 14px; margin: 0; padding-left: 20px; line-height: 1.8;">
+        <li><strong>Device:</strong> ${deviceInfo.deviceName}</li>
+        <li><strong>Browser:</strong> ${deviceInfo.browserName}</li>
+        <li><strong>Location:</strong> ${locationInfo.city}, ${
+    locationInfo.country
+  }</li>
+        <li><strong>Revoked At:</strong> ${revokedAt.toLocaleString()}</li>
+      </ul>
+    </div>
+    <p style="color: #4b5563; margin-top: 30px;">
+      If you didn't revoke this session, please review your account security settings and consider changing your password.
+    </p>
+    <p style="color: #4b5563; margin-top: 20px;">
+      Best regards,<br/>
+      <strong>The PlanOra Team</strong>
+    </p>
+  `;
+  // MAIL OPTIONS
+  const mailOptions: nodemailer.SendMailOptions = {
+    from: `PlanOra <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject: `Session Revoked - PlanOra`,
+    html: generateEmailTemplate(content, "Session Revoked"),
+  };
+  // SEND EMAIL WITH RETRY
+  return sendMailWithRetry(mailOptions);
+};
+
+/**
+ * SEND SUSPICIOUS ACTIVITY ALERT
+ * @param toEmail - Recipient Email Address
+ * @param userName - User Name
+ * @param deviceInfo - Device Info Object
+ * @param locationInfo - Location Info Object
+ * @param ipAddress - IP Address
+ * @param reason - Suspicious Activity Reason
+ * @returns Promise with Email Result
+ */
+export const sendSuspiciousActivityAlert = async (
+  toEmail: string,
+  userName: string,
+  deviceInfo: DeviceInfo,
+  locationInfo: LocationInfo,
+  ipAddress: string,
+  reason: string
+): Promise<nodemailer.SentMessageInfo> => {
+  // PRIMARY COLOR
+  const primaryColor = "#7c3aed";
+  // EMAIL CONTENT
+  const content = `
+    <h2 style="color: #1f2937; margin-bottom: 20px;">⚠️ Suspicious Activity Detected</h2>
+    <p style="color: #4b5563; margin-bottom: 20px; font-size: 16px; line-height: 1.6;">
+      Hello ${userName},
+    </p>
+    <p style="color: #4b5563; margin-bottom: 20px; font-size: 16px; line-height: 1.6;">
+      We detected suspicious activity on your account. This could indicate unauthorized access. 
+      Please review the details below and take appropriate action.
+    </p>
+    <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #991b1b; font-size: 14px; margin: 0 0 10px 0; line-height: 1.6;">
+        <strong>⚠️ Suspicious Activity Details:</strong>
+      </p>
+      <ul style="color: #991b1b; font-size: 14px; margin: 0; padding-left: 20px; line-height: 1.8;">
+        <li><strong>Reason:</strong> ${reason}</li>
+        <li><strong>Device:</strong> ${deviceInfo.deviceName}</li>
+        <li><strong>Browser:</strong> ${deviceInfo.browserName}</li>
+        <li><strong>Location:</strong> ${locationInfo.city}, ${
+    locationInfo.country
+  }</li>
+        <li><strong>IP Address:</strong> ${ipAddress}</li>
+        <li><strong>Time:</strong> ${new Date().toLocaleString()}</li>
+      </ul>
+    </div>
+    <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="color: #991b1b; font-size: 14px; margin: 0 0 10px 0; line-height: 1.6;">
+        <strong>🔒 Immediate Actions Required:</strong>
+      </p>
+      <ol style="color: #991b1b; font-size: 14px; margin: 0; padding-left: 20px; line-height: 1.8;">
+        <li>Change your password immediately</li>
+        <li>Review all active sessions and revoke any suspicious ones</li>
+        <li>Enable Two-Factor Authentication if not already enabled</li>
+        <li>Contact our support team if you need assistance</li>
+      </ol>
+    </div>
+    <div style="text-align: center; margin: 30px 0;">
+      <a href="${process.env.FRONTEND_URL || "http://localhost:5173"}/settings" 
+         style="display: inline-block; padding: 12px 24px; background-color: #ef4444; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600;">
+        Secure My Account
+      </a>
+    </div>
+    <p style="color: #4b5563; margin-top: 30px;">
+      If you recognize this activity, you can ignore this alert. However, if you didn't perform this action, 
+      please take immediate steps to secure your account.
+    </p>
+    <p style="color: #4b5563; margin-top: 20px;">
+      Best regards,<br/>
+      <strong>The PlanOra Team</strong>
+    </p>
+  `;
+  // MAIL OPTIONS
+  const mailOptions: nodemailer.SendMailOptions = {
+    from: `PlanOra <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject: `⚠️ Suspicious Activity Detected - PlanOra`,
+    html: generateEmailTemplate(content, "Suspicious Activity Alert"),
   };
   // SEND EMAIL WITH RETRY
   return sendMailWithRetry(mailOptions);
