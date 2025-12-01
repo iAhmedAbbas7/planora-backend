@@ -1,5 +1,12 @@
 // <== IMPORTS ==>
 import {
+  getSessions,
+  revokeSessionController,
+  revokeAllOtherSessionsController,
+  trustDeviceController,
+  untrustDeviceController,
+} from "../controllers/session.controller.js";
+import {
   requestEnable2FA,
   verifyEnable2FACode,
   verifyEnable2FATOTP,
@@ -27,12 +34,22 @@ router.post(
   twoFactorLimiter,
   regenerateBackupCodes
 );
+// GET ALL ACTIVE SESSIONS
+router.get("/sessions", getSessions);
 // GET 2FA STATUS
 router.get("/2fa/status", get2FAStatus);
 // CANCEL 2FA
 router.delete("/2fa/cancel", cancel2FA);
+// REVOKE SPECIFIC SESSION
+router.delete("/sessions/:sessionId", revokeSessionController);
+// TRUST DEVICE
+router.put("/sessions/:sessionId/trust", trustDeviceController);
 // RESEND 2FA CODE
 router.post("/2fa/resend-code", twoFactorLimiter, resend2FACode);
+// UNTRUST DEVICE
+router.put("/sessions/:sessionId/untrust", untrustDeviceController);
+// REVOKE ALL OTHER SESSIONS
+router.post("/sessions/revoke-all", revokeAllOtherSessionsController);
 // REQUEST 2FA CODE
 router.post("/2fa/enable/request-code", twoFactorLimiter, requestEnable2FA);
 // VERIFY 2FA CODE
