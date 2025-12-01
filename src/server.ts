@@ -26,6 +26,7 @@ import notificationRoute from "./routes/notification.route.js";
 import helmetMiddleware from "./middleware/helmetMiddleware.js";
 import { connectDB, disconnectDB } from "./config/dbConnection.js";
 import notificationSettingsRoute from "./routes/notificationSettings.route.js";
+import { updateSessionActivityMiddleware } from "./middleware/sessionActivity.js";
 
 // <== DATABASE CONNECTION ==>
 connectDB();
@@ -99,6 +100,10 @@ app.use("/api/v1/settings", settingsRoute);
 app.use("/api/v1/notifications", notificationRoute);
 // <== NOTIFICATION SETTINGS ROUTE ==>
 app.use("/api/v1/notifications/preferences", notificationSettingsRoute);
+
+// <== SESSION ACTIVITY MIDDLEWARE ==>
+// UPDATE SESSION ACTIVITY FOR AUTHENTICATED REQUESTS
+app.use(updateSessionActivityMiddleware);
 
 // <== MIDDLEWARE 404 RESPONSE ==>
 app.all("*", (req, res) => {
