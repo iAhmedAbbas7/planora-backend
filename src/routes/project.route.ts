@@ -11,6 +11,11 @@ import {
   getTrashedProjects,
   getWeeklySummary,
 } from "../controllers/project.controller.js";
+import {
+  getCommentsByProjectId,
+  createComment,
+  deleteComment,
+} from "../controllers/comment.controller.js";
 import express from "express";
 import isAuthenticated from "../middleware/isAuthenticated.js";
 
@@ -24,14 +29,6 @@ router.use(isAuthenticated);
 router.get("/", getProjects);
 // CREATE PROJECT
 router.post("/", createProject);
-// <== SPECIFIC ROUTES MUST BE DEFINED BEFORE PARAMETERIZED ROUTES ==>
-// GET PROJECT STATISTICS
-router.get("/stats", getProjectsStats);
-// GET TRASHED PROJECTS
-router.get("/trashed", getTrashedProjects);
-// GET WEEKLY SUMMARY
-router.get("/weekly-summary", getWeeklySummary);
-// <== PARAMETERIZED ROUTES MUST BE AFTER SPECIFIC ROUTES ==>
 // GET SINGLE PROJECT
 router.get("/:id", getOneProject);
 // UPDATE PROJECT
@@ -40,7 +37,19 @@ router.put("/:id", updateProject);
 router.delete("/:id", deleteProject);
 // MOVE PROJECT TO TRASH
 router.put("/:id/trash", moveToTrash);
+// GET PROJECT STATISTICS
+router.get("/stats", getProjectsStats);
 // RESTORE PROJECT FROM TRASH
 router.put("/:id/restore", restoreProject);
+// GET TRASHED PROJECTS
+router.get("/trashed", getTrashedProjects);
+// GET WEEKLY SUMMARY
+router.get("/weekly-summary", getWeeklySummary);
+// CREATE COMMENT
+router.post("/:projectId/comments", createComment);
+// DELETE COMMENT
+router.delete("/comments/:commentId", deleteComment);
+// GET COMMENTS BY PROJECT ID
+router.get("/:projectId/comments", getCommentsByProjectId);
 
 export default router;
