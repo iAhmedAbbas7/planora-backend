@@ -9,15 +9,16 @@ import {
   sendPasswordResetRecoveryEmail,
   sendAccountRecoveryCode,
 } from "../utils/mailer.js";
+import axios from "axios";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 import speakeasy from "speakeasy";
+import { Octokit } from "@octokit/rest";
 import passport from "../config/passport.js";
 import { User } from "../models/user.model.js";
 import { Session } from "../models/session.model.js";
-import { decryptSecret } from "../utils/encryption.js";
 import expressAsyncHandler from "express-async-handler";
 import { verifyBackupCode } from "../utils/encryption.js";
 import { Request, Response, NextFunction } from "express";
@@ -27,7 +28,9 @@ import { getLocationFromIp } from "../utils/ipGeolocation.js";
 import { RefreshToken } from "../models/refreshToken.model.js";
 import { PasswordReset } from "../models/passwordReset.model.js";
 import { AccountRecovery } from "../models/accountRecovery.model.js";
+import { decryptSecret, encryptSecret } from "../utils/encryption.js";
 import { extractDeviceInfo, getIpAddress } from "../utils/deviceFingerprint.js";
+
 /**
  * GENERATE JWT TOKEN
  * @param userId - User ID
@@ -2295,4 +2298,168 @@ export const verifyAccountRecovery = expressAsyncHandler(async (req, res) => {
   });
   // RETURNING FROM FUNCTION
   return;
+});
+
+/**
+ * GITHUB LINK CALLBACK HANDLER
+ * HANDLES GITHUB OAUTH CALLBACK FOR LINKING GITHUB TO EXISTING ACCOUNT
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GITHUB LINK CALLBACK HANDLER ==>
+export const githubLinkCallback = expressAsyncHandler(async (req, res) => {
+  // GET FRONTEND URL
+  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+  // GET CODE AND STATE FROM QUERY PARAMETERS
+  const { code, state } = req.query;
+  // VALIDATE CODE
+  if (!code || typeof code !== "string") {
+    // REDIRECTING TO FRONTEND WITH ERROR MESSAGE
+    res.redirect(
+      `${frontendUrl}/settings/integrations?error=github_link_failed&message=${encodeURIComponent(
+        "Authorization code not provided"
+      )}`
+    );
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // PARSE STATE TO GET USER ID
+  let linkUserId: string | null = null;
+  // IF STATE IS FOUND, PARSE IT TO GET USER ID
+  if (state && typeof state === "string") {
+    try {
+      // PARSING STATE
+      const stateObj = JSON.parse(state);
+      // EXTRACTING LINK USER ID
+      linkUserId = stateObj.linkUserId;
+    } catch (error) {
+      // INVALID STATE FORMAT
+      console.error("Error parsing GitHub link state:", error);
+    }
+  }
+  // VALIDATE USER ID FROM STATE
+  if (!linkUserId) {
+    // REDIRECTING TO FRONTEND WITH ERROR MESSAGE
+    res.redirect(
+      `${frontendUrl}/settings/integrations?error=github_link_failed&message=${encodeURIComponent(
+        "Invalid link request. Please try again."
+      )}`
+    );
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // EXCHANGE CODE FOR ACCESS TOKEN
+  try {
+    // MAKE REQUEST TO GITHUB TO EXCHANGE CODE FOR ACCESS TOKEN
+    const tokenResponse = await axios.post(
+      "https://github.com/login/oauth/access_token",
+      {
+        client_id: process.env.GITHUB_CLIENT_ID,
+        client_secret: process.env.GITHUB_CLIENT_SECRET,
+        code: code,
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+      }
+    );
+    // GET TOKEN DATA FROM RESPONSE
+    const tokenData = tokenResponse.data;
+    // CHECK FOR ERROR IN TOKEN RESPONSE
+    if (tokenData.error) {
+      // REDIRECTING TO FRONTEND WITH ERROR MESSAGE
+      res.redirect(
+        `${frontendUrl}/settings/integrations?error=github_link_failed&message=${encodeURIComponent(
+          tokenData.error_description ||
+            "Failed to get access token from GitHub"
+        )}`
+      );
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // GET ACCESS TOKEN
+    const accessToken = tokenData.access_token;
+    // IF NO ACCESS TOKEN, RETURN ERROR
+    if (!accessToken) {
+      // REDIRECTING TO FRONTEND WITH ERROR MESSAGE
+      res.redirect(
+        `${frontendUrl}/settings/integrations?error=github_link_failed&message=${encodeURIComponent(
+          "No access token received from GitHub"
+        )}`
+      );
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // USE ACCESS TOKEN TO GET GITHUB USER INFO
+    const octokit = new Octokit({ auth: accessToken });
+    // GET AUTHENTICATED USER
+    const { data: githubUser } = await octokit.users.getAuthenticated();
+    // FIND THE USER WHO INITIATED THE LINK
+    const user = await User.findById(linkUserId).exec();
+    // IF USER NOT FOUND, RETURN ERROR
+    if (!user) {
+      // REDIRECTING TO FRONTEND WITH ERROR MESSAGE
+      res.redirect(
+        `${frontendUrl}/settings/integrations?error=github_link_failed&message=${encodeURIComponent(
+          "User not found. Please login and try again."
+        )}`
+      );
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // CHECK IF THIS GITHUB ACCOUNT IS ALREADY LINKED TO ANOTHER USER
+    const existingGitHubUser = await User.findOne({
+      githubUsername: githubUser.login,
+      _id: { $ne: linkUserId },
+    })
+      .lean()
+      .exec();
+    // IF GITHUB ACCOUNT IS ALREADY LINKED, RETURN ERROR
+    if (existingGitHubUser) {
+      // REDIRECTING TO FRONTEND WITH ERROR MESSAGE
+      res.redirect(
+        `${frontendUrl}/settings/integrations?error=github_link_failed&message=${encodeURIComponent(
+          "This GitHub account is already linked to another PlanOra account."
+        )}`
+      );
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // ENCRYPT ACCESS TOKEN
+    const encryptedAccessToken = encryptSecret(accessToken);
+    // GITHUB SCOPES
+    const githubScopes = ["user:email", "read:user", "repo"];
+    // SET GITHUB ACCESS TOKEN
+    user.githubAccessToken = encryptedAccessToken;
+    // SET GITHUB USERNAME
+    user.githubUsername = githubUser.login;
+    // SET GITHUB CONNECTED AT
+    user.githubConnectedAt = new Date();
+    // SET GITHUB SCOPES
+    user.githubScopes = githubScopes;
+    // SAVING USER
+    await user.save();
+    // REDIRECTING TO FRONTEND WITH SUCCESS
+    res.redirect(
+      `${frontendUrl}/settings/integrations?github_linked=success&username=${encodeURIComponent(
+        githubUser.login
+      )}`
+    );
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // LOG ERROR
+    console.error("Error in GitHub link callback:", error);
+    // REDIRECTING TO FRONTEND WITH ERROR MESSAGE
+    res.redirect(
+      `${frontendUrl}/settings/integrations?error=github_link_failed&message=${encodeURIComponent(
+        "An error occurred while linking GitHub. Please try again."
+      )}`
+    );
+    // RETURNING FROM FUNCTION
+    return;
+  }
 });
