@@ -154,6 +154,28 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // GITHUB ACCESS TOKEN (ENCRYPTED)
+    githubAccessToken: {
+      type: String,
+      default: null,
+      select: false,
+    },
+    // GITHUB USERNAME
+    githubUsername: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    // GITHUB CONNECTED TIMESTAMP
+    githubConnectedAt: {
+      type: Date,
+      default: null,
+    },
+    // GITHUB OAUTH SCOPES GRANTED
+    githubScopes: {
+      type: [String],
+      default: [],
+    },
   },
   { timestamps: true }
 );
@@ -200,6 +222,11 @@ userSchema.index({ recoveryEmail: 1 }, { sparse: true });
  */
 //<== INDEX FOR PHONE NUMBER ==>
 userSchema.index({ phoneNumber: 1 }, { sparse: true });
+/**
+ * INDEX FOR GITHUB USERNAME
+ */
+//<== INDEX FOR GITHUB USERNAME ==>
+userSchema.index({ githubUsername: 1 }, { sparse: true });
 
 // <== EXPORTING THE USER MODEL ==>
 export const User = mongoose.model("User", userSchema);
