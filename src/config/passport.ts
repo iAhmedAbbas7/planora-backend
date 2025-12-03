@@ -10,6 +10,7 @@ import {
 import passport from "passport";
 import { User } from "../models/user.model.js";
 import { VerifyCallback } from "passport-oauth2";
+import { encryptSecret } from "../utils/encryption.js";
 
 // <== USER TYPE FOR PASSPORT ==>
 interface PassportUser {
@@ -24,6 +25,14 @@ interface PassportUser {
   // <== PROVIDER ID FIELD ==>
   providerId?: string | null;
   // <== PROVIDER EMAIL FIELD ==>
+  providerEmail?: string | null;
+  // <== GITHUB USERNAME FIELD ==>
+  githubUsername?: string | null;
+  // <== GITHUB CONNECTED AT FIELD ==>
+  githubConnectedAt?: Date | null;
+  // <== GITHUB SCOPES FIELD ==>
+  githubScopes?: string[];
+  // <== ADDITIONAL FIELDS ==>
   [key: string]: unknown;
 }
 
@@ -171,7 +180,7 @@ if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
           process.env.GITHUB_CALLBACK_URL || "/api/v1/auth/github/callback",
       },
       async (
-        _accessToken: string,
+        accessToken: string,
         _refreshToken: string,
         profile: GitHubProfile,
         done: VerifyCallback
@@ -189,6 +198,10 @@ if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
             profile.emails?.[0]?.value || `${profile.username}@github.noreply`;
           // GET DISPLAY NAME FROM PROFILE OR USE DEFAULT
           const displayName = profile.displayName || profile.username || "User";
+          // ENCRYPT THE GITHUB ACCESS TOKEN FOR SECURE STORAGE
+          const encryptedAccessToken = encryptSecret(accessToken);
+          // GITHUB SCOPES THAT WERE REQUESTED (DEFINED IN AUTH ROUTE)
+          const githubScopes = ["user:email", "read:user", "repo"];
           // FIND USER BY PROVIDER ID OR EMAIL
           let user = await User.findOne({
             $or: [
@@ -208,6 +221,11 @@ if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
                   provider: "github",
                   providerId: profile.id.toString(),
                   providerEmail: email,
+                  // STORE GITHUB ACCESS TOKEN AND METADATA
+                  githubAccessToken: encryptedAccessToken,
+                  githubUsername: profile.username,
+                  githubConnectedAt: new Date(),
+                  githubScopes: githubScopes,
                 }
               ).exec();
               // UPDATE USER OBJECT
@@ -215,34 +233,56 @@ if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
                 ...user,
                 provider: "github",
                 providerId: profile.id.toString(),
+                githubUsername: profile.username,
+                githubConnectedAt: new Date(),
+                githubScopes: githubScopes,
               };
             } else if (user.providerId === profile.id.toString()) {
               // SYNC PROVIDER EMAIL WITH OAUTH PROVIDER'S EMAIL IF IT IS DIFFERENT
+              // AND UPDATE GITHUB ACCESS TOKEN (TOKEN REFRESH ON EACH LOGIN)
+              const updateFields: Record<string, unknown> = {
+                githubAccessToken: encryptedAccessToken,
+                githubUsername: profile.username,
+                githubScopes: githubScopes,
+              };
               if (email !== user.providerEmail) {
-                // UPDATE PROVIDER EMAIL TO MATCH OAUTH PROVIDER'S EMAIL
-                await User.updateOne(
-                  { _id: user._id },
-                  { providerEmail: email }
-                ).exec();
-                // UPDATE USER OBJECT
-                user = { ...user, providerEmail: email };
+                updateFields.providerEmail = email;
               }
-              // SYNC USER EMAIL WITH OAUTH PROVIDER'S EMAIL IF IT IS DIFFERENT
               if (user.email !== email) {
-                // UPDATE USER EMAIL TO MATCH OAUTH PROVIDER'S EMAIL
-                await User.updateOne(
-                  { _id: user._id },
-                  { email: email }
-                ).exec();
-                // UPDATE USER OBJECT
-                user = { ...user, email: email };
+                updateFields.email = email;
               }
+              // SET GITHUB CONNECTED AT IF NOT ALREADY SET
+              if (!user.githubConnectedAt) {
+                updateFields.githubConnectedAt = new Date();
+              }
+              // UPDATE USER IN DATABASE
+              await User.updateOne({ _id: user._id }, updateFields).exec();
+              // UPDATE USER OBJECT WITH NEW VALUES
+              const updatedEmail =
+                typeof updateFields.email === "string"
+                  ? updateFields.email
+                  : user.email;
+              const updatedProviderEmail =
+                typeof updateFields.providerEmail === "string"
+                  ? updateFields.providerEmail
+                  : user.providerEmail;
+              user = {
+                ...user,
+                ...updateFields,
+                email: updatedEmail,
+                providerEmail: updatedProviderEmail,
+              };
             }
             // RETURN USER (CONVERT _ID TO STRING IF NEEDED)
+            if (!user) {
+              return done(new Error("User not found"), undefined);
+            }
             const passportUser: PassportUser = {
               ...user,
               _id:
                 typeof user._id === "string" ? user._id : user._id.toString(),
+              email: user.email || email,
+              name: user.name || displayName,
             };
             // RETURNING PASSPORT USER
             return done(null, passportUser);
@@ -263,7 +303,7 @@ if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
               undefined
             );
           }
-          // CREATE NEW USER
+          // CREATE NEW USER WITH GITHUB INTEGRATION DATA
           const newUser = await User.create({
             name: displayName,
             email: email,
@@ -271,6 +311,11 @@ if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
             providerId: profile.id.toString(),
             providerEmail: email,
             profilePic: profile.photos?.[0]?.value || "",
+            // GITHUB INTEGRATION FIELDS
+            githubAccessToken: encryptedAccessToken,
+            githubUsername: profile.username,
+            githubConnectedAt: new Date(),
+            githubScopes: githubScopes,
           });
           // RETURN NEW USER (CONVERT TO PLAIN OBJECT AND ENSURE _ID IS STRING)
           const userObject = newUser.toObject();
