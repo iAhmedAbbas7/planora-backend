@@ -15,6 +15,7 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@octokit/rest": "^22.0.1",
     "@types/express-session": "^1.18.2",
     "@types/node-cron": "^3.0.11",
