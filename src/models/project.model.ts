@@ -78,6 +78,43 @@ const projectSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    // GITHUB REPOSITORY FIELD
+    githubRepo: {
+      // REPOSITORY OWNER
+      owner: {
+        type: String,
+        default: null,
+        trim: true,
+      },
+      // REPOSITORY NAME
+      name: {
+        type: String,
+        default: null,
+        trim: true,
+      },
+      // REPOSITORY FULL NAME (owner/name)
+      fullName: {
+        type: String,
+        default: null,
+        trim: true,
+      },
+      // REPOSITORY ID FROM GITHUB
+      repoId: {
+        type: Number,
+        default: null,
+      },
+      // REPOSITORY HTML URL
+      htmlUrl: {
+        type: String,
+        default: null,
+        trim: true,
+      },
+      // LINKED AT TIMESTAMP
+      linkedAt: {
+        type: Date,
+        default: null,
+      },
+    },
   },
   { timestamps: true }
 );
@@ -108,6 +145,16 @@ projectSchema.index({ userId: 1, dueDate: 1 });
  */
 //<== TEXT INDEX FOR SEARCH FUNCTIONALITY ==>
 projectSchema.index({ title: "text", description: "text" });
+/**
+ * INDEX FOR GITHUB REPO FULL NAME QUERIES
+ */
+//<== INDEX FOR GITHUB REPO FULL NAME QUERIES ==>
+projectSchema.index({ "githubRepo.fullName": 1 }, { sparse: true });
+/**
+ * COMPOUND INDEX FOR USER AND GITHUB REPO QUERIES
+ */
+//<== COMPOUND INDEX FOR USER AND GITHUB REPO QUERIES ==>
+projectSchema.index({ userId: 1, "githubRepo.fullName": 1 });
 
 // <== EXPORTING THE PROJECT MODEL ==>
 export const Project = mongoose.model("Project", projectSchema);
