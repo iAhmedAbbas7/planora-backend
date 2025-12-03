@@ -1,9 +1,9 @@
 // <== IMPORTS ==>
 import mongoose from "mongoose";
-import { Project } from "../models/project.model.js";
 import { Task } from "../models/task.model.js";
-import { createNotification } from "./notification.controller.js";
+import { Project } from "../models/project.model.js";
 import expressAsyncHandler from "express-async-handler";
+import { createNotification } from "./notification.controller.js";
 
 /**
  * GET PROJECT STATISTICS
@@ -252,6 +252,14 @@ export const getOneProject = expressAsyncHandler(async (req, res) => {
   if (!projectId) {
     res.status(400).json({
       message: "Project ID is Required!",
+      success: false,
+    });
+    return;
+  }
+  // VALIDATING PROJECT ID FORMAT
+  if (!mongoose.Types.ObjectId.isValid(projectId)) {
+    res.status(400).json({
+      message: "Invalid Project ID format!",
       success: false,
     });
     return;
