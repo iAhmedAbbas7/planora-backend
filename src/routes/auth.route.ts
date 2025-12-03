@@ -10,7 +10,6 @@ import {
   refreshToken,
   oauthCallback,
   googleOAuthCallback,
-  githubOAuthCallback,
   getCurrentUser,
   verifyEmail,
   resendVerificationCode,
@@ -26,6 +25,10 @@ import {
   verifyDevice2FA,
   completeDeviceLogin,
 } from "../controllers/deviceVerification.controller.js";
+import {
+  initiateGitHubLink,
+  handleGitHubCallback,
+} from "../controllers/github.controller.js";
 import express from "express";
 import passport from "../config/passport.js";
 import isAuthenticated from "../middleware/isAuthenticated.js";
@@ -41,11 +44,11 @@ router.get(
     scope: ["profile", "email"],
   })
 );
-// GITHUB OAUTH INITIATION
+// GITHUB OAUTH INITIATION (FOR SIGNUP/LOGIN)
 router.get(
   "/github",
   passport.authenticate("github", {
-    scope: ["user:email"],
+    scope: ["user:email", "read:user", "repo"],
   })
 );
 // REQUEST DEVICE VERIFICATION ROUTE
@@ -94,11 +97,13 @@ router.post("/forgot-password", requestPasswordReset);
 router.post("/resend-verification", resendVerificationCode);
 // VERIFY ACCOUNT RECOVERY ROUTE
 router.post("/account-recovery/verify", verifyAccountRecovery);
+// GITHUB OAUTH INITIATION (FOR LINKING TO EXISTING ACCOUNT)
+router.get("/github/link", isAuthenticated, initiateGitHubLink);
 // REQUEST ACCOUNT RECOVERY ROUTE
 router.post("/account-recovery/request", requestAccountRecovery);
 // GOOGLE OAUTH CALLBACK
 router.get("/google/callback", googleOAuthCallback, oauthCallback);
-// GITHUB OAUTH CALLBACK
-router.get("/github/callback", githubOAuthCallback, oauthCallback);
+// GITHUB OAUTH CALLBACK - HANDLES BOTH LOGIN/SIGNUP AND LINKING
+router.get("/github/callback", handleGitHubCallback, oauthCallback);
 
 export default router;
