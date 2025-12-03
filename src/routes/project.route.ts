@@ -10,6 +10,9 @@ import {
   restoreProject,
   getTrashedProjects,
   getWeeklySummary,
+  linkGitHubRepo,
+  unlinkGitHubRepo,
+  getProjectGitHubData,
 } from "../controllers/project.controller.js";
 import {
   getCommentsByProjectId,
@@ -43,12 +46,18 @@ router.get("/stats", getProjectsStats);
 router.put("/:id/restore", restoreProject);
 // GET TRASHED PROJECTS
 router.get("/trashed", getTrashedProjects);
+// LINK GITHUB REPOSITORY TO PROJECT
+router.post("/:id/github/link", linkGitHubRepo);
+// GET PROJECT GITHUB DATA
+router.get("/:id/github", getProjectGitHubData);
 // GET WEEKLY SUMMARY
 router.get("/weekly-summary", getWeeklySummary);
 // CREATE COMMENT
 router.post("/:projectId/comments", createComment);
 // DELETE COMMENT
 router.delete("/comments/:commentId", deleteComment);
+// UNLINK GITHUB REPOSITORY FROM PROJECT
+router.delete("/:id/github/unlink", unlinkGitHubRepo);
 // GET COMMENTS BY PROJECT ID
 router.get("/:projectId/comments", getCommentsByProjectId);
 
