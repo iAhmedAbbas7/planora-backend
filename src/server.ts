@@ -15,6 +15,7 @@ import corsOptions from "./config/corsOptions.js";
 import { logEvents } from "./middleware/logger.js";
 import { getDirName } from "./utils/getDirName.js";
 import { app, server } from "./services/socket.js";
+import githubRoute from "./routes/github.route.js";
 import profileRoute from "./routes/profile.route.js";
 import projectRoute from "./routes/project.route.js";
 import accountRoute from "./routes/account.route.js";
@@ -86,6 +87,8 @@ app.use("/api/v1/auth", authRoute);
 app.use("/api/v1/tasks", taskRoute);
 // <== TRASH ROUTE ==>
 app.use("/api/v1/trash", trashRoute);
+// <== GITHUB INTEGRATION ROUTE ==>
+app.use("/api/v1/github", githubRoute);
 // <== PROFILE ROUTE ==>
 app.use("/api/v1/profile", profileRoute);
 // <== ACCOUNT ROUTE ==>
@@ -130,15 +133,20 @@ initializeCronJobs(app);
 
 // <== DATABASE & SERVER CONNECTION LISTENER ==>
 mongoose.connection.once("open", () => {
+  // <== LOGGING SUCCESS MESSAGE ==>
   console.log("Database Connection Established Successfully");
+  // <== SERVER LISTENER ==>
   server.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+    // <== LOGGING SUCCESS MESSAGE ==>
+    console.log(`Server is Running on Port ${PORT} (^_^)`);
   });
 });
 
 // <== DATABASE CONNECTION ERROR LISTENER ==>
 mongoose.connection.on("error", (err) => {
+  // <== LOGGING ERROR MESSAGE ==>
   console.log(err);
+  // <== LOGGING ERROR EVENTS ==>
   logEvents(
     `${err.no}: ${err.code}\t${err.syscall}\t${err.hostname}`,
     "mongoErrLog.log"
