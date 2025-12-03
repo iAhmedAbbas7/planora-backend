@@ -6,6 +6,7 @@ import express from "express";
 import mongoose from "mongoose";
 import session from "express-session";
 import cookieParser from "cookie-parser";
+import aiRoute from "./routes/ai.route.js";
 import passport from "./config/passport.js";
 import rootRoute from "./routes/root.route.js";
 import authRoute from "./routes/auth.route.js";
@@ -81,6 +82,8 @@ app.use("/", express.static(path.join(__dirname, "..", "public")));
 // <== ROUTES MIDDLEWARE ==>
 // <== ROOT ROUTE ==>
 app.use("/", rootRoute);
+// <== AI INTEGRATION ROUTE ==>
+app.use("/api/v1/ai", aiRoute);
 // <== AUTH ROUTE ==>
 app.use("/api/v1/auth", authRoute);
 // <== TASK ROUTE ==>
