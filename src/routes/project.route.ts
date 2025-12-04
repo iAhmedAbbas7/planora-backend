@@ -28,10 +28,21 @@ const router = express.Router();
 // <== ROUTES ==>
 // ALL ROUTES REQUIRE AUTHENTICATION
 router.use(isAuthenticated);
+
+// <== STATIC ROUTES ==>
 // GET ALL PROJECTS
 router.get("/", getProjects);
 // CREATE PROJECT
 router.post("/", createProject);
+// GET PROJECT STATISTICS
+router.get("/stats", getProjectsStats);
+// GET TRASHED PROJECTS
+router.get("/trashed", getTrashedProjects);
+// GET WEEKLY SUMMARY
+router.get("/weekly-summary", getWeeklySummary);
+// DELETE COMMENT (NO PROJECT ID IN PATH)
+router.delete("/comments/:commentId", deleteComment);
+// <== DYNAMIC ROUTES ==>
 // GET SINGLE PROJECT
 router.get("/:id", getOneProject);
 // UPDATE PROJECT
@@ -40,22 +51,14 @@ router.put("/:id", updateProject);
 router.delete("/:id", deleteProject);
 // MOVE PROJECT TO TRASH
 router.put("/:id/trash", moveToTrash);
-// GET PROJECT STATISTICS
-router.get("/stats", getProjectsStats);
 // RESTORE PROJECT FROM TRASH
 router.put("/:id/restore", restoreProject);
-// GET TRASHED PROJECTS
-router.get("/trashed", getTrashedProjects);
 // LINK GITHUB REPOSITORY TO PROJECT
 router.post("/:id/github/link", linkGitHubRepo);
 // GET PROJECT GITHUB DATA
 router.get("/:id/github", getProjectGitHubData);
-// GET WEEKLY SUMMARY
-router.get("/weekly-summary", getWeeklySummary);
 // CREATE COMMENT
 router.post("/:projectId/comments", createComment);
-// DELETE COMMENT
-router.delete("/comments/:commentId", deleteComment);
 // UNLINK GITHUB REPOSITORY FROM PROJECT
 router.delete("/:id/github/unlink", unlinkGitHubRepo);
 // GET COMMENTS BY PROJECT ID
