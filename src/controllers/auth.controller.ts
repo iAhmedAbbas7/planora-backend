@@ -2315,12 +2315,8 @@ export const githubLinkCallback = expressAsyncHandler(async (req, res) => {
   const { code, state } = req.query;
   // VALIDATE CODE
   if (!code || typeof code !== "string") {
-    // REDIRECTING TO FRONTEND WITH ERROR MESSAGE
-    res.redirect(
-      `${frontendUrl}/settings/integrations?error=github_link_failed&message=${encodeURIComponent(
-        "Authorization code not provided"
-      )}`
-    );
+    // REDIRECTING TO FRONTEND
+    res.redirect(`${frontendUrl}/settings?tab=Integrations`);
     // RETURNING FROM FUNCTION
     return;
   }
@@ -2340,12 +2336,8 @@ export const githubLinkCallback = expressAsyncHandler(async (req, res) => {
   }
   // VALIDATE USER ID FROM STATE
   if (!linkUserId) {
-    // REDIRECTING TO FRONTEND WITH ERROR MESSAGE
-    res.redirect(
-      `${frontendUrl}/settings/integrations?error=github_link_failed&message=${encodeURIComponent(
-        "Invalid link request. Please try again."
-      )}`
-    );
+    // REDIRECTING TO FRONTEND
+    res.redirect(`${frontendUrl}/settings?tab=Integrations`);
     // RETURNING FROM FUNCTION
     return;
   }
@@ -2370,13 +2362,8 @@ export const githubLinkCallback = expressAsyncHandler(async (req, res) => {
     const tokenData = tokenResponse.data;
     // CHECK FOR ERROR IN TOKEN RESPONSE
     if (tokenData.error) {
-      // REDIRECTING TO FRONTEND WITH ERROR MESSAGE
-      res.redirect(
-        `${frontendUrl}/settings/integrations?error=github_link_failed&message=${encodeURIComponent(
-          tokenData.error_description ||
-            "Failed to get access token from GitHub"
-        )}`
-      );
+      // REDIRECTING TO FRONTEND
+      res.redirect(`${frontendUrl}/settings?tab=Integrations`);
       // RETURNING FROM FUNCTION
       return;
     }
@@ -2384,12 +2371,8 @@ export const githubLinkCallback = expressAsyncHandler(async (req, res) => {
     const accessToken = tokenData.access_token;
     // IF NO ACCESS TOKEN, RETURN ERROR
     if (!accessToken) {
-      // REDIRECTING TO FRONTEND WITH ERROR MESSAGE
-      res.redirect(
-        `${frontendUrl}/settings/integrations?error=github_link_failed&message=${encodeURIComponent(
-          "No access token received from GitHub"
-        )}`
-      );
+      // REDIRECTING TO FRONTEND
+      res.redirect(`${frontendUrl}/settings?tab=Integrations`);
       // RETURNING FROM FUNCTION
       return;
     }
@@ -2401,12 +2384,8 @@ export const githubLinkCallback = expressAsyncHandler(async (req, res) => {
     const user = await User.findById(linkUserId).exec();
     // IF USER NOT FOUND, RETURN ERROR
     if (!user) {
-      // REDIRECTING TO FRONTEND WITH ERROR MESSAGE
-      res.redirect(
-        `${frontendUrl}/settings/integrations?error=github_link_failed&message=${encodeURIComponent(
-          "User not found. Please login and try again."
-        )}`
-      );
+      // REDIRECTING TO FRONTEND
+      res.redirect(`${frontendUrl}/settings?tab=Integrations`);
       // RETURNING FROM FUNCTION
       return;
     }
@@ -2419,12 +2398,8 @@ export const githubLinkCallback = expressAsyncHandler(async (req, res) => {
       .exec();
     // IF GITHUB ACCOUNT IS ALREADY LINKED, RETURN ERROR
     if (existingGitHubUser) {
-      // REDIRECTING TO FRONTEND WITH ERROR MESSAGE
-      res.redirect(
-        `${frontendUrl}/settings/integrations?error=github_link_failed&message=${encodeURIComponent(
-          "This GitHub account is already linked to another PlanOra account."
-        )}`
-      );
+      // REDIRECTING TO FRONTEND
+      res.redirect(`${frontendUrl}/settings?tab=Integrations`);
       // RETURNING FROM FUNCTION
       return;
     }
@@ -2442,23 +2417,15 @@ export const githubLinkCallback = expressAsyncHandler(async (req, res) => {
     user.githubScopes = githubScopes;
     // SAVING USER
     await user.save();
-    // REDIRECTING TO FRONTEND WITH SUCCESS
-    res.redirect(
-      `${frontendUrl}/settings/integrations?github_linked=success&username=${encodeURIComponent(
-        githubUser.login
-      )}`
-    );
+    // REDIRECTING TO FRONTEND
+    res.redirect(`${frontendUrl}/settings?tab=Integrations`);
     // RETURNING FROM FUNCTION
     return;
   } catch (error: any) {
     // LOG ERROR
     console.error("Error in GitHub link callback:", error);
-    // REDIRECTING TO FRONTEND WITH ERROR MESSAGE
-    res.redirect(
-      `${frontendUrl}/settings/integrations?error=github_link_failed&message=${encodeURIComponent(
-        "An error occurred while linking GitHub. Please try again."
-      )}`
-    );
+    // REDIRECTING TO FRONTEND
+    res.redirect(`${frontendUrl}/settings?tab=Integrations`);
     // RETURNING FROM FUNCTION
     return;
   }
