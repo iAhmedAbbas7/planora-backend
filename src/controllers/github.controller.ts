@@ -1665,3 +1665,717 @@ export const getRepositoryContributors = expressAsyncHandler(
     }
   }
 );
+
+/**
+ * CREATE A NEW REPOSITORY
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== CREATE REPOSITORY ==>
+export const createRepository = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET REPOSITORY DATA FROM BODY
+  const {
+    name,
+    description,
+    private: isPrivate,
+    autoInit,
+    gitignoreTemplate,
+    licenseTemplate,
+  } = req.body;
+  // VALIDATE NAME
+  if (!name || typeof name !== "string" || name.trim().length === 0) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Repository name is required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // VALIDATE NAME FORMAT (ALPHANUMERIC, HYPHENS, UNDERSCORES)
+  const nameRegex = /^[a-zA-Z0-9._-]+$/;
+  // IF NAME DOES NOT MATCH REGEX, RETURN ERROR
+  if (!nameRegex.test(name.trim())) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message:
+        "Repository name can only contain alphanumeric characters, hyphens, underscores, and periods.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // CREATE REPOSITORY
+  try {
+    // CREATE REPOSITORY ON GITHUB
+    const { data: repository } = await octokit.repos.createForAuthenticatedUser(
+      {
+        name: name.trim(),
+        description: description || undefined,
+        private: isPrivate ?? false,
+        auto_init: autoInit ?? true,
+        gitignore_template: gitignoreTemplate || undefined,
+        license_template: licenseTemplate || undefined,
+      }
+    );
+    // RETURNING SUCCESS RESPONSE
+    res.status(201).json({
+      message: "Repository created successfully!",
+      success: true,
+      data: {
+        id: repository.id,
+        name: repository.name,
+        fullName: repository.full_name,
+        description: repository.description,
+        private: repository.private,
+        htmlUrl: repository.html_url,
+        cloneUrl: repository.clone_url,
+        sshUrl: repository.ssh_url,
+        defaultBranch: repository.default_branch,
+        createdAt: repository.created_at,
+        owner: {
+          login: repository.owner.login,
+          avatarUrl: repository.owner.avatar_url,
+        },
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // LOG ERROR FOR DEBUGGING
+    console.error("Error creating repository:", error.message || error);
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // VALIDATION ERROR (422)
+    if (error.status === 422) {
+      // TRY TO GET SPECIFIC ERROR MESSAGE FROM GITHUB
+      let errorMessage =
+        "A repository with this name already exists. Please choose a different name.";
+      // CHECK IF GITHUB PROVIDED SPECIFIC ERROR DETAILS
+      if (
+        error.response?.data?.errors &&
+        error.response.data.errors.length > 0
+      ) {
+        // GET FIRST ERROR
+        const githubError = error.response.data.errors[0];
+        // CHECK IF ERROR IS FOR NAME
+        if (githubError.field === "name" && githubError.code === "custom") {
+          // SET ERROR MESSAGE
+          errorMessage = githubError.message || errorMessage;
+          // CHECK IF ERROR IS FOR GITIGNORE TEMPLATE
+        } else if (githubError.field === "gitignore_template") {
+          // SET ERROR MESSAGE
+          errorMessage =
+            "Invalid .gitignore template. Please select a different one.";
+          // CHECK IF ERROR IS FOR LICENSE TEMPLATE
+        } else if (githubError.field === "license_template") {
+          // SET ERROR MESSAGE
+          errorMessage =
+            "Invalid license template. Please select a different one.";
+          // OTHER ERROR
+        } else {
+          // SET ERROR MESSAGE
+          errorMessage = githubError.message || errorMessage;
+        }
+      } else if (error.message) {
+        // SET ERROR MESSAGE
+        errorMessage = error.message;
+      }
+      // RETURNING ERROR RESPONSE
+      res.status(422).json({
+        message: errorMessage,
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message:
+        error.message || "Error creating repository. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * FORK A REPOSITORY
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== FORK REPOSITORY ==>
+export const forkRepository = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER AND REPO FROM PARAMS
+  const { owner, repo } = req.params;
+  // GET OPTIONAL NEW NAME FROM BODY
+  const { name, defaultBranchOnly } = req.body;
+  // VALIDATE OWNER AND REPO
+  if (!owner || !repo) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner and repository name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FORK REPOSITORY
+  try {
+    // FORK REPOSITORY ON GITHUB
+    const { data: forkedRepo } = await octokit.repos.createFork({
+      owner,
+      repo,
+      name: name || undefined,
+      default_branch_only: defaultBranchOnly ?? false,
+    });
+    // RETURNING SUCCESS RESPONSE
+    res.status(202).json({
+      message:
+        "Repository fork initiated! It may take a few moments to complete.",
+      success: true,
+      data: {
+        id: forkedRepo.id,
+        name: forkedRepo.name,
+        fullName: forkedRepo.full_name,
+        description: forkedRepo.description,
+        private: forkedRepo.private,
+        htmlUrl: forkedRepo.html_url,
+        cloneUrl: forkedRepo.clone_url,
+        sshUrl: forkedRepo.ssh_url,
+        defaultBranch: forkedRepo.default_branch,
+        createdAt: forkedRepo.created_at,
+        fork: true,
+        owner: {
+          login: forkedRepo.owner.login,
+          avatarUrl: forkedRepo.owner.avatar_url,
+        },
+        parent: forkedRepo.parent
+          ? {
+              fullName: forkedRepo.parent.full_name,
+              htmlUrl: forkedRepo.parent.html_url,
+            }
+          : null,
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // REPOSITORY NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Repository not found or you don't have access to it.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // ALREADY FORKED
+    if (error.status === 403) {
+      // RETURNING ERROR RESPONSE
+      res.status(403).json({
+        message:
+          "You may have already forked this repository or don't have permission to fork it.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error forking repository. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * DELETE A REPOSITORY
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== DELETE REPOSITORY ==>
+export const deleteRepository = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER AND REPO FROM PARAMS
+  const { owner, repo } = req.params;
+  // VALIDATE OWNER AND REPO
+  if (!owner || !repo) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner and repository name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // DELETE REPOSITORY
+  try {
+    // VERIFY USER OWNS THE REPOSITORY
+    const { data: repoData } = await octokit.repos.get({ owner, repo });
+    // CHECK IF USER HAS ADMIN PERMISSION
+    if (!repoData.permissions?.admin) {
+      // RETURNING ERROR RESPONSE
+      res.status(403).json({
+        message: "You don't have permission to delete this repository.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // DELETE REPOSITORY ON GITHUB
+    await octokit.repos.delete({ owner, repo });
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Repository deleted successfully!",
+      success: true,
+      data: {
+        deletedRepository: `${owner}/${repo}`,
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // REPOSITORY NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Repository not found or you don't have access to it.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // FORBIDDEN
+    if (error.status === 403) {
+      // RETURNING ERROR RESPONSE
+      res.status(403).json({
+        message:
+          "You don't have permission to delete this repository. Admin access is required.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error deleting repository. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * UPDATE REPOSITORY SETTINGS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== UPDATE REPOSITORY ==>
+export const updateRepository = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER AND REPO FROM PARAMS
+  const { owner, repo } = req.params;
+  // VALIDATE OWNER AND REPO
+  if (!owner || !repo) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner and repository name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET UPDATE DATA FROM BODY
+  const {
+    name,
+    description,
+    homepage,
+    private: isPrivate,
+    hasIssues,
+    hasProjects,
+    hasWiki,
+    archived,
+    defaultBranch,
+  } = req.body;
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // UPDATE REPOSITORY
+  try {
+    // BUILD UPDATE OBJECT WITH ONLY PROVIDED FIELDS
+    const updateData: Record<string, any> = {};
+    // ADD NAME IF PROVIDED
+    if (name !== undefined) updateData.name = name;
+    // ADD DESCRIPTION IF PROVIDED
+    if (description !== undefined) updateData.description = description;
+    // ADD HOMEPAGE IF PROVIDED
+    if (homepage !== undefined) updateData.homepage = homepage;
+    // ADD PRIVATE IF PROVIDED
+    if (isPrivate !== undefined) updateData.private = isPrivate;
+    // ADD HAS ISSUES IF PROVIDED
+    if (hasIssues !== undefined) updateData.has_issues = hasIssues;
+    // ADD HAS PROJECTS IF PROVIDED
+    if (hasProjects !== undefined) updateData.has_projects = hasProjects;
+    // ADD HAS WIKI IF PROVIDED
+    if (hasWiki !== undefined) updateData.has_wiki = hasWiki;
+    // ADD ARCHIVED IF PROVIDED
+    if (archived !== undefined) updateData.archived = archived;
+    // ADD DEFAULT BRANCH IF PROVIDED
+    if (defaultBranch !== undefined) updateData.default_branch = defaultBranch;
+    // CHECK IF THERE ARE ANY UPDATES
+    if (Object.keys(updateData).length === 0) {
+      // RETURNING ERROR RESPONSE
+      res.status(400).json({
+        message: "No update fields provided!",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // UPDATE REPOSITORY ON GITHUB
+    const { data: repository } = await octokit.repos.update({
+      owner,
+      repo,
+      ...updateData,
+    });
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Repository updated successfully!",
+      success: true,
+      data: {
+        id: repository.id,
+        name: repository.name,
+        fullName: repository.full_name,
+        description: repository.description,
+        private: repository.private,
+        htmlUrl: repository.html_url,
+        homepage: repository.homepage,
+        hasIssues: repository.has_issues,
+        hasProjects: repository.has_projects,
+        hasWiki: repository.has_wiki,
+        archived: repository.archived,
+        defaultBranch: repository.default_branch,
+        visibility: repository.visibility,
+        updatedAt: repository.updated_at,
+        owner: {
+          login: repository.owner.login,
+          avatarUrl: repository.owner.avatar_url,
+        },
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // REPOSITORY NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Repository not found or you don't have access to it.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // FORBIDDEN
+    if (error.status === 403) {
+      // RETURNING ERROR RESPONSE
+      res.status(403).json({
+        message: "You don't have permission to update this repository.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NAME CONFLICT
+    if (error.status === 422) {
+      // RETURNING ERROR RESPONSE
+      res.status(422).json({
+        message: "Invalid update. The repository name may already be taken.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error updating repository. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * GET GIT COMMANDS FOR A REPOSITORY
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET GIT COMMANDS ==>
+export const getGitCommands = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER AND REPO FROM PARAMS
+  const { owner, repo } = req.params;
+  // VALIDATE OWNER AND REPO
+  if (!owner || !repo) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner and repository name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET REPOSITORY DETAILS
+  try {
+    // FETCH REPOSITORY DETAILS
+    const { data: repository } = await octokit.repos.get({ owner, repo });
+    // BUILD GIT COMMANDS
+    const commands = {
+      // CLONE COMMANDS
+      clone: {
+        https: `git clone ${repository.clone_url}`,
+        ssh: `git clone ${repository.ssh_url}`,
+      },
+      // ADD REMOTE COMMANDS
+      addRemote: {
+        https: `git remote add origin ${repository.clone_url}`,
+        ssh: `git remote add origin ${repository.ssh_url}`,
+      },
+      // PUSH COMMANDS
+      push: {
+        firstPush: `git push -u origin ${repository.default_branch}`,
+        regular: `git push origin ${repository.default_branch}`,
+      },
+      // PULL COMMANDS
+      pull: `git pull origin ${repository.default_branch}`,
+      // FETCH COMMANDS
+      fetch: `git fetch origin`,
+      // QUICKSTART FOR EMPTY REPO
+      quickstart: {
+        newRepo: [
+          `echo "# ${repository.name}" >> README.md`,
+          `git init`,
+          `git add README.md`,
+          `git commit -m "Initial commit"`,
+          `git branch -M ${repository.default_branch}`,
+          `git remote add origin ${repository.clone_url}`,
+          `git push -u origin ${repository.default_branch}`,
+        ],
+        existingRepo: [
+          `git remote add origin ${repository.clone_url}`,
+          `git branch -M ${repository.default_branch}`,
+          `git push -u origin ${repository.default_branch}`,
+        ],
+      },
+    };
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Git commands generated successfully!",
+      success: true,
+      data: {
+        repository: {
+          name: repository.name,
+          fullName: repository.full_name,
+          defaultBranch: repository.default_branch,
+          cloneUrl: repository.clone_url,
+          sshUrl: repository.ssh_url,
+        },
+        commands,
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // REPOSITORY NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Repository not found or you don't have access to it.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error generating git commands. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
