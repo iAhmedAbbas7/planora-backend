@@ -2483,7 +2483,8 @@ export const updateRepositoryTopics = expressAsyncHandler(async (req, res) => {
     if (error.status === 422) {
       // RETURNING ERROR RESPONSE
       res.status(422).json({
-        message: "Invalid topic format. Topics must be lowercase and can contain hyphens.",
+        message:
+          "Invalid topic format. Topics must be lowercase and can contain hyphens.",
         success: false,
       });
       // RETURNING FROM FUNCTION
@@ -2706,7 +2707,8 @@ export const addRepositoryCollaborator = expressAsyncHandler(
       if (error.status === 422) {
         // RETURNING ERROR RESPONSE
         res.status(422).json({
-          message: "Invalid permission level or user is already a collaborator.",
+          message:
+            "Invalid permission level or user is already a collaborator.",
           success: false,
         });
         // RETURNING FROM FUNCTION
@@ -2941,6 +2943,979 @@ export const transferRepository = expressAsyncHandler(async (req, res) => {
     // OTHER ERROR
     res.status(500).json({
       message: "Error transferring repository. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * GET REPOSITORY CONTENTS (FILE TREE)
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET REPOSITORY CONTENTS ==>
+export const getRepositoryContents = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER AND REPO FROM PARAMS
+  const { owner, repo } = req.params;
+  // GET PATH FROM QUERY (OPTIONAL)
+  const path = (req.query.path as string) || "";
+  // GET REF FROM QUERY (OPTIONAL)
+  const ref = (req.query.ref as string) || "";
+  // VALIDATE PARAMS
+  if (!owner || !repo) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner and repository name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET REPOSITORY CONTENTS
+  try {
+    // GET CONTENTS FROM GITHUB
+    const { data: contents } = await octokit.repos.getContent({
+      owner,
+      repo,
+      path,
+      ref,
+    });
+    // FORMAT CONTENTS
+    const formattedContents = Array.isArray(contents)
+      ? contents.map((item) => ({
+          name: item.name,
+          path: item.path,
+          sha: item.sha,
+          size: item.size,
+          type: item.type,
+          downloadUrl: item.download_url,
+          htmlUrl: item.html_url,
+        }))
+      : {
+          name: contents.name,
+          path: contents.path,
+          sha: contents.sha,
+          size: contents.size,
+          type: contents.type,
+          downloadUrl: contents.download_url,
+          htmlUrl: contents.html_url,
+          content:
+            contents.type === "file" && "content" in contents
+              ? Buffer.from(contents.content, "base64").toString("utf-8")
+              : undefined,
+          encoding: "encoding" in contents ? contents.encoding : undefined,
+        };
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Repository contents fetched successfully!",
+      success: true,
+      data: formattedContents,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Repository or path not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching repository contents. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * GET FILE CONTENT
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET FILE CONTENT ==>
+export const getFileContent = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER AND REPO FROM PARAMS
+  const { owner, repo } = req.params;
+  // GET PATH FROM QUERY
+  const path = req.query.path as string;
+  // GET REF FROM QUERY
+  const ref = (req.query.ref as string) || "";
+  // VALIDATE PARAMS
+  if (!owner || !repo) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner and repository name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // VALIDATE PATH
+  if (!path) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "File path is required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET FILE CONTENT
+  try {
+    // GET FILE FROM GITHUB
+    const { data: file } = await octokit.repos.getContent({
+      owner,
+      repo,
+      path,
+      ...(ref && { ref }),
+    });
+    // CHECK IF FILE IS A DIRECTORY
+    if (Array.isArray(file)) {
+      // RETURNING ERROR RESPONSE
+      res.status(400).json({
+        message: "Path is a directory, not a file.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // CHECK IF FILE HAS CONTENT
+    if (file.type !== "file" || !("content" in file)) {
+      // RETURNING ERROR RESPONSE
+      res.status(400).json({
+        message: "Cannot read content of this file type.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // DECODE FILE CONTENT
+    const content = Buffer.from(file.content, "base64").toString("utf-8");
+    // GET FILE EXTENSION FOR LANGUAGE DETECTION
+    const extension = path.split(".").pop()?.toLowerCase() || "";
+    // LANGUAGE MAP
+    const languageMap: Record<string, string> = {
+      js: "javascript",
+      jsx: "javascript",
+      ts: "typescript",
+      tsx: "typescript",
+      py: "python",
+      rb: "ruby",
+      java: "java",
+      c: "c",
+      cpp: "cpp",
+      cs: "csharp",
+      go: "go",
+      rs: "rust",
+      php: "php",
+      swift: "swift",
+      kt: "kotlin",
+      scala: "scala",
+      html: "html",
+      css: "css",
+      scss: "scss",
+      sass: "sass",
+      less: "less",
+      json: "json",
+      xml: "xml",
+      yaml: "yaml",
+      yml: "yaml",
+      md: "markdown",
+      sql: "sql",
+      sh: "shell",
+      bash: "shell",
+      zsh: "shell",
+      dockerfile: "dockerfile",
+      makefile: "makefile",
+      toml: "toml",
+      ini: "ini",
+      cfg: "ini",
+      env: "dotenv",
+      gitignore: "plaintext",
+      vue: "vue",
+      svelte: "svelte",
+    };
+    // GET LANGUAGE
+    const language = languageMap[extension] || "plaintext";
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "File content fetched successfully!",
+      success: true,
+      data: {
+        name: file.name,
+        path: file.path,
+        sha: file.sha,
+        size: file.size,
+        content,
+        encoding: file.encoding,
+        htmlUrl: file.html_url,
+        downloadUrl: file.download_url,
+        language,
+        extension,
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "File not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // FILE TOO LARGE
+    if (error.status === 403 && error.message?.includes("too large")) {
+      // RETURNING ERROR RESPONSE
+      res.status(403).json({
+        message: "File is too large to display. Please use the download URL.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching file content. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * CREATE FILE
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== CREATE FILE ==>
+export const createFile = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER AND REPO FROM PARAMS
+  const { owner, repo } = req.params;
+  // GET FILE DATA FROM BODY
+  const { path, content, message, branch } = req.body;
+  // VALIDATE PARAMS
+  if (!owner || !repo) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner and repository name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // VALIDATE REQUIRED FIELDS
+  if (!path || content === undefined || !message) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Path, content, and commit message are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // CREATE FILE
+  try {
+    // ENCODE CONTENT TO BASE64
+    const encodedContent = Buffer.from(content).toString("base64");
+    // CREATE FILE ON GITHUB
+    const { data: result } = await octokit.repos.createOrUpdateFileContents({
+      owner,
+      repo,
+      path,
+      message,
+      content: encodedContent,
+      branch: branch || undefined,
+    });
+    // RETURNING SUCCESS RESPONSE
+    res.status(201).json({
+      message: "File created successfully!",
+      success: true,
+      data: {
+        path: result.content?.path,
+        sha: result.content?.sha,
+        htmlUrl: result.content?.html_url,
+        commit: {
+          sha: result.commit.sha,
+          message: result.commit.message,
+          htmlUrl: result.commit.html_url,
+        },
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // FILE ALREADY EXISTS
+    if (error.status === 422) {
+      // RETURNING ERROR RESPONSE
+      res.status(422).json({
+        message: "File already exists. Use update endpoint instead.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NO PERMISSION
+    if (error.status === 403) {
+      // RETURNING ERROR RESPONSE
+      res.status(403).json({
+        message:
+          "You don't have permission to create files in this repository.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Repository or branch not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error creating file. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * UPDATE FILE
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== UPDATE FILE ==>
+export const updateFile = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER AND REPO FROM PARAMS
+  const { owner, repo } = req.params;
+  // GET FILE DATA FROM BODY
+  const { path, content, message, sha, branch } = req.body;
+  // VALIDATE PARAMS
+  if (!owner || !repo) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner and repository name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // VALIDATE REQUIRED FIELDS
+  if (!path || content === undefined || !message || !sha) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Path, content, commit message, and file SHA are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // UPDATE FILE
+  try {
+    // ENCODE CONTENT TO BASE64
+    const encodedContent = Buffer.from(content).toString("base64");
+    // UPDATE FILE ON GITHUB
+    const { data: result } = await octokit.repos.createOrUpdateFileContents({
+      owner,
+      repo,
+      path,
+      message,
+      content: encodedContent,
+      sha,
+      branch: branch || undefined,
+    });
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "File updated successfully!",
+      success: true,
+      data: {
+        path: result.content?.path,
+        sha: result.content?.sha,
+        htmlUrl: result.content?.html_url,
+        commit: {
+          sha: result.commit.sha,
+          message: result.commit.message,
+          htmlUrl: result.commit.html_url,
+        },
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // CONFLICT - SHA MISMATCH
+    if (error.status === 409) {
+      // RETURNING ERROR RESPONSE
+      res.status(409).json({
+        message: "File has been modified. Please refresh and try again.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NO PERMISSION
+    if (error.status === 403) {
+      // RETURNING ERROR RESPONSE
+      res.status(403).json({
+        message:
+          "You don't have permission to update files in this repository.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "File, repository, or branch not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error updating file. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * DELETE FILE
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== DELETE FILE ==>
+export const deleteFile = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER AND REPO FROM PARAMS
+  const { owner, repo } = req.params;
+  // GET FILE DATA FROM BODY
+  const { path, message, sha, branch } = req.body;
+  // VALIDATE PARAMS
+  if (!owner || !repo) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner and repository name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // VALIDATE REQUIRED FIELDS
+  if (!path || !message || !sha) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Path, commit message, and file SHA are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // DELETE FILE
+  try {
+    // DELETE FILE ON GITHUB
+    const { data: result } = await octokit.repos.deleteFile({
+      owner,
+      repo,
+      path,
+      message,
+      sha,
+      branch: branch || undefined,
+    });
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "File deleted successfully!",
+      success: true,
+      data: {
+        commit: {
+          sha: result.commit.sha,
+          message: result.commit.message,
+          htmlUrl: result.commit.html_url,
+        },
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // CONFLICT - SHA MISMATCH
+    if (error.status === 409) {
+      // RETURNING ERROR RESPONSE
+      res.status(409).json({
+        message: "File has been modified. Please refresh and try again.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NO PERMISSION
+    if (error.status === 403) {
+      // RETURNING ERROR RESPONSE
+      res.status(403).json({
+        message:
+          "You don't have permission to delete files in this repository.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "File, repository, or branch not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error deleting file. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * GET FILE BLAME
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET FILE BLAME ==>
+export const getFileBlame = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER AND REPO FROM PARAMS
+  const { owner, repo } = req.params;
+  // GET PATH FROM QUERY
+  const path = req.query.path as string;
+  const ref = (req.query.ref as string) || undefined;
+  // VALIDATE PARAMS
+  if (!owner || !repo) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner and repository name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // VALIDATE PATH
+  if (!path) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "File path is required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET FILE BLAME USING COMMITS
+  try {
+    // GET FILE COMMITS TO BUILD BLAME INFO
+    const { data: commits } = await octokit.repos.listCommits({
+      owner,
+      repo,
+      path,
+      ...(ref && { sha: ref }),
+      per_page: 100,
+    });
+    // FORMAT BLAME DATA
+    const blameData = commits.map((commit) => ({
+      sha: commit.sha,
+      shortSha: commit.sha.substring(0, 7),
+      message: commit.commit.message.split("\n")[0],
+      author: {
+        name: commit.commit.author?.name || "Unknown",
+        email: commit.commit.author?.email || "",
+        date: commit.commit.author?.date || "",
+        avatarUrl: commit.author?.avatar_url || "",
+        login: commit.author?.login || "",
+      },
+      htmlUrl: commit.html_url,
+    }));
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "File blame fetched successfully!",
+      success: true,
+      data: {
+        path,
+        commits: blameData,
+        totalCommits: commits.length,
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "File or repository not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching file blame. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * GET REPOSITORY TREE (FULL TREE STRUCTURE)
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET REPOSITORY TREE ==>
+export const getRepositoryTree = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER AND REPO FROM PARAMS
+  const { owner, repo } = req.params;
+  // GET REF FROM QUERY (OPTIONAL - DEFAULTS TO DEFAULT BRANCH)
+  const ref = (req.query.ref as string) || undefined;
+  // GET RECURSIVE FROM QUERY
+  const recursive = req.query.recursive === "true";
+  // VALIDATE PARAMS
+  if (!owner || !repo) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner and repository name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET REPOSITORY TREE
+  try {
+    // GET DEFAULT BRANCH IF REF NOT PROVIDED
+    let treeSha = ref;
+    if (!treeSha) {
+      // GET REPO INFO FOR DEFAULT BRANCH
+      const { data: repoData } = await octokit.repos.get({ owner, repo });
+      // GET DEFAULT BRANCH REF
+      const { data: branchData } = await octokit.repos.getBranch({
+        owner,
+        repo,
+        branch: repoData.default_branch,
+      });
+      treeSha = branchData.commit.sha;
+    }
+    // GET TREE FROM GITHUB
+    const { data: tree } = await octokit.git.getTree({
+      owner,
+      repo,
+      tree_sha: treeSha,
+      ...(recursive && { recursive: "1" }),
+    });
+    // FORMAT TREE DATA
+    const formattedTree = tree.tree.map((item) => ({
+      path: item.path,
+      mode: item.mode,
+      type: item.type,
+      sha: item.sha,
+      size: item.size,
+      url: item.url,
+    }));
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Repository tree fetched successfully!",
+      success: true,
+      data: {
+        sha: tree.sha,
+        url: tree.url,
+        truncated: tree.truncated,
+        tree: formattedTree,
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Repository or branch not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching repository tree. Please try again later.",
       success: false,
     });
     // RETURNING FROM FUNCTION
