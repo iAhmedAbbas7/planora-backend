@@ -23,6 +23,13 @@ import {
   addRepositoryCollaborator,
   removeRepositoryCollaborator,
   transferRepository,
+  getRepositoryContents,
+  getFileContent,
+  createFile,
+  updateFile,
+  deleteFile,
+  getFileBlame,
+  getRepositoryTree,
 } from "../controllers/github.controller.js";
 import express from "express";
 import isAuthenticated from "../middleware/isAuthenticated.js";
@@ -81,6 +88,20 @@ router.get("/repositories/:owner/:repo/languages", getRepositoryLanguages);
 router.get("/repositories/:owner/:repo/commands", getGitCommands);
 // UPDATE REPOSITORY TOPICS
 router.put("/repositories/:owner/:repo/topics", updateRepositoryTopics);
+// GET REPOSITORY TREE (FULL TREE STRUCTURE)
+router.get("/repositories/:owner/:repo/tree", getRepositoryTree);
+// GET REPOSITORY CONTENTS (FILE TREE / DIRECTORY)
+router.get("/repositories/:owner/:repo/contents", getRepositoryContents);
+// GET FILE CONTENT
+router.get("/repositories/:owner/:repo/file", getFileContent);
+// CREATE FILE
+router.post("/repositories/:owner/:repo/file", createFile);
+// UPDATE FILE
+router.put("/repositories/:owner/:repo/file", updateFile);
+// DELETE FILE
+router.delete("/repositories/:owner/:repo/file", deleteFile);
+// GET FILE BLAME
+router.get("/repositories/:owner/:repo/blame", getFileBlame);
 // FORK REPOSITORY
 router.post("/repositories/:owner/:repo/fork", forkRepository);
 // TRANSFER REPOSITORY
