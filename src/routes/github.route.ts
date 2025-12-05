@@ -18,6 +18,11 @@ import {
   deleteRepository,
   updateRepository,
   getGitCommands,
+  updateRepositoryTopics,
+  getRepositoryCollaborators,
+  addRepositoryCollaborator,
+  removeRepositoryCollaborator,
+  transferRepository,
 } from "../controllers/github.controller.js";
 import express from "express";
 import isAuthenticated from "../middleware/isAuthenticated.js";
@@ -28,11 +33,6 @@ const router = express.Router();
 // <== ROUTES ==>
 // ALL ROUTES REQUIRE AUTHENTICATION
 router.use(isAuthenticated);
-// GET REPOSITORY CONTRIBUTORS (SPECIFIC ROUTE BEFORE DYNAMIC)
-router.get(
-  "/repositories/:owner/:repo/contributors",
-  getRepositoryContributors
-);
 // GET GITHUB CONNECTION STATUS
 router.get("/status", getGitHubStatus);
 // VERIFY GITHUB TOKEN (CHECK IF STILL VALID)
@@ -45,6 +45,26 @@ router.get("/repositories", getRepositories);
 router.post("/repositories", createRepository);
 // DISCONNECT GITHUB FROM ACCOUNT
 router.delete("/disconnect", disconnectGitHub);
+// GET REPOSITORY CONTRIBUTORS (SPECIFIC ROUTE BEFORE DYNAMIC)
+router.get(
+  "/repositories/:owner/:repo/contributors",
+  getRepositoryContributors
+);
+// GET REPOSITORY COLLABORATORS
+router.get(
+  "/repositories/:owner/:repo/collaborators",
+  getRepositoryCollaborators
+);
+// ADD REPOSITORY COLLABORATOR
+router.put(
+  "/repositories/:owner/:repo/collaborators/:username",
+  addRepositoryCollaborator
+);
+// REMOVE REPOSITORY COLLABORATOR
+router.delete(
+  "/repositories/:owner/:repo/collaborators/:username",
+  removeRepositoryCollaborator
+);
 // GET REPOSITORY ISSUES
 router.get("/repositories/:owner/:repo/issues", getRepositoryIssues);
 // GET REPOSITORY README
@@ -59,8 +79,12 @@ router.get("/repositories/:owner/:repo/pulls", getRepositoryPullRequests);
 router.get("/repositories/:owner/:repo/languages", getRepositoryLanguages);
 // GET GIT COMMANDS FOR REPOSITORY
 router.get("/repositories/:owner/:repo/commands", getGitCommands);
+// UPDATE REPOSITORY TOPICS
+router.put("/repositories/:owner/:repo/topics", updateRepositoryTopics);
 // FORK REPOSITORY
 router.post("/repositories/:owner/:repo/fork", forkRepository);
+// TRANSFER REPOSITORY
+router.post("/repositories/:owner/:repo/transfer", transferRepository);
 // GET REPOSITORY DETAILS (DYNAMIC ROUTE AFTER SPECIFIC ROUTES)
 router.get("/repositories/:owner/:repo", getRepositoryDetails);
 // UPDATE REPOSITORY SETTINGS
