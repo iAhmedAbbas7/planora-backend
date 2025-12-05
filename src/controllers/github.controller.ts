@@ -529,6 +529,8 @@ export const getRepositories = expressAsyncHandler(async (req, res) => {
   const direction = (req.query.direction as string) || "desc";
   // SET TYPE QUERY PARAMETERS
   const type = (req.query.type as string) || "all";
+  // SET SEARCH QUERY PARAMETER
+  const searchQuery = (req.query.q as string) || "";
   // GET OCTOKIT INSTANCE
   const { octokit, error } = await getOctokitForUser(userId);
   // IF ERROR, RETURN ERROR RESPONSE
@@ -543,7 +545,60 @@ export const getRepositories = expressAsyncHandler(async (req, res) => {
   }
   // FETCH REPOSITORIES
   try {
-    // GET AUTHENTICATED USER'S REPOSITORIES
+    // IF SEARCH QUERY IS PROVIDED, USE SEARCH API
+    if (searchQuery.trim()) {
+      // GET AUTHENTICATED USER
+      const { data: user } = await octokit.users.getAuthenticated();
+      // SEARCH REPOSITORIES FOR THE USER
+      const { data: searchResults } = await octokit.search.repos({
+        q: `${searchQuery} user:${user.login}`,
+        sort: "updated",
+        order: "desc",
+        per_page: perPage,
+        page: page,
+      });
+      // MAP SEARCH RESULTS TO SIMPLIFIED FORMAT
+      const mappedRepos = searchResults.items.map((repo) => ({
+        id: repo.id,
+        name: repo.name,
+        fullName: repo.full_name,
+        description: repo.description,
+        private: repo.private,
+        htmlUrl: repo.html_url,
+        cloneUrl: repo.clone_url,
+        sshUrl: repo.ssh_url,
+        language: repo.language,
+        stargazersCount: repo.stargazers_count,
+        watchersCount: repo.watchers_count,
+        forksCount: repo.forks_count,
+        openIssuesCount: repo.open_issues_count,
+        defaultBranch: repo.default_branch,
+        createdAt: repo.created_at,
+        updatedAt: repo.updated_at,
+        pushedAt: repo.pushed_at,
+        owner: {
+          login: repo.owner?.login,
+          avatarUrl: repo.owner?.avatar_url,
+        },
+      }));
+      // RETURNING SUCCESS RESPONSE
+      res.status(200).json({
+        message: "Repositories searched successfully!",
+        success: true,
+        data: {
+          repositories: mappedRepos,
+          pagination: {
+            page,
+            perPage,
+            hasMore: searchResults.total_count > page * perPage,
+            totalCount: searchResults.total_count,
+          },
+        },
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // GET AUTHENTICATED USER'S REPOSITORIES (NO SEARCH)
     const { data: repositories } = await octokit.repos.listForAuthenticatedUser(
       {
         sort: sort as "created" | "updated" | "pushed" | "full_name",
