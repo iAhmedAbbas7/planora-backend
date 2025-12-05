@@ -6,6 +6,8 @@ import {
   suggestNextTasks,
   summarizeRepository,
   saveGeneratedTasks,
+  aiCategorizeRepository,
+  aiRepositoryHealthScore,
 } from "../controllers/ai.controller.js";
 import express from "express";
 import isAuthenticated from "../middleware/isAuthenticated.js";
@@ -28,5 +30,9 @@ router.get("/suggest/:projectId", suggestNextTasks);
 router.post("/generate/readme", generateTasksFromReadme);
 // GENERATE TASKS FROM COMMITS
 router.post("/generate/commits", generateTasksFromCommits);
+// AI REPOSITORY HEALTH SCORE
+router.get("/health/:owner/:repo", aiRepositoryHealthScore);
+// AI CATEGORIZE REPOSITORY
+router.get("/categorize/:owner/:repo", aiCategorizeRepository);
 
 export default router;
