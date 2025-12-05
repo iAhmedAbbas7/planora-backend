@@ -1082,3 +1082,507 @@ export const saveGeneratedTasks = expressAsyncHandler(async (req, res) => {
     return;
   }
 });
+
+/**
+ * AI CATEGORIZE REPOSITORY
+ * Analyzes a repository and categorizes it by type, tech stack, and purpose
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== AI CATEGORIZE REPOSITORY ==>
+export const aiCategorizeRepository = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST
+  const userId = (req as any).id;
+  // IF USER ID NOT PROVIDED, RETURN 401 ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER AND REPO FROM PARAMS
+  const { owner, repo } = req.params;
+  // VALIDATE OWNER AND REPO
+  if (!owner || !repo) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner and repository name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // CHECK IF AI IS CONFIGURED
+  const model = getGeminiModel();
+  // IF MODEL NOT CONFIGURED, RETURN ERROR RESPONSE
+  if (!model) {
+    // RETURNING ERROR RESPONSE
+    res.status(503).json({
+      message: "AI service is not configured.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 400).json({
+      message: error?.message || "GitHub is not connected.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FETCH REPOSITORY DATA
+  try {
+    // GET REPOSITORY DETAILS
+    const { data: repoData } = await octokit.repos.get({ owner, repo });
+    // GET REPOSITORY LANGUAGES
+    const { data: languages } = await octokit.repos.listLanguages({
+      owner,
+      repo,
+    });
+    // TRY TO GET README
+    let readme = "";
+    try {
+      // GET README DATA
+      const { data: readmeData } = await octokit.repos.getReadme({
+        owner,
+        repo,
+        mediaType: { format: "raw" },
+      });
+      // SET README CONTENT
+      readme = (readmeData as unknown as string).substring(0, 3000);
+    } catch {
+      // NO README AVAILABLE
+      readme = "No README available";
+    }
+    // GET TOPICS
+    const topics = repoData.topics || [];
+    // BUILD LANGUAGE LIST
+    const languageList = Object.keys(languages).slice(0, 10).join(", ");
+    // BUILD AI PROMPT
+    const prompt = `Analyze this GitHub repository and provide categorization:
+    - The category of the project (frontend, backend, fullstack, library, cli, mobile, devops, data-science, machine-learning, documentation, other)
+    - The subcategory of the project (more specific category like: react-app, express-api, npm-package, etc)
+    - The main technologies used
+    - The frameworks used
+    - The purpose of the project
+    - The project type (application, library, tool, template, learning, documentation)
+    - The complexity of the project (beginner, intermediate, advanced)
+    - The suggested tags for the project
+    Repository: ${repoData.full_name}
+    Description: ${repoData.description || "No description"}
+    Languages: ${languageList || "Unknown"}
+    Topics: ${topics.join(", ") || "None"}
+    Stars: ${repoData.stargazers_count}
+    Is Fork: ${repoData.fork}
+    README (first 3000 chars): ${readme}
+    Provide a JSON response with the following structure (no markdown, just pure JSON):
+    {
+      "category": "One of: frontend, backend, fullstack, library, cli, mobile, devops, data-science, machine-learning, documentation, other",
+      "subcategory": "More specific category like: react-app, express-api, npm-package, etc",
+      "techStack": ["Array of main technologies detected"],
+      "frameworks": ["Array of frameworks detected"],
+      "purpose": "Brief one-sentence description of what this project does",
+      "projectType": "One of: application, library, tool, template, learning, documentation",
+      "complexity": "One of: beginner, intermediate, advanced",
+      "suggestedTags": ["Array of 3-5 suggested tags for this repo"]
+    }`;
+    // GENERATE CONTENT
+    const result = await model.generateContent(prompt);
+    // GET RESPONSE CONTENT
+    const response = result.response;
+    // GET RESPONSE TEXT
+    const text = response.text();
+    // PARSE JSON FROM RESPONSE
+    let categorization;
+    try {
+      // TRY TO PARSE JSON
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      // IF JSON FOUND, PARSE IT
+      if (jsonMatch) {
+        // PARSE JSON
+        categorization = JSON.parse(jsonMatch[0]);
+      } else {
+        // NO JSON FOUND, THROW ERROR
+        throw new Error("No JSON found in response");
+      }
+    } catch {
+      // DEFAULT CATEGORIZATION IF PARSING FAILS
+      categorization = {
+        category: repoData.language?.toLowerCase() || "other",
+        subcategory: "general",
+        techStack: Object.keys(languages).slice(0, 5),
+        frameworks: [],
+        purpose: repoData.description || "Repository purpose not determined",
+        projectType: "application",
+        complexity: "intermediate",
+        suggestedTags: topics.slice(0, 5),
+      };
+    }
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Repository categorized successfully!",
+      success: true,
+      data: {
+        repository: {
+          fullName: repoData.full_name,
+          description: repoData.description,
+          language: repoData.language,
+          topics: repoData.topics,
+        },
+        categorization,
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // LOG ERROR
+    console.error("Error categorizing repository:", error);
+    // TOKEN EXPIRED
+    if (error.status === 401) {
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      return;
+    }
+    // REPOSITORY NOT FOUND
+    if (error.status === 404) {
+      res.status(404).json({
+        message: "Repository not found or you don't have access to it.",
+        success: false,
+      });
+      return;
+    }
+    // RETURNING ERROR RESPONSE
+    res.status(500).json({
+      message: "Error categorizing repository. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * AI REPOSITORY HEALTH SCORE
+ * Analyzes repository health based on various metrics
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== AI REPOSITORY HEALTH SCORE ==>
+export const aiRepositoryHealthScore = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST
+  const userId = (req as any).id;
+  // IF USER ID NOT PROVIDED, RETURN 401 ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER AND REPO FROM PARAMS
+  const { owner, repo } = req.params;
+  // VALIDATE OWNER AND REPO
+  if (!owner || !repo) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner and repository name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // CHECK IF AI IS CONFIGURED
+  const model = getGeminiModel();
+  if (!model) {
+    // RETURNING ERROR RESPONSE
+    res.status(503).json({
+      message: "AI service is not configured.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 400).json({
+      message: error?.message || "GitHub is not connected.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FETCH REPOSITORY DATA
+  try {
+    // GET REPOSITORY DETAILS
+    const { data: repoData } = await octokit.repos.get({ owner, repo });
+    // GET RECENT COMMITS (LAST 30)
+    let recentCommits = 0;
+    let lastCommitDate = null;
+    try {
+      const { data: commits } = await octokit.repos.listCommits({
+        owner,
+        repo,
+        per_page: 30,
+      });
+      recentCommits = commits.length;
+      lastCommitDate = commits[0]?.commit?.author?.date || null;
+    } catch {
+      recentCommits = 0;
+    }
+    // GET OPEN ISSUES COUNT
+    const openIssues = repoData.open_issues_count;
+    // GET PULL REQUESTS
+    let openPRs = 0;
+    try {
+      const { data: prs } = await octokit.pulls.list({
+        owner,
+        repo,
+        state: "open",
+        per_page: 100,
+      });
+      openPRs = prs.length;
+    } catch {
+      openPRs = 0;
+    }
+    // CHECK FOR README
+    let hasReadme = false;
+    try {
+      await octokit.repos.getReadme({ owner, repo });
+      hasReadme = true;
+    } catch {
+      hasReadme = false;
+    }
+    // CHECK FOR LICENSE
+    const hasLicense = repoData.license !== null;
+    // CHECK FOR DESCRIPTION
+    const hasDescription =
+      repoData.description !== null && repoData.description.length > 0;
+    // CHECK FOR TOPICS
+    const hasTopics = (repoData.topics?.length || 0) > 0;
+    // CALCULATE DAYS SINCE LAST UPDATE
+    const lastUpdate = new Date(repoData.pushed_at);
+    const daysSinceUpdate = Math.floor(
+      (Date.now() - lastUpdate.getTime()) / (1000 * 60 * 60 * 24)
+    );
+    // CALCULATE METRICS
+    const metrics = {
+      // DOCUMENTATION SCORE (0-100)
+      documentation: {
+        score:
+          (hasReadme ? 40 : 0) +
+          (hasDescription ? 30 : 0) +
+          (hasTopics ? 30 : 0),
+        hasReadme,
+        hasDescription,
+        hasTopics,
+      },
+      // MAINTENANCE SCORE (0-100)
+      maintenance: {
+        score: Math.max(0, 100 - daysSinceUpdate * 2),
+        daysSinceUpdate,
+        lastCommitDate,
+        recentCommits,
+      },
+      // COMMUNITY SCORE (0-100)
+      community: {
+        score: Math.min(
+          100,
+          repoData.stargazers_count + repoData.forks_count * 2
+        ),
+        stars: repoData.stargazers_count,
+        forks: repoData.forks_count,
+        watchers: repoData.watchers_count,
+      },
+      // ISSUES SCORE (0-100) - LOWER OPEN ISSUES = BETTER
+      issues: {
+        score: Math.max(0, 100 - openIssues * 2),
+        openIssues,
+        openPRs,
+      },
+      // BEST PRACTICES SCORE (0-100)
+      bestPractices: {
+        score:
+          (hasLicense ? 50 : 0) +
+          (hasReadme ? 25 : 0) +
+          (hasDescription ? 25 : 0),
+        hasLicense,
+        licenseName: repoData.license?.name || null,
+      },
+    };
+    // CALCULATE OVERALL HEALTH SCORE
+    const overallScore = Math.round(
+      (metrics.documentation.score +
+        metrics.maintenance.score +
+        metrics.community.score +
+        metrics.issues.score +
+        metrics.bestPractices.score) /
+        5
+    );
+    // DETERMINE HEALTH GRADE
+    let grade: string;
+    // IF OVERALL SCORE IS 90 OR HIGHER, GRADE IS A+
+    if (overallScore >= 90) grade = "A+";
+    // IF OVERALL SCORE IS 80 OR HIGHER, GRADE IS A
+    else if (overallScore >= 80) grade = "A";
+    // IF OVERALL SCORE IS 70 OR HIGHER, GRADE IS B
+    else if (overallScore >= 70) grade = "B";
+    // IF OVERALL SCORE IS 60 OR HIGHER, GRADE IS C
+    else if (overallScore >= 60) grade = "C";
+    // IF OVERALL SCORE IS 50 OR HIGHER, GRADE IS D
+    else if (overallScore >= 50) grade = "D";
+    // IF OVERALL SCORE IS BELOW 50, GRADE IS F
+    else grade = "F";
+    // BUILD AI PROMPT FOR SUGGESTIONS
+    const prompt = `Based on this repository health analysis, provide 3-5 specific, actionable suggestions to improve the repository:
+    Repository: ${repoData.full_name}
+    Overall Health Score: ${overallScore}/100 (Grade: ${grade})
+    Current Status:
+    - Has README: ${hasReadme}
+    - Has Description: ${hasDescription}
+    - Has License: ${hasLicense}
+    - Has Topics: ${hasTopics}
+    - Days Since Last Update: ${daysSinceUpdate}
+    - Open Issues: ${openIssues}
+    - Open Pull Requests: ${openPRs}
+    - Stars: ${repoData.stargazers_count}
+    - Forks: ${repoData.forks_count}
+    Provide a JSON response with suggestions (no markdown, just pure JSON):
+    {
+      "suggestions": [
+        {
+          "title": "Short title",
+          "description": "Detailed suggestion",
+          "priority": "high/medium/low",
+          "category": "documentation/maintenance/community/security/other"
+        }
+      ]
+    }`;
+    // GET AI SUGGESTIONS
+    let suggestions: any[] = [];
+    // TRY TO GET AI SUGGESTIONS
+    try {
+      // GENERATE CONTENT
+      const result = await model.generateContent(prompt);
+      // GET RESPONSE CONTENT
+      const response = result.response;
+      // GET RESPONSE TEXT
+      const text = response.text();
+      // FIND JSON IN RESPONSE
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      // IF JSON FOUND, PARSE IT
+      if (jsonMatch) {
+        // PARSE JSON
+        const parsed = JSON.parse(jsonMatch[0]);
+        // SET SUGGESTIONS
+        suggestions = parsed.suggestions || [];
+      }
+    } catch {
+      // DEFAULT SUGGESTIONS IF AI FAILS
+      suggestions = [];
+      // IF README IS NOT PRESENT, ADD SUGGESTION TO ADD README
+      if (!hasReadme) {
+        suggestions.push({
+          title: "Add a README",
+          description:
+            "Create a comprehensive README.md file to help users understand your project.",
+          priority: "high",
+          category: "documentation",
+        });
+      }
+      // IF LICENSE IS NOT PRESENT, ADD SUGGESTION TO ADD LICENSE
+      if (!hasLicense) {
+        suggestions.push({
+          title: "Add a License",
+          description:
+            "Add a license file to clarify how others can use your code.",
+          priority: "medium",
+          category: "documentation",
+        });
+      }
+      // IF DESCRIPTION IS NOT PRESENT, ADD SUGGESTION TO ADD DESCRIPTION
+      if (!hasDescription) {
+        suggestions.push({
+          title: "Add a Description",
+          description:
+            "Add a short description to help users discover your repository.",
+          priority: "medium",
+          category: "documentation",
+        });
+      }
+      // IF DAYS SINCE LAST UPDATE IS GREATER THAN 30, ADD SUGGESTION TO UPDATE REPOSITORY
+      if (daysSinceUpdate > 30) {
+        suggestions.push({
+          title: "Update Repository",
+          description:
+            "Consider making updates to show the project is actively maintained.",
+          priority: "medium",
+          category: "maintenance",
+        });
+      }
+    }
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Repository health score calculated successfully!",
+      success: true,
+      data: {
+        repository: {
+          fullName: repoData.full_name,
+          description: repoData.description,
+          language: repoData.language,
+        },
+        healthScore: {
+          overall: overallScore,
+          grade,
+          metrics,
+        },
+        suggestions,
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // LOG ERROR
+    console.error("Error calculating health score:", error);
+    // TOKEN EXPIRED
+    if (error.status === 401) {
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      return;
+    }
+    // REPOSITORY NOT FOUND
+    if (error.status === 404) {
+      res.status(404).json({
+        message: "Repository not found or you don't have access to it.",
+        success: false,
+      });
+      return;
+    }
+    // RETURNING ERROR RESPONSE
+    res.status(500).json({
+      message: "Error calculating health score. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
