@@ -1586,3 +1586,203 @@ export const aiRepositoryHealthScore = expressAsyncHandler(async (req, res) => {
     return;
   }
 });
+
+/**
+ * AI CODE EXPLAINER
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== AI CODE EXPLAINER ==>
+export const aiCodeExplainer = expressAsyncHandler(async (req, res) => {
+  // GET GEMINI MODEL
+  const model = getGeminiModel();
+  // IF MODEL NOT AVAILABLE, RETURN ERROR
+  if (!model) {
+    res.status(503).json({
+      message: "AI service is not configured. Please set GEMINI_API_KEY.",
+      success: false,
+    });
+    return;
+  }
+  // GET CODE AND OPTIONS FROM BODY
+  const { code, language, fileName, explainType } = req.body;
+  // VALIDATE CODE
+  if (!code || typeof code !== "string" || code.trim().length === 0) {
+    res.status(400).json({
+      message: "Code content is required!",
+      success: false,
+    });
+    return;
+  }
+  // DETERMINE EXPLAIN TYPE (DEFAULT TO "general")
+  const type = explainType || "general";
+  // BUILD PROMPT BASED ON EXPLAIN TYPE
+  let prompt = "";
+  switch (type) {
+    case "general":
+      prompt = `You are an expert code explainer. Analyze the following ${
+        language || "code"
+      } file${
+        fileName ? ` (${fileName})` : ""
+      } and provide a clear, concise explanation.
+      CODE: \`\`\`${language || ""}  ${code} \`\`\`
+      Provide your response in the following JSON format:
+      {
+        "summary": "A 1-2 sentence summary of what this code does",
+        "purpose": "The main purpose of this code",
+        "keyComponents": [
+          {
+            "name": "Component/Function/Class name",
+            "description": "What it does",
+            "lineRange": "e.g., lines 1-20"
+          }
+        ],
+        "complexity": "low|medium|high",
+        "suggestions": ["Optional improvement suggestions"],
+        "dependencies": ["List of imports/dependencies used"],
+        "patterns": ["Design patterns or coding patterns used"]
+      }
+      Return ONLY valid JSON, no additional text.`;
+      break;
+    case "line-by-line":
+      prompt = `You are an expert code explainer. Provide a line-by-line explanation of the following ${
+        language || "code"
+      } file${fileName ? ` (${fileName})` : ""}.
+      CODE: \`\`\`${language || ""} ${code} \`\`\`
+      Provide your response in the following JSON format:
+      {
+        "explanations": [
+          {
+            "lineNumber": 1,
+            "code": "The actual line of code",
+            "explanation": "Clear explanation of what this line does"
+          }
+        ],
+        "summary": "Brief overall summary"
+      }
+      Focus on non-trivial lines. Group related lines together when appropriate.
+      Return ONLY valid JSON, no additional text.`;
+      break;
+    case "function":
+      prompt = `You are an expert code explainer. Analyze the functions/methods in the following ${
+        language || "code"
+      } file${fileName ? ` (${fileName})` : ""}.
+      CODE: \`\`\`${language || ""} ${code} \`\`\`
+      Provide your response in the following JSON format:
+      {
+        "functions": [
+          {
+            "name": "Function name",
+            "parameters": [{"name": "param1", "type": "type", "description": "what it's for"}],
+            "returnType": "What it returns",
+            "purpose": "What this function does",
+            "example": "Optional usage example",
+            "complexity": "low|medium|high"
+          }
+        ],
+        "relationships": "How functions relate to each other"
+      }
+      Return ONLY valid JSON, no additional text.`;
+      break;
+    case "security":
+      prompt = `You are a security expert. Analyze the following ${
+        language || "code"
+      } file${
+        fileName ? ` (${fileName})` : ""
+      } for potential security issues.   
+      CODE: \`\`\`${language || ""} ${code} \`\`\`
+      Provide your response in the following JSON format:
+      {
+        "securityLevel": "low|medium|high|critical",
+        "issues": [
+          {
+            "severity": "low|medium|high|critical",
+            "type": "e.g., SQL Injection, XSS, etc.",
+            "description": "What the issue is",
+            "location": "Where in the code",
+            "recommendation": "How to fix it"
+          }
+        ],
+        "goodPractices": ["Security practices already implemented"],
+        "recommendations": ["General security recommendations"]
+      }
+      Return ONLY valid JSON, no additional text.`;
+      break;
+    case "performance":
+      prompt = `You are a performance optimization expert. Analyze the following ${
+        language || "code"
+      } file${fileName ? ` (${fileName})` : ""} for performance issues.
+      CODE: \`\`\`${language || ""} ${code} \`\`\`
+      Provide your response in the following JSON format:
+      {
+        "performanceRating": "poor|fair|good|excellent",
+        "issues": [
+          {
+            "severity": "low|medium|high",
+            "type": "e.g., N+1 queries, Memory leak, etc.",
+            "description": "What the issue is",
+            "location": "Where in the code",
+            "recommendation": "How to optimize"
+          }
+        ],
+        "optimizations": [
+          {
+            "title": "Optimization name",
+            "description": "What to optimize",
+            "impact": "Expected improvement"
+          }
+        ],
+        "bigO": "Time complexity analysis if applicable"
+      }
+      Return ONLY valid JSON, no additional text.`;
+      break;
+    default:
+      prompt = `Explain this code: \`\`\`${language || ""}\n${code}\n\`\`\``;
+  }
+  // TRY TO GENERATE EXPLANATION
+  try {
+    // GENERATE EXPLANATION
+    const result = await model.generateContent(prompt);
+    // GET RESPONSE
+    const response = result.response;
+    // GET RESPONSE TEXT
+    const text = response.text();
+    // TRY TO PARSE AS JSON
+    let explanation;
+    // TRY TO PARSE AS JSON
+    try {
+      // CLEAN UP RESPONSE (REMOVE MARKDOWN CODE BLOCKS IF PRESENT)
+      const cleanedText = text
+        .replace(/```json\n?/g, "")
+        .replace(/```\n?/g, "")
+        .trim();
+      // PARSE AS JSON
+      explanation = JSON.parse(cleanedText);
+    } catch {
+      // IF NOT VALID JSON, RETURN AS TEXT
+      explanation = { rawExplanation: text };
+    }
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Code explained successfully!",
+      success: true,
+      data: {
+        type,
+        language: language || "unknown",
+        fileName: fileName || null,
+        explanation,
+      },
+    });
+    return;
+  } catch (error: any) {
+    // LOG ERROR
+    console.error("Error explaining code:", error);
+    // RETURNING ERROR RESPONSE
+    res.status(500).json({
+      message: "Error explaining code. Please try again later.",
+      success: false,
+    });
+    return;
+  }
+});
