@@ -1056,12 +1056,15 @@ export const saveGeneratedTasks = expressAsyncHandler(async (req, res) => {
   try {
     // INSERT MANY TASKS
     const insertedTasks = await Task.insertMany(tasksToInsert);
+    // TASK WORD (SINGULAR OR PLURAL)
+    const taskWord = insertedTasks.length === 1 ? "task" : "tasks";
     // RETURNING SUCCESS RESPONSE
     res.status(201).json({
-      message: `${insertedTasks.length} tasks created successfully!`,
+      message: `${insertedTasks.length} ${taskWord} created successfully!`,
       success: true,
       data: {
-        createdCount: insertedTasks.length,
+        savedCount: insertedTasks.length,
+        projectId,
         tasks: insertedTasks,
       },
     });
