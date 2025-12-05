@@ -8,6 +8,7 @@ import {
   saveGeneratedTasks,
   aiCategorizeRepository,
   aiRepositoryHealthScore,
+  aiCodeExplainer,
 } from "../controllers/ai.controller.js";
 import express from "express";
 import isAuthenticated from "../middleware/isAuthenticated.js";
@@ -34,5 +35,7 @@ router.post("/generate/commits", generateTasksFromCommits);
 router.get("/health/:owner/:repo", aiRepositoryHealthScore);
 // AI CATEGORIZE REPOSITORY
 router.get("/categorize/:owner/:repo", aiCategorizeRepository);
+// AI CODE EXPLAINER
+router.post("/explain-code", aiCodeExplainer);
 
 export default router;
