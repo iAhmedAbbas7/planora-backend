@@ -2075,3 +2075,140 @@ export const summarizeCommitHistory = expressAsyncHandler(async (req, res) => {
     return;
   }
 });
+
+/**
+ * SUGGEST BRANCH STRATEGY
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== SUGGEST BRANCH STRATEGY ==>
+export const suggestBranchStrategy = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as any).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET REQUEST DATA
+  const { branches, repoInfo, teamSize, projectType } = req.body;
+  // VALIDATE INPUT
+  if (!branches || !Array.isArray(branches)) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Branches array is required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET AI MODEL
+  const model = getGeminiModel();
+  // IF MODEL NOT AVAILABLE, RETURN ERROR
+  if (!model) {
+    // RETURNING ERROR RESPONSE
+    res.status(503).json({
+      message: "AI is not configured. Please set up your GEMINI_API_KEY.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // BUILD PROMPT
+  const prompt = `You are a Git expert and DevOps consultant. Analyze the following repository information and suggest an optimal branching strategy.
+  Repository Information:
+  - Repository: ${repoInfo?.name || "Unknown"}
+  - Default Branch: ${repoInfo?.defaultBranch || "main"}
+  - Team Size: ${teamSize || "Unknown"}
+  - Project Type: ${projectType || "Unknown"}
+  - Current Branches: ${branches
+    .map(
+      (b: { name: string; protected?: boolean }) =>
+        `${b.name}${b.protected ? " (protected)" : ""}`
+    )
+    .join(", ")}
+  Analyze the current branch setup and provide recommendations. Consider:
+  1. Git Flow, GitHub Flow, or GitLab Flow based on project needs
+  2. Branch naming conventions
+  3. Protection rules recommendations
+  4. Merge strategies
+  5. Release management
+  Respond with a JSON object in this exact format:
+  {
+    "recommendedStrategy": "Name of recommended strategy (e.g., Git Flow, GitHub Flow, Trunk-Based Development)",
+    "strategyDescription": "Brief description of why this strategy fits",
+    "branchStructure": {
+      "mainBranches": ["List of main branches recommended"],
+      "supportingBranches": ["List of supporting branch types (feature/, bugfix/, etc.)"]
+    },
+    "namingConventions": [
+      {"type": "feature", "pattern": "feature/<ticket-id>-<description>", "example": "feature/PROJ-123-user-auth"},
+      {"type": "bugfix", "pattern": "bugfix/<ticket-id>-<description>", "example": "bugfix/PROJ-456-login-fix"}
+    ],
+    "protectionRecommendations": [
+      {"branch": "main", "rules": ["Require pull request reviews", "Require status checks"]}
+    ],
+    "mergeStrategy": {
+      "recommended": "squash/merge/rebase",
+      "reason": "Why this merge strategy is recommended"
+    },
+    "workflowSteps": [
+      "Step 1: Create feature branch from develop",
+      "Step 2: Make changes and commit",
+      "Step 3: Create pull request"
+    ],
+    "additionalTips": ["Tip 1", "Tip 2"]
+  }
+  Return ONLY valid JSON, no additional text.`;
+  // TRY TO GENERATE SUGGESTION
+  try {
+    // GENERATE SUGGESTION
+    const result = await model.generateContent(prompt);
+    // GET RESPONSE
+    const response = result.response;
+    // GET RESPONSE TEXT
+    const text = response.text();
+    // PARSE JSON
+    let suggestion;
+    // TRY TO PARSE AS JSON
+    try {
+      // CLEAN UP RESPONSE (REMOVE MARKDOWN CODE BLOCKS IF PRESENT)
+      const cleanedText = text
+        .replace(/```json\n?/g, "")
+        .replace(/```\n?/g, "")
+        .trim();
+      // PARSE AS JSON
+      suggestion = JSON.parse(cleanedText);
+    } catch {
+      // IF NOT VALID JSON, RETURN RAW TEXT
+      suggestion = { rawSuggestion: text };
+    }
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Branch strategy suggestion generated successfully!",
+      success: true,
+      data: {
+        currentBranchCount: branches.length,
+        suggestion,
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // LOG ERROR
+    console.error("Error generating branch strategy:", error);
+    // RETURNING ERROR RESPONSE
+    res.status(500).json({
+      message: "Error generating branch strategy. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
