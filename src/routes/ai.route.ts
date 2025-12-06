@@ -11,6 +11,7 @@ import {
   aiCodeExplainer,
   generateCommitMessage,
   summarizeCommitHistory,
+  suggestBranchStrategy,
 } from "../controllers/ai.controller.js";
 import express from "express";
 import isAuthenticated from "../middleware/isAuthenticated.js";
@@ -43,5 +44,7 @@ router.post("/explain-code", aiCodeExplainer);
 router.post("/generate-commit-message", generateCommitMessage);
 // AI SUMMARIZE COMMIT HISTORY
 router.post("/summarize-commits", summarizeCommitHistory);
+// AI SUGGEST BRANCH STRATEGY
+router.post("/suggest-branch-strategy", suggestBranchStrategy);
 
 export default router;
