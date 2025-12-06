@@ -3922,3 +3922,638 @@ export const getRepositoryTree = expressAsyncHandler(async (req, res) => {
     return;
   }
 });
+
+/**
+ * SEARCH REPOSITORY COMMITS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== SEARCH REPOSITORY COMMITS ==>
+export const searchRepositoryCommits = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER AND REPO FROM PARAMS
+  const { owner, repo } = req.params;
+  // GET SEARCH QUERY FROM QUERY PARAMS
+  const query = req.query.q as string;
+  // GET PAGE FROM QUERY PARAMS
+  const page = parseInt(req.query.page as string) || 1;
+  // GET PER PAGE FROM QUERY PARAMS
+  const perPage = parseInt(req.query.per_page as string) || 30;
+  // VALIDATE PARAMS
+  if (!owner || !repo) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner and repository name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // VALIDATE SEARCH QUERY
+  if (!query || query.trim().length === 0) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Search query is required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // SEARCH COMMITS
+  try {
+    // BUILD SEARCH QUERY (repo:owner/repo + search term)
+    const searchQuery = `repo:${owner}/${repo} ${query}`;
+    // SEARCH COMMITS
+    const { data: searchResult } = await octokit.search.commits({
+      q: searchQuery,
+      per_page: perPage,
+      page: page,
+      sort: "committer-date",
+      order: "desc",
+    });
+    // MAP COMMITS TO SIMPLIFIED FORMAT
+    const mappedCommits = searchResult.items.map((item) => ({
+      sha: item.sha,
+      message: item.commit.message,
+      author: {
+        name: item.commit.author?.name,
+        email: item.commit.author?.email,
+        date: item.commit.author?.date,
+        login: item.author?.login,
+        avatarUrl: item.author?.avatar_url,
+      },
+      committer: {
+        name: item.commit.committer?.name,
+        email: item.commit.committer?.email,
+        date: item.commit.committer?.date,
+        login: (item.committer as { login?: string } | null)?.login,
+        avatarUrl: (item.committer as { avatar_url?: string } | null)
+          ?.avatar_url,
+      },
+      htmlUrl: item.html_url,
+      score: item.score,
+    }));
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Commits searched successfully!",
+      success: true,
+      data: {
+        commits: mappedCommits,
+        totalCount: searchResult.total_count,
+        pagination: {
+          page,
+          perPage,
+          hasMore: searchResult.items.length === perPage,
+        },
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // RATE LIMIT EXCEEDED
+    if (error.status === 403) {
+      // RETURNING ERROR RESPONSE
+      res.status(403).json({
+        message: "GitHub API rate limit exceeded. Please try again later.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error searching commits. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * GET COMMIT DETAILS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET COMMIT DETAILS ==>
+export const getCommitDetails = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER, REPO AND SHA FROM PARAMS
+  const { owner, repo, sha } = req.params;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !sha) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and commit SHA are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FETCH COMMIT DETAILS
+  try {
+    // GET COMMIT DETAILS
+    const { data: commit } = await octokit.repos.getCommit({
+      owner,
+      repo,
+      ref: sha,
+    });
+    // FORMAT COMMIT DETAILS
+    const formattedCommit = {
+      sha: commit.sha,
+      nodeId: commit.node_id,
+      message: commit.commit.message,
+      author: {
+        name: commit.commit.author?.name,
+        email: commit.commit.author?.email,
+        date: commit.commit.author?.date,
+        login: commit.author?.login,
+        avatarUrl: commit.author?.avatar_url,
+      },
+      committer: {
+        name: commit.commit.committer?.name,
+        email: commit.commit.committer?.email,
+        date: commit.commit.committer?.date,
+        login: commit.committer?.login,
+        avatarUrl: commit.committer?.avatar_url,
+      },
+      tree: {
+        sha: commit.commit.tree.sha,
+        url: commit.commit.tree.url,
+      },
+      parents: commit.parents.map((parent) => ({
+        sha: parent.sha,
+        url: parent.html_url,
+      })),
+      htmlUrl: commit.html_url,
+      stats: commit.stats,
+      files: commit.files?.map((file) => ({
+        sha: file.sha,
+        filename: file.filename,
+        status: file.status,
+        additions: file.additions,
+        deletions: file.deletions,
+        changes: file.changes,
+        blobUrl: file.blob_url,
+        rawUrl: file.raw_url,
+        contentsUrl: file.contents_url,
+        patch: file.patch,
+        previousFilename: file.previous_filename,
+      })),
+      verified: commit.commit.verification?.verified,
+      verificationReason: commit.commit.verification?.reason,
+    };
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Commit details retrieved successfully!",
+      success: true,
+      data: formattedCommit,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Commit not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching commit details. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * COMPARE COMMITS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== COMPARE COMMITS ==>
+export const compareCommits = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER AND REPO FROM PARAMS
+  const { owner, repo } = req.params;
+  // GET BASE FROM QUERY
+  const base = req.query.base as string;
+  // GET HEAD FROM QUERY
+  const head = req.query.head as string;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !base || !head) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, base, and head commits are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // COMPARE COMMITS
+  try {
+    // GET COMPARISON
+    const { data: comparison } = await octokit.repos.compareCommits({
+      owner,
+      repo,
+      base,
+      head,
+    });
+    // FORMAT COMPARISON DATA
+    const formattedComparison = {
+      url: comparison.url,
+      htmlUrl: comparison.html_url,
+      permalinkUrl: comparison.permalink_url,
+      diffUrl: comparison.diff_url,
+      patchUrl: comparison.patch_url,
+      status: comparison.status,
+      aheadBy: comparison.ahead_by,
+      behindBy: comparison.behind_by,
+      totalCommits: comparison.total_commits,
+      baseCommit: {
+        sha: comparison.base_commit.sha,
+        message: comparison.base_commit.commit.message,
+        author: {
+          name: comparison.base_commit.commit.author?.name,
+          email: comparison.base_commit.commit.author?.email,
+          date: comparison.base_commit.commit.author?.date,
+          login: comparison.base_commit.author?.login,
+          avatarUrl: comparison.base_commit.author?.avatar_url,
+        },
+        htmlUrl: comparison.base_commit.html_url,
+      },
+      mergeBaseCommit: {
+        sha: comparison.merge_base_commit.sha,
+        message: comparison.merge_base_commit.commit.message,
+        author: {
+          name: comparison.merge_base_commit.commit.author?.name,
+          email: comparison.merge_base_commit.commit.author?.email,
+          date: comparison.merge_base_commit.commit.author?.date,
+          login: comparison.merge_base_commit.author?.login,
+          avatarUrl: comparison.merge_base_commit.author?.avatar_url,
+        },
+        htmlUrl: comparison.merge_base_commit.html_url,
+      },
+      commits: comparison.commits.map((commit) => ({
+        sha: commit.sha,
+        message: commit.commit.message,
+        author: {
+          name: commit.commit.author?.name,
+          email: commit.commit.author?.email,
+          date: commit.commit.author?.date,
+          login: commit.author?.login,
+          avatarUrl: commit.author?.avatar_url,
+        },
+        htmlUrl: commit.html_url,
+      })),
+      files: comparison.files?.map((file) => ({
+        sha: file.sha,
+        filename: file.filename,
+        status: file.status,
+        additions: file.additions,
+        deletions: file.deletions,
+        changes: file.changes,
+        blobUrl: file.blob_url,
+        rawUrl: file.raw_url,
+        patch: file.patch,
+        previousFilename: file.previous_filename,
+      })),
+    };
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Commits compared successfully!",
+      success: true,
+      data: formattedComparison,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Repository or commits not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error comparing commits. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * GET COMMIT BRANCHES
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET COMMIT BRANCHES ==>
+export const getCommitBranches = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER, REPO AND SHA FROM PARAMS
+  const { owner, repo, sha } = req.params;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !sha) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and commit SHA are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET BRANCHES CONTAINING COMMIT
+  try {
+    // GET BRANCHES
+    const { data: branches } = await octokit.repos.listBranchesForHeadCommit({
+      owner,
+      repo,
+      commit_sha: sha,
+    });
+    // FORMAT BRANCHES
+    const formattedBranches = branches.map((branch) => ({
+      name: branch.name,
+      protected: branch.protected,
+    }));
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Commit branches retrieved successfully!",
+      success: true,
+      data: formattedBranches,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Commit not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching commit branches. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * GET COMMIT PULL REQUESTS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET COMMIT PULL REQUESTS ==>
+export const getCommitPullRequests = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER, REPO AND SHA FROM PARAMS
+  const { owner, repo, sha } = req.params;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !sha) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and commit SHA are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET PULL REQUESTS FOR COMMIT
+  try {
+    // GET PULL REQUESTS
+    const { data: pullRequests } =
+      await octokit.repos.listPullRequestsAssociatedWithCommit({
+        owner,
+        repo,
+        commit_sha: sha,
+      });
+    // FORMAT PULL REQUESTS
+    const formattedPRs = pullRequests.map((pr) => ({
+      number: pr.number,
+      title: pr.title,
+      state: pr.state,
+      htmlUrl: pr.html_url,
+      user: {
+        login: pr.user?.login,
+        avatarUrl: pr.user?.avatar_url,
+      },
+      createdAt: pr.created_at,
+      mergedAt: pr.merged_at,
+      closedAt: pr.closed_at,
+    }));
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Commit pull requests retrieved successfully!",
+      success: true,
+      data: formattedPRs,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Commit not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching commit pull requests. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
