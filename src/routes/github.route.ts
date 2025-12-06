@@ -7,6 +7,7 @@ import {
   getRepositories,
   getRepositoryDetails,
   getRepositoryCommits,
+  searchRepositoryCommits,
   getRepositoryIssues,
   getRepositoryPullRequests,
   getRepositoryReadme,
@@ -30,6 +31,10 @@ import {
   deleteFile,
   getFileBlame,
   getRepositoryTree,
+  getCommitDetails,
+  compareCommits,
+  getCommitBranches,
+  getCommitPullRequests,
 } from "../controllers/github.controller.js";
 import express from "express";
 import isAuthenticated from "../middleware/isAuthenticated.js";
@@ -78,6 +83,16 @@ router.get("/repositories/:owner/:repo/issues", getRepositoryIssues);
 router.get("/repositories/:owner/:repo/readme", getRepositoryReadme);
 // GET REPOSITORY COMMITS
 router.get("/repositories/:owner/:repo/commits", getRepositoryCommits);
+// SEARCH REPOSITORY COMMITS
+router.get("/repositories/:owner/:repo/commits/search", searchRepositoryCommits);
+// COMPARE COMMITS
+router.get("/repositories/:owner/:repo/compare", compareCommits);
+// GET COMMIT DETAILS (SPECIFIC SHA)
+router.get("/repositories/:owner/:repo/commits/:sha", getCommitDetails);
+// GET COMMIT BRANCHES (BRANCHES CONTAINING THIS COMMIT)
+router.get("/repositories/:owner/:repo/commits/:sha/branches", getCommitBranches);
+// GET COMMIT PULL REQUESTS (PRs ASSOCIATED WITH COMMIT)
+router.get("/repositories/:owner/:repo/commits/:sha/pulls", getCommitPullRequests);
 // GET REPOSITORY BRANCHES
 router.get("/repositories/:owner/:repo/branches", getRepositoryBranches);
 // GET REPOSITORY PULL REQUESTS
