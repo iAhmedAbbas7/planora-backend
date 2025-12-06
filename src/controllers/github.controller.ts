@@ -1447,6 +1447,930 @@ export const getRepositoryBranches = expressAsyncHandler(async (req, res) => {
 });
 
 /**
+ * GET BRANCH DETAILS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET BRANCH DETAILS ==>
+export const getBranchDetails = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER, REPO AND BRANCH FROM PARAMS
+  const { owner, repo, branch } = req.params;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !branch) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and branch name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FETCH BRANCH DETAILS
+  try {
+    // GET BRANCH
+    const { data: branchData } = await octokit.repos.getBranch({
+      owner,
+      repo,
+      branch,
+    });
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Branch details retrieved successfully!",
+      success: true,
+      data: {
+        name: branchData.name,
+        protected: branchData.protected,
+        commit: {
+          sha: branchData.commit.sha,
+          url: branchData.commit.url,
+          author: branchData.commit.commit.author,
+          committer: branchData.commit.commit.committer,
+          message: branchData.commit.commit.message,
+        },
+        protection: branchData.protection,
+        protectionUrl: branchData.protection_url,
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Branch not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching branch details. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * CREATE BRANCH
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== CREATE BRANCH ==>
+export const createBranch = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER AND REPO FROM PARAMS
+  const { owner, repo } = req.params;
+  // GET BRANCH DATA FROM BODY
+  const { branchName, sourceBranch, sourceSha } = req.body;
+  // VALIDATE PARAMS
+  if (!owner || !repo) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner and repository name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // VALIDATE BRANCH NAME
+  if (!branchName || typeof branchName !== "string") {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Branch name is required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // VALIDATE SOURCE (EITHER SOURCE BRANCH OR SOURCE SHA)
+  if (!sourceBranch && !sourceSha) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Either source branch or source SHA is required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // CREATE BRANCH
+  try {
+    // GET SHA TO CREATE FROM
+    let sha = sourceSha;
+    // IF SOURCE BRANCH IS PROVIDED, GET ITS SHA
+    if (!sha && sourceBranch) {
+      // GET SOURCE BRANCH
+      const { data: sourceRef } = await octokit.git.getRef({
+        owner,
+        repo,
+        ref: `heads/${sourceBranch}`,
+      });
+      // GET SHA FROM SOURCE BRANCH
+      sha = sourceRef.object.sha;
+    }
+    // CREATE BRANCH (REF)
+    const { data: newRef } = await octokit.git.createRef({
+      owner,
+      repo,
+      ref: `refs/heads/${branchName}`,
+      sha: sha,
+    });
+    // RETURNING SUCCESS RESPONSE
+    res.status(201).json({
+      message: `Branch '${branchName}' created successfully!`,
+      success: true,
+      data: {
+        ref: newRef.ref,
+        sha: newRef.object.sha,
+        url: newRef.url,
+        branchName: branchName,
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // BRANCH ALREADY EXISTS
+    if (error.status === 422) {
+      // RETURNING ERROR RESPONSE
+      res.status(422).json({
+        message: `Branch '${branchName}' already exists.`,
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // SOURCE NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Source branch or repository not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // FORBIDDEN
+    if (error.status === 403) {
+      // RETURNING ERROR RESPONSE
+      res.status(403).json({
+        message: "You don't have permission to create branches in this repository.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error creating branch. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * DELETE BRANCH
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== DELETE BRANCH ==>
+export const deleteBranch = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER, REPO AND BRANCH FROM PARAMS
+  const { owner, repo, branch } = req.params;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !branch) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and branch name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // DELETE BRANCH
+  try {
+    // CHECK IF IT'S THE DEFAULT BRANCH
+    const { data: repoData } = await octokit.repos.get({ owner, repo });
+    // IF DEFAULT BRANCH, RETURN ERROR
+    if (repoData.default_branch === branch) {
+      // RETURNING ERROR RESPONSE
+      res.status(400).json({
+        message: "Cannot delete the default branch. Change the default branch first.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // DELETE BRANCH (REF)
+    await octokit.git.deleteRef({
+      owner,
+      repo,
+      ref: `heads/${branch}`,
+    });
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: `Branch '${branch}' deleted successfully!`,
+      success: true,
+      data: {
+        deletedBranch: branch,
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // BRANCH NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Branch not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // FORBIDDEN (PROTECTED BRANCH)
+    if (error.status === 403) {
+      // RETURNING ERROR RESPONSE
+      res.status(403).json({
+        message: "Cannot delete this branch. It may be protected or you don't have permission.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // UNPROCESSABLE (BRANCH IS PROTECTED)
+    if (error.status === 422) {
+      // RETURNING ERROR RESPONSE
+      res.status(422).json({
+        message: "Cannot delete a protected branch. Remove protection first.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error deleting branch. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * MERGE BRANCHES
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== MERGE BRANCHES ==>
+export const mergeBranches = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER AND REPO FROM PARAMS
+  const { owner, repo } = req.params;
+  // GET MERGE DATA FROM BODY
+  const { base, head, commitMessage } = req.body;
+  // VALIDATE PARAMS
+  if (!owner || !repo) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner and repository name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // VALIDATE BASE AND HEAD
+  if (!base || !head) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Base branch and head branch are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // MERGE BRANCHES
+  try {
+    // MERGE BRANCHES
+    const { data: mergeResult } = await octokit.repos.merge({
+      owner,
+      repo,
+      base,
+      head,
+      commit_message: commitMessage || `Merge ${head} into ${base}`,
+    });
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: `Successfully merged '${head}' into '${base}'!`,
+      success: true,
+      data: {
+        sha: mergeResult.sha,
+        merged: true,
+        message: mergeResult.commit.message,
+        author: mergeResult.commit.author,
+        committer: mergeResult.commit.committer,
+        htmlUrl: mergeResult.html_url,
+        parents: mergeResult.parents.map((p) => ({
+          sha: p.sha,
+          url: p.html_url,
+        })),
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // CONFLICT
+    if (error.status === 409) {
+      // RETURNING ERROR RESPONSE
+      res.status(409).json({
+        message: "Merge conflict! The branches cannot be automatically merged.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Repository or branch not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // FORBIDDEN
+    if (error.status === 403) {
+      // RETURNING ERROR RESPONSE
+      res.status(403).json({
+        message: "You don't have permission to merge branches in this repository.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NO CHANGES
+    if (error.status === 204) {
+      // RETURNING SUCCESS RESPONSE (NOTHING TO MERGE)
+      res.status(200).json({
+        message: "Nothing to merge. Branches are already up to date.",
+        success: true,
+        data: {
+          merged: false,
+          alreadyUpToDate: true,
+        },
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error merging branches. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * GET BRANCH PROTECTION
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET BRANCH PROTECTION ==>
+export const getBranchProtection = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER, REPO AND BRANCH FROM PARAMS
+  const { owner, repo, branch } = req.params;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !branch) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and branch name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET BRANCH PROTECTION
+  try {
+    // GET BRANCH PROTECTION RULES
+    const { data: protection } = await octokit.repos.getBranchProtection({
+      owner,
+      repo,
+      branch,
+    });
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Branch protection retrieved successfully!",
+      success: true,
+      data: {
+        url: protection.url,
+        requiredStatusChecks: protection.required_status_checks
+          ? {
+              strict: protection.required_status_checks.strict,
+              contexts: protection.required_status_checks.contexts,
+            }
+          : null,
+        enforceAdmins: protection.enforce_admins?.enabled || false,
+        requiredPullRequestReviews: protection.required_pull_request_reviews
+          ? {
+              dismissStaleReviews:
+                protection.required_pull_request_reviews.dismiss_stale_reviews,
+              requireCodeOwnerReviews:
+                protection.required_pull_request_reviews
+                  .require_code_owner_reviews,
+              requiredApprovingReviewCount:
+                protection.required_pull_request_reviews
+                  .required_approving_review_count,
+              requireLastPushApproval:
+                protection.required_pull_request_reviews
+                  .require_last_push_approval,
+            }
+          : null,
+        restrictions: protection.restrictions
+          ? {
+              users: protection.restrictions.users?.map((u) => u.login) || [],
+              teams: protection.restrictions.teams?.map((t) => t.slug) || [],
+              apps: protection.restrictions.apps?.map((a) => a.slug) || [],
+            }
+          : null,
+        requiredLinearHistory: protection.required_linear_history?.enabled || false,
+        allowForcePushes: protection.allow_force_pushes?.enabled || false,
+        allowDeletions: protection.allow_deletions?.enabled || false,
+        blockCreations: protection.block_creations?.enabled || false,
+        requiredConversationResolution:
+          protection.required_conversation_resolution?.enabled || false,
+        lockBranch: protection.lock_branch?.enabled || false,
+        allowForkSyncing: protection.allow_fork_syncing?.enabled || false,
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND (NO PROTECTION RULES)
+    if (error.status === 404) {
+      // RETURNING SUCCESS RESPONSE (NO PROTECTION)
+      res.status(200).json({
+        message: "Branch is not protected.",
+        success: true,
+        data: {
+          isProtected: false,
+        },
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching branch protection. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * UPDATE BRANCH PROTECTION
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== UPDATE BRANCH PROTECTION ==>
+export const updateBranchProtection = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER, REPO AND BRANCH FROM PARAMS
+  const { owner, repo, branch } = req.params;
+  // GET PROTECTION DATA FROM BODY
+  const {
+    requiredStatusChecks,
+    enforceAdmins,
+    requiredPullRequestReviews,
+    restrictions,
+    requiredLinearHistory,
+    allowForcePushes,
+    allowDeletions,
+    requiredConversationResolution,
+  } = req.body;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !branch) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and branch name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // UPDATE BRANCH PROTECTION
+  try {
+    // UPDATE BRANCH PROTECTION RULES
+    await octokit.repos.updateBranchProtection({
+      owner,
+      repo,
+      branch,
+      required_status_checks: requiredStatusChecks
+        ? {
+            strict: requiredStatusChecks.strict || false,
+            contexts: requiredStatusChecks.contexts || [],
+          }
+        : null,
+      enforce_admins: enforceAdmins || false,
+      required_pull_request_reviews: requiredPullRequestReviews
+        ? {
+            dismiss_stale_reviews:
+              requiredPullRequestReviews.dismissStaleReviews || false,
+            require_code_owner_reviews:
+              requiredPullRequestReviews.requireCodeOwnerReviews || false,
+            required_approving_review_count:
+              requiredPullRequestReviews.requiredApprovingReviewCount || 1,
+            require_last_push_approval:
+              requiredPullRequestReviews.requireLastPushApproval || false,
+          }
+        : null,
+      restrictions: restrictions
+        ? {
+            users: restrictions.users || [],
+            teams: restrictions.teams || [],
+            apps: restrictions.apps || [],
+          }
+        : null,
+      required_linear_history: requiredLinearHistory || false,
+      allow_force_pushes: allowForcePushes || false,
+      allow_deletions: allowDeletions || false,
+      required_conversation_resolution: requiredConversationResolution || false,
+    });
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Branch protection updated successfully!",
+      success: true,
+      data: {
+        branch,
+        protected: true,
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Repository or branch not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // FORBIDDEN
+    if (error.status === 403) {
+      // RETURNING ERROR RESPONSE
+      res.status(403).json({
+        message:
+          "You don't have permission to update branch protection. Admin access required.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // VALIDATION ERROR
+    if (error.status === 422) {
+      // RETURNING ERROR RESPONSE
+      res.status(422).json({
+        message: "Invalid protection rules. Please check your settings.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error updating branch protection. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * DELETE BRANCH PROTECTION
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== DELETE BRANCH PROTECTION ==>
+export const deleteBranchProtection = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER, REPO AND BRANCH FROM PARAMS
+  const { owner, repo, branch } = req.params;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !branch) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and branch name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // DELETE BRANCH PROTECTION
+  try {
+    // DELETE BRANCH PROTECTION RULES
+    await octokit.repos.deleteBranchProtection({
+      owner,
+      repo,
+      branch,
+    });
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Branch protection removed successfully!",
+      success: true,
+      data: {
+        branch,
+        protected: false,
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Branch or protection rules not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // FORBIDDEN
+    if (error.status === 403) {
+      // RETURNING ERROR RESPONSE
+      res.status(403).json({
+        message:
+          "You don't have permission to remove branch protection. Admin access required.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error removing branch protection. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
  * GET REPOSITORY LANGUAGES
  * @param req - Request Object
  * @param res - Response Object
