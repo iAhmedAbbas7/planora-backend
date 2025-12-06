@@ -9,6 +9,8 @@ import {
   aiCategorizeRepository,
   aiRepositoryHealthScore,
   aiCodeExplainer,
+  generateCommitMessage,
+  summarizeCommitHistory,
 } from "../controllers/ai.controller.js";
 import express from "express";
 import isAuthenticated from "../middleware/isAuthenticated.js";
@@ -37,5 +39,9 @@ router.get("/health/:owner/:repo", aiRepositoryHealthScore);
 router.get("/categorize/:owner/:repo", aiCategorizeRepository);
 // AI CODE EXPLAINER
 router.post("/explain-code", aiCodeExplainer);
+// AI GENERATE COMMIT MESSAGE
+router.post("/generate-commit-message", generateCommitMessage);
+// AI SUMMARIZE COMMIT HISTORY
+router.post("/summarize-commits", summarizeCommitHistory);
 
 export default router;
