@@ -1085,7 +1085,6 @@ export const saveGeneratedTasks = expressAsyncHandler(async (req, res) => {
 
 /**
  * AI CATEGORIZE REPOSITORY
- * Analyzes a repository and categorizes it by type, tech stack, and purpose
  * @param req - Request Object
  * @param res - Response Object
  * @returns Response Object
@@ -1275,7 +1274,6 @@ export const aiCategorizeRepository = expressAsyncHandler(async (req, res) => {
 
 /**
  * AI REPOSITORY HEALTH SCORE
- * Analyzes repository health based on various metrics
  * @param req - Request Object
  * @param res - Response Object
  * @returns Response Object
@@ -1781,6 +1779,297 @@ export const aiCodeExplainer = expressAsyncHandler(async (req, res) => {
     // RETURNING ERROR RESPONSE
     res.status(500).json({
       message: "Error explaining code. Please try again later.",
+      success: false,
+    });
+    return;
+  }
+});
+
+/**
+ * GENERATE COMMIT MESSAGE
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GENERATE COMMIT MESSAGE ==>
+export const generateCommitMessage = expressAsyncHandler(async (req, res) => {
+  // GET CHANGES FROM REQUEST BODY
+  const { changes, type, context } = req.body;
+  // VALIDATE CHANGES
+  if (!changes || !Array.isArray(changes) || changes.length === 0) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "File changes are required!",
+      success: false,
+    });
+    return;
+  }
+  // GET GEMINI MODEL
+  const model = getGeminiModel();
+  // IF NOT CONFIGURED, RETURN ERROR
+  if (!model) {
+    // RETURNING ERROR RESPONSE
+    res.status(503).json({
+      message: "AI is not configured. Please set up your GEMINI_API_KEY.",
+      success: false,
+    });
+    return;
+  }
+  // FORMAT CHANGES FOR PROMPT
+  const changesText = changes
+    .map(
+      (change: {
+        filename: string;
+        status: string;
+        additions?: number;
+        deletions?: number;
+        patch?: string;
+      }) => {
+        let text = `File: ${change.filename} (${change.status})`;
+        if (change.additions !== undefined || change.deletions !== undefined) {
+          text += ` - +${change.additions || 0}/-${
+            change.deletions || 0
+          } lines`;
+        }
+        if (change.patch) {
+          // LIMIT PATCH TO 500 CHARS TO AVOID TOKEN LIMITS
+          const patchPreview = change.patch.slice(0, 500);
+          text += `\nChanges:\n${patchPreview}${
+            change.patch.length > 500 ? "..." : ""
+          }`;
+        }
+        return text;
+      }
+    )
+    .join("\n\n");
+  // BUILD PROMPT BASED ON TYPE
+  let promptType = "conventional commit";
+  let formatInstructions = "";
+  // SET FORMAT BASED ON TYPE
+  switch (type) {
+    case "conventional":
+      promptType = "conventional commit";
+      formatInstructions = `Use the format: <type>(<scope>): <subject>
+      Types: feat, fix, docs, style, refactor, perf, test, chore, build, ci
+      Example: feat(auth): add login functionality`;
+      break;
+    case "descriptive":
+      promptType = "descriptive";
+      formatInstructions = `Write a clear, descriptive message explaining what changes were made and why.
+      Keep it concise but informative.`;
+      break;
+    case "simple":
+      promptType = "simple";
+      formatInstructions = `Write a short, simple message summarizing the changes in 5-10 words.`;
+      break;
+    case "semantic":
+      promptType = "semantic version";
+      formatInstructions = `Use semantic versioning format: <type>: <description>
+      Types: BREAKING CHANGE, feat, fix, docs, style, refactor, perf, test, chore
+      Include body if needed for breaking changes.`;
+      break;
+    default:
+      promptType = "conventional commit";
+      formatInstructions = `Use the format: <type>(<scope>): <subject>
+      Types: feat, fix, docs, style, refactor, perf, test, chore, build, ci`;
+  }
+  // BUILD PROMPT
+  const prompt = `You are an expert at writing ${promptType} messages for Git.  
+  ${formatInstructions} 
+  ${context ? `Context: ${context}` : ""}
+  Based on the following file changes, generate an appropriate commit message:
+  ${changesText}
+  Respond with a JSON object in this format:
+  {
+    "subject": "The main commit message (50-72 chars max)",
+    "body": "Optional longer description explaining why (can be null)",
+    "type": "The commit type (e.g., feat, fix, etc.)",
+    "scope": "The scope of changes (can be null)",
+    "breaking": false,
+    "alternatives": ["2-3 alternative commit message subjects"]
+  }
+  Return ONLY valid JSON, no additional text.`;
+  // TRY TO GENERATE COMMIT MESSAGE
+  try {
+    // GENERATE COMMIT MESSAGE
+    const result = await model.generateContent(prompt);
+    // GET RESPONSE
+    const response = result.response;
+    // GET RESPONSE TEXT
+    const text = response.text();
+    // PARSE JSON
+    let commitMessage;
+    // TRY TO PARSE AS JSON
+    try {
+      // CLEAN UP RESPONSE (REMOVE MARKDOWN CODE BLOCKS IF PRESENT)
+      const cleanedText = text
+        .replace(/```json\n?/g, "")
+        .replace(/```\n?/g, "")
+        .trim();
+      // PARSE AS JSON
+      commitMessage = JSON.parse(cleanedText);
+    } catch {
+      // IF NOT VALID JSON, CREATE SIMPLE MESSAGE
+      commitMessage = {
+        subject: text.trim().split("\n")[0]?.slice(0, 72) || "",
+        body: null,
+        type: "chore",
+        scope: null,
+        breaking: false,
+        alternatives: [],
+      };
+    }
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Commit message generated successfully!",
+      success: true,
+      data: commitMessage,
+    });
+    return;
+  } catch (error: any) {
+    // LOG ERROR
+    console.error("Error generating commit message:", error);
+    // RETURNING ERROR RESPONSE
+    res.status(500).json({
+      message: "Error generating commit message. Please try again later.",
+      success: false,
+    });
+    return;
+  }
+});
+
+/**
+ * SUMMARIZE COMMIT HISTORY
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== SUMMARIZE COMMIT HISTORY ==>
+export const summarizeCommitHistory = expressAsyncHandler(async (req, res) => {
+  // GET COMMITS FROM REQUEST BODY
+  const { commits, includeStats } = req.body;
+  // VALIDATE COMMITS
+  if (!commits || !Array.isArray(commits) || commits.length === 0) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Commits array is required!",
+      success: false,
+    });
+    return;
+  }
+  // GET GEMINI MODEL
+  const model = getGeminiModel();
+  // IF NOT CONFIGURED, RETURN ERROR
+  if (!model) {
+    // RETURNING ERROR RESPONSE
+    res.status(503).json({
+      message: "AI is not configured. Please set up your GEMINI_API_KEY.",
+      success: false,
+    });
+    return;
+  }
+  // FORMAT COMMITS FOR PROMPT
+  const commitsText = commits
+    .map(
+      (
+        commit: {
+          sha: string;
+          message: string;
+          author?: { name?: string; date?: string };
+          stats?: { additions?: number; deletions?: number; total?: number };
+        },
+        index: number
+      ) => {
+        // BUILD COMMIT TEXT
+        let text = `${index + 1}. ${commit.sha.slice(0, 7)} - ${
+          commit.message.split("\n")[0]
+        }`;
+        // CHECK IF AUTHOR NAME EXISTS
+        if (commit.author?.name) {
+          // ADD AUTHOR NAME TO TEXT
+          text += ` (by ${commit.author.name})`;
+        }
+        // CHECK IF AUTHOR DATE EXISTS
+        if (commit.author?.date) {
+          // ADD AUTHOR DATE TO TEXT
+          text += ` on ${new Date(commit.author.date).toLocaleDateString()}`;
+        }
+        // CHECK IF INCLUDE STATS AND STATS EXISTS
+        if (includeStats && commit.stats) {
+          // ADD STATS TO TEXT
+          text += ` [+${commit.stats.additions || 0}/-${
+            commit.stats.deletions || 0
+          }]`;
+        }
+        // RETURN TEXT
+        return text;
+      }
+    )
+    .join("\n");
+  // BUILD PROMPT
+  const prompt = `You are an expert at analyzing Git commit history.
+  Analyze the following ${commits.length} commits and provide a comprehensive summary:
+  ${commitsText}
+  Respond with a JSON object in this format:
+  {
+    "summary": "A 2-3 sentence high-level summary of what these commits accomplished",
+    "mainChanges": ["List of main features/changes introduced"],
+    "categories": {
+      "features": ["New features added"],
+      "fixes": ["Bug fixes"],
+      "refactoring": ["Code improvements"],
+      "documentation": ["Doc changes"],
+      "other": ["Other changes"]
+    },
+    "contributors": ["List of unique contributors"],
+    "timeline": {
+      "startDate": "Date of first commit",
+      "endDate": "Date of last commit",
+      "duration": "Human readable duration"
+    },
+    "highlights": ["2-3 most significant commits or changes"],
+    "suggestedReleaseNotes": "A concise release notes summary for these changes"
+  }
+  Return ONLY valid JSON, no additional text.`;
+  // TRY TO SUMMARIZE COMMITS
+  try {
+    // GENERATE SUMMARY
+    const result = await model.generateContent(prompt);
+    // GET RESPONSE
+    const response = result.response;
+    // GET RESPONSE TEXT
+    const text = response.text();
+    // PARSE JSON
+    let summary;
+    // TRY TO PARSE AS JSON
+    try {
+      // CLEAN UP RESPONSE (REMOVE MARKDOWN CODE BLOCKS IF PRESENT)
+      const cleanedText = text
+        .replace(/```json\n?/g, "")
+        .replace(/```\n?/g, "")
+        .trim();
+      // PARSE AS JSON
+      summary = JSON.parse(cleanedText);
+    } catch {
+      // IF NOT VALID JSON, RETURN RAW TEXT
+      summary = { rawSummary: text };
+    }
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Commit history summarized successfully!",
+      success: true,
+      data: {
+        commitCount: commits.length,
+        summary,
+      },
+    });
+    return;
+  } catch (error: any) {
+    // LOG ERROR
+    console.error("Error summarizing commits:", error);
+    // RETURNING ERROR RESPONSE
+    res.status(500).json({
+      message: "Error summarizing commit history. Please try again later.",
       success: false,
     });
     return;
