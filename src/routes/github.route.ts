@@ -12,6 +12,13 @@ import {
   getRepositoryPullRequests,
   getRepositoryReadme,
   getRepositoryBranches,
+  getBranchDetails,
+  createBranch,
+  deleteBranch,
+  mergeBranches,
+  getBranchProtection,
+  updateBranchProtection,
+  deleteBranchProtection,
   getRepositoryLanguages,
   getRepositoryContributors,
   createRepository,
@@ -95,6 +102,29 @@ router.get("/repositories/:owner/:repo/commits/:sha/branches", getCommitBranches
 router.get("/repositories/:owner/:repo/commits/:sha/pulls", getCommitPullRequests);
 // GET REPOSITORY BRANCHES
 router.get("/repositories/:owner/:repo/branches", getRepositoryBranches);
+// CREATE BRANCH
+router.post("/repositories/:owner/:repo/branches", createBranch);
+// MERGE BRANCHES
+router.post("/repositories/:owner/:repo/merges", mergeBranches);
+// GET BRANCH PROTECTION
+router.get(
+  "/repositories/:owner/:repo/branches/:branch/protection",
+  getBranchProtection
+);
+// UPDATE BRANCH PROTECTION
+router.put(
+  "/repositories/:owner/:repo/branches/:branch/protection",
+  updateBranchProtection
+);
+// DELETE BRANCH PROTECTION
+router.delete(
+  "/repositories/:owner/:repo/branches/:branch/protection",
+  deleteBranchProtection
+);
+// GET BRANCH DETAILS (SPECIFIC BRANCH)
+router.get("/repositories/:owner/:repo/branches/:branch", getBranchDetails);
+// DELETE BRANCH
+router.delete("/repositories/:owner/:repo/branches/:branch", deleteBranch);
 // GET REPOSITORY PULL REQUESTS
 router.get("/repositories/:owner/:repo/pulls", getRepositoryPullRequests);
 // GET REPOSITORY LANGUAGES
