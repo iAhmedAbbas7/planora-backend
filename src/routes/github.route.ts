@@ -9,6 +9,13 @@ import {
   getRepositoryCommits,
   searchRepositoryCommits,
   getRepositoryIssues,
+  getIssueDetails,
+  createIssue,
+  updateIssue,
+  getIssueComments,
+  addIssueComment,
+  getRepositoryLabels,
+  searchIssues,
   getRepositoryPullRequests,
   getPullRequestDetails,
   getPullRequestComments,
@@ -96,6 +103,26 @@ router.delete(
 );
 // GET REPOSITORY ISSUES
 router.get("/repositories/:owner/:repo/issues", getRepositoryIssues);
+// CREATE ISSUE
+router.post("/repositories/:owner/:repo/issues", createIssue);
+// GET REPOSITORY LABELS
+router.get("/repositories/:owner/:repo/labels", getRepositoryLabels);
+// SEARCH ISSUES
+router.get("/repositories/:owner/:repo/issues/search", searchIssues);
+// GET ISSUE COMMENTS (BEFORE :issue_number TO AVOID CONFLICT)
+router.get(
+  "/repositories/:owner/:repo/issues/:issue_number/comments",
+  getIssueComments
+);
+// ADD ISSUE COMMENT
+router.post(
+  "/repositories/:owner/:repo/issues/:issue_number/comments",
+  addIssueComment
+);
+// GET ISSUE DETAILS (DYNAMIC ROUTE AFTER SPECIFIC)
+router.get("/repositories/:owner/:repo/issues/:issue_number", getIssueDetails);
+// UPDATE ISSUE
+router.patch("/repositories/:owner/:repo/issues/:issue_number", updateIssue);
 // GET REPOSITORY README
 router.get("/repositories/:owner/:repo/readme", getRepositoryReadme);
 // GET REPOSITORY COMMITS
