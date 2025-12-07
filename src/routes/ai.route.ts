@@ -16,6 +16,8 @@ import {
   aiIssueAnalyzer,
   aiGenerateIssue,
   aiPermissionRecommendation,
+  aiAnalyzeWorkflowFailure,
+  aiSuggestWorkflowImprovements,
 } from "../controllers/ai.controller.js";
 import express from "express";
 import isAuthenticated from "../middleware/isAuthenticated.js";
@@ -58,5 +60,9 @@ router.post("/analyze-issue", aiIssueAnalyzer);
 router.post("/generate-issue", aiGenerateIssue);
 // AI PERMISSION RECOMMENDATION FOR COLLABORATORS
 router.post("/recommend-permission", aiPermissionRecommendation);
+// AI ANALYZE WORKFLOW FAILURE
+router.post("/analyze-workflow-failure", aiAnalyzeWorkflowFailure);
+// AI SUGGEST WORKFLOW IMPROVEMENTS
+router.post("/suggest-workflow-improvements", aiSuggestWorkflowImprovements);
 
 export default router;
