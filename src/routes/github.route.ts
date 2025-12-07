@@ -47,6 +47,10 @@ import {
   getRepositoryCollaborators,
   addRepositoryCollaborator,
   removeRepositoryCollaborator,
+  getRepositoryInvitations,
+  deleteRepositoryInvitation,
+  updateRepositoryInvitation,
+  checkCollaborator,
   transferRepository,
   getRepositoryContents,
   getFileContent,
@@ -100,6 +104,23 @@ router.put(
 router.delete(
   "/repositories/:owner/:repo/collaborators/:username",
   removeRepositoryCollaborator
+);
+// CHECK COLLABORATOR PERMISSION LEVEL
+router.get(
+  "/repositories/:owner/:repo/collaborators/:username/permission",
+  checkCollaborator
+);
+// GET REPOSITORY INVITATIONS
+router.get("/repositories/:owner/:repo/invitations", getRepositoryInvitations);
+// UPDATE REPOSITORY INVITATION
+router.patch(
+  "/repositories/:owner/:repo/invitations/:invitation_id",
+  updateRepositoryInvitation
+);
+// DELETE REPOSITORY INVITATION
+router.delete(
+  "/repositories/:owner/:repo/invitations/:invitation_id",
+  deleteRepositoryInvitation
 );
 // GET REPOSITORY ISSUES
 router.get("/repositories/:owner/:repo/issues", getRepositoryIssues);
