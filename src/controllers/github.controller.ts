@@ -1685,7 +1685,8 @@ export const createBranch = expressAsyncHandler(async (req, res) => {
     if (error.status === 403) {
       // RETURNING ERROR RESPONSE
       res.status(403).json({
-        message: "You don't have permission to create branches in this repository.",
+        message:
+          "You don't have permission to create branches in this repository.",
         success: false,
       });
       // RETURNING FROM FUNCTION
@@ -1753,7 +1754,8 @@ export const deleteBranch = expressAsyncHandler(async (req, res) => {
     if (repoData.default_branch === branch) {
       // RETURNING ERROR RESPONSE
       res.status(400).json({
-        message: "Cannot delete the default branch. Change the default branch first.",
+        message:
+          "Cannot delete the default branch. Change the default branch first.",
         success: false,
       });
       // RETURNING FROM FUNCTION
@@ -1800,7 +1802,8 @@ export const deleteBranch = expressAsyncHandler(async (req, res) => {
     if (error.status === 403) {
       // RETURNING ERROR RESPONSE
       res.status(403).json({
-        message: "Cannot delete this branch. It may be protected or you don't have permission.",
+        message:
+          "Cannot delete this branch. It may be protected or you don't have permission.",
         success: false,
       });
       // RETURNING FROM FUNCTION
@@ -1946,7 +1949,8 @@ export const mergeBranches = expressAsyncHandler(async (req, res) => {
     if (error.status === 403) {
       // RETURNING ERROR RESPONSE
       res.status(403).json({
-        message: "You don't have permission to merge branches in this repository.",
+        message:
+          "You don't have permission to merge branches in this repository.",
         success: false,
       });
       // RETURNING FROM FUNCTION
@@ -2063,7 +2067,8 @@ export const getBranchProtection = expressAsyncHandler(async (req, res) => {
               apps: protection.restrictions.apps?.map((a) => a.slug) || [],
             }
           : null,
-        requiredLinearHistory: protection.required_linear_history?.enabled || false,
+        requiredLinearHistory:
+          protection.required_linear_history?.enabled || false,
         allowForcePushes: protection.allow_force_pushes?.enabled || false,
         allowDeletions: protection.allow_deletions?.enabled || false,
         blockCreations: protection.block_creations?.enabled || false,
@@ -5481,3 +5486,1244 @@ export const getCommitPullRequests = expressAsyncHandler(async (req, res) => {
     return;
   }
 });
+
+/**
+ * GET PULL REQUEST DETAILS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET PULL REQUEST DETAILS ==>
+export const getPullRequestDetails = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET PARAMS
+  const { owner, repo, pull_number } = req.params;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !pull_number) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and pull request number are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FETCH PULL REQUEST DETAILS
+  try {
+    // GET PULL REQUEST
+    const { data: pr } = await octokit.pulls.get({
+      owner,
+      repo,
+      pull_number: parseInt(pull_number),
+    });
+    // FORMAT PULL REQUEST
+    const formattedPR = {
+      id: pr.id,
+      number: pr.number,
+      title: pr.title,
+      body: pr.body,
+      state: pr.state,
+      htmlUrl: pr.html_url,
+      diffUrl: pr.diff_url,
+      patchUrl: pr.patch_url,
+      draft: pr.draft,
+      merged: pr.merged,
+      mergeable: pr.mergeable,
+      mergeableState: pr.mergeable_state,
+      mergedAt: pr.merged_at,
+      mergedBy: pr.merged_by
+        ? {
+            login: pr.merged_by.login,
+            avatarUrl: pr.merged_by.avatar_url,
+          }
+        : null,
+      createdAt: pr.created_at,
+      updatedAt: pr.updated_at,
+      closedAt: pr.closed_at,
+      head: {
+        ref: pr.head.ref,
+        sha: pr.head.sha,
+        label: pr.head.label,
+        repo: pr.head.repo
+          ? {
+              name: pr.head.repo.name,
+              fullName: pr.head.repo.full_name,
+            }
+          : null,
+      },
+      base: {
+        ref: pr.base.ref,
+        sha: pr.base.sha,
+        label: pr.base.label,
+        repo: {
+          name: pr.base.repo.name,
+          fullName: pr.base.repo.full_name,
+        },
+      },
+      user: {
+        login: pr.user?.login,
+        avatarUrl: pr.user?.avatar_url,
+        htmlUrl: pr.user?.html_url,
+      },
+      labels: pr.labels.map((label) => ({
+        id: label.id,
+        name: label.name,
+        color: label.color,
+        description: label.description,
+      })),
+      requestedReviewers:
+        pr.requested_reviewers?.map((reviewer) => ({
+          login: (reviewer as { login?: string }).login,
+          avatarUrl: (reviewer as { avatar_url?: string }).avatar_url,
+        })) || [],
+      additions: pr.additions,
+      deletions: pr.deletions,
+      changedFiles: pr.changed_files,
+      commits: pr.commits,
+      comments: pr.comments,
+      reviewComments: pr.review_comments,
+    };
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Pull request details retrieved successfully!",
+      success: true,
+      data: formattedPR,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Pull request not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching pull request details. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * GET PULL REQUEST COMMENTS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET PULL REQUEST COMMENTS ==>
+export const getPullRequestComments = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET PARAMS
+  const { owner, repo, pull_number } = req.params;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !pull_number) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and pull request number are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FETCH PULL REQUEST COMMENTS
+  try {
+    // GET ISSUE COMMENTS (GENERAL PR COMMENTS)
+    const { data: issueComments } = await octokit.issues.listComments({
+      owner,
+      repo,
+      issue_number: parseInt(pull_number),
+      per_page: 100,
+    });
+    // GET REVIEW COMMENTS (INLINE CODE COMMENTS)
+    const { data: reviewComments } = await octokit.pulls.listReviewComments({
+      owner,
+      repo,
+      pull_number: parseInt(pull_number),
+      per_page: 100,
+    });
+    // FORMAT ISSUE COMMENTS
+    const formattedIssueComments = issueComments.map((comment) => ({
+      id: comment.id,
+      body: comment.body,
+      htmlUrl: comment.html_url,
+      createdAt: comment.created_at,
+      updatedAt: comment.updated_at,
+      user: {
+        login: comment.user?.login,
+        avatarUrl: comment.user?.avatar_url,
+      },
+      type: "issue" as const,
+    }));
+    // FORMAT REVIEW COMMENTS
+    const formattedReviewComments = reviewComments.map((comment) => ({
+      id: comment.id,
+      body: comment.body,
+      htmlUrl: comment.html_url,
+      path: comment.path,
+      line: comment.line,
+      side: comment.side,
+      commitId: comment.commit_id,
+      diffHunk: comment.diff_hunk,
+      createdAt: comment.created_at,
+      updatedAt: comment.updated_at,
+      user: {
+        login: comment.user?.login,
+        avatarUrl: comment.user?.avatar_url,
+      },
+      type: "review" as const,
+    }));
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Pull request comments retrieved successfully!",
+      success: true,
+      data: {
+        issueComments: formattedIssueComments,
+        reviewComments: formattedReviewComments,
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Pull request not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching pull request comments. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * ADD PULL REQUEST COMMENT
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== ADD PULL REQUEST COMMENT ==>
+export const addPullRequestComment = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET PARAMS
+  const { owner, repo, pull_number } = req.params;
+  // GET BODY
+  const { body } = req.body;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !pull_number) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and pull request number are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // VALIDATE BODY
+  if (!body || typeof body !== "string" || body.trim() === "") {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Comment body is required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // ADD COMMENT
+  try {
+    // CREATE COMMENT
+    const { data: comment } = await octokit.issues.createComment({
+      owner,
+      repo,
+      issue_number: parseInt(pull_number),
+      body: body.trim(),
+    });
+    // FORMAT COMMENT
+    const formattedComment = {
+      id: comment.id,
+      body: comment.body,
+      htmlUrl: comment.html_url,
+      createdAt: comment.created_at,
+      updatedAt: comment.updated_at,
+      user: {
+        login: comment.user?.login,
+        avatarUrl: comment.user?.avatar_url,
+      },
+    };
+    // RETURNING SUCCESS RESPONSE
+    res.status(201).json({
+      message: "Comment added successfully!",
+      success: true,
+      data: formattedComment,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Pull request not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error adding comment. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * CREATE PULL REQUEST
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== CREATE PULL REQUEST ==>
+export const createPullRequest = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET PARAMS
+  const { owner, repo } = req.params;
+  // GET BODY
+  const { title, body, head, base, draft } = req.body;
+  // VALIDATE PARAMS
+  if (!owner || !repo) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner and repository name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // VALIDATE BODY
+  if (!title || !head || !base) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Title, head branch, and base branch are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // CREATE PULL REQUEST
+  try {
+    // CREATE PR
+    const { data: pr } = await octokit.pulls.create({
+      owner,
+      repo,
+      title,
+      body: body || "",
+      head,
+      base,
+      draft: draft || false,
+    });
+    // FORMAT PULL REQUEST
+    const formattedPR = {
+      id: pr.id,
+      number: pr.number,
+      title: pr.title,
+      body: pr.body,
+      state: pr.state,
+      htmlUrl: pr.html_url,
+      draft: pr.draft,
+      createdAt: pr.created_at,
+      head: {
+        ref: pr.head.ref,
+        sha: pr.head.sha,
+      },
+      base: {
+        ref: pr.base.ref,
+        sha: pr.base.sha,
+      },
+      user: {
+        login: pr.user?.login,
+        avatarUrl: pr.user?.avatar_url,
+      },
+    };
+    // RETURNING SUCCESS RESPONSE
+    res.status(201).json({
+      message: "Pull request created successfully!",
+      success: true,
+      data: formattedPR,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // VALIDATION ERROR
+    if (error.status === 422) {
+      // RETURNING ERROR RESPONSE
+      res.status(422).json({
+        message:
+          error.response?.data?.errors?.[0]?.message ||
+          "Invalid pull request. Please check your branches.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error creating pull request. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * MERGE PULL REQUEST
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== MERGE PULL REQUEST ==>
+export const mergePullRequest = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET PARAMS
+  const { owner, repo, pull_number } = req.params;
+  // GET BODY
+  const { commit_title, commit_message, merge_method } = req.body;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !pull_number) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and pull request number are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // MERGE PULL REQUEST
+  try {
+    // MERGE PR
+    const { data: merge } = await octokit.pulls.merge({
+      owner,
+      repo,
+      pull_number: parseInt(pull_number),
+      commit_title: commit_title || undefined,
+      commit_message: commit_message || undefined,
+      merge_method: merge_method || "merge",
+    });
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Pull request merged successfully!",
+      success: true,
+      data: {
+        sha: merge.sha,
+        merged: merge.merged,
+        message: merge.message,
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Pull request not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT MERGEABLE
+    if (error.status === 405) {
+      // RETURNING ERROR RESPONSE
+      res.status(405).json({
+        message: "Pull request is not mergeable. There may be conflicts.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // CONFLICT
+    if (error.status === 409) {
+      // RETURNING ERROR RESPONSE
+      res.status(409).json({
+        message: "Pull request has conflicts that must be resolved first.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error merging pull request. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * UPDATE PULL REQUEST
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== UPDATE PULL REQUEST ==>
+export const updatePullRequest = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET PARAMS
+  const { owner, repo, pull_number } = req.params;
+  // GET BODY
+  const { title, body, state, base } = req.body;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !pull_number) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and pull request number are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // UPDATE PULL REQUEST
+  try {
+    // UPDATE PR
+    const { data: pr } = await octokit.pulls.update({
+      owner,
+      repo,
+      pull_number: parseInt(pull_number),
+      title: title || undefined,
+      body: body || undefined,
+      state: state || undefined,
+      base: base || undefined,
+    });
+    // FORMAT PULL REQUEST
+    const formattedPR = {
+      id: pr.id,
+      number: pr.number,
+      title: pr.title,
+      body: pr.body,
+      state: pr.state,
+      htmlUrl: pr.html_url,
+      draft: pr.draft,
+      updatedAt: pr.updated_at,
+    };
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Pull request updated successfully!",
+      success: true,
+      data: formattedPR,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Pull request not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error updating pull request. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * GET PULL REQUEST REVIEWS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET PULL REQUEST REVIEWS ==>
+export const getPullRequestReviews = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET PARAMS
+  const { owner, repo, pull_number } = req.params;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !pull_number) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and pull request number are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FETCH REVIEWS
+  try {
+    // GET REVIEWS
+    const { data: reviews } = await octokit.pulls.listReviews({
+      owner,
+      repo,
+      pull_number: parseInt(pull_number),
+      per_page: 100,
+    });
+    // FORMAT REVIEWS
+    const formattedReviews = reviews.map((review) => ({
+      id: review.id,
+      body: review.body,
+      state: review.state,
+      htmlUrl: review.html_url,
+      commitId: review.commit_id,
+      submittedAt: review.submitted_at,
+      user: {
+        login: review.user?.login,
+        avatarUrl: review.user?.avatar_url,
+      },
+    }));
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Pull request reviews retrieved successfully!",
+      success: true,
+      data: formattedReviews,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Pull request not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching pull request reviews. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * CREATE PULL REQUEST REVIEW
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== CREATE PULL REQUEST REVIEW ==>
+export const createPullRequestReview = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET PARAMS
+  const { owner, repo, pull_number } = req.params;
+  // GET BODY
+  const { body, event, comments } = req.body;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !pull_number) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and pull request number are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // VALIDATE EVENT
+  const validEvents = ["APPROVE", "REQUEST_CHANGES", "COMMENT"];
+  if (!event || !validEvents.includes(event)) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message:
+        "Valid event (APPROVE, REQUEST_CHANGES, or COMMENT) is required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // CREATE REVIEW
+  try {
+    // CREATE REVIEW
+    const { data: review } = await octokit.pulls.createReview({
+      owner,
+      repo,
+      pull_number: parseInt(pull_number),
+      body: body || "",
+      event: event as "APPROVE" | "REQUEST_CHANGES" | "COMMENT",
+      comments: comments || undefined,
+    });
+    // FORMAT REVIEW
+    const formattedReview = {
+      id: review.id,
+      body: review.body,
+      state: review.state,
+      htmlUrl: review.html_url,
+      commitId: review.commit_id,
+      user: {
+        login: review.user?.login,
+        avatarUrl: review.user?.avatar_url,
+      },
+    };
+    // RETURNING SUCCESS RESPONSE
+    res.status(201).json({
+      message: "Review created successfully!",
+      success: true,
+      data: formattedReview,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Pull request not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // VALIDATION ERROR
+    if (error.status === 422) {
+      // RETURNING ERROR RESPONSE
+      res.status(422).json({
+        message:
+          error.response?.data?.message ||
+          "Invalid review. Please check your input.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error creating review. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * GET PULL REQUEST FILES
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET PULL REQUEST FILES ==>
+export const getPullRequestFiles = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET PARAMS
+  const { owner, repo, pull_number } = req.params;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !pull_number) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and pull request number are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FETCH FILES
+  try {
+    // GET FILES
+    const { data: files } = await octokit.pulls.listFiles({
+      owner,
+      repo,
+      pull_number: parseInt(pull_number),
+      per_page: 100,
+    });
+    // FORMAT FILES
+    const formattedFiles = files.map((file) => ({
+      sha: file.sha,
+      filename: file.filename,
+      status: file.status,
+      additions: file.additions,
+      deletions: file.deletions,
+      changes: file.changes,
+      blobUrl: file.blob_url,
+      rawUrl: file.raw_url,
+      contentsUrl: file.contents_url,
+      patch: file.patch,
+      previousFilename: file.previous_filename,
+    }));
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Pull request files retrieved successfully!",
+      success: true,
+      data: formattedFiles,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Pull request not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching pull request files. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * REQUEST PULL REQUEST REVIEWERS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== REQUEST PULL REQUEST REVIEWERS ==>
+export const requestPullRequestReviewers = expressAsyncHandler(
+  async (req, res) => {
+    // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+    const userId = (req as AuthenticatedRequest).id;
+    // IF USER ID NOT FOUND, RETURN ERROR
+    if (!userId) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "Unauthorized!",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // GET PARAMS
+    const { owner, repo, pull_number } = req.params;
+    // GET BODY
+    const { reviewers, team_reviewers } = req.body;
+    // VALIDATE PARAMS
+    if (!owner || !repo || !pull_number) {
+      // RETURNING ERROR RESPONSE
+      res.status(400).json({
+        message:
+          "Owner, repository name, and pull request number are required!",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // VALIDATE REVIEWERS
+    if (
+      (!reviewers || reviewers.length === 0) &&
+      (!team_reviewers || team_reviewers.length === 0)
+    ) {
+      // RETURNING ERROR RESPONSE
+      res.status(400).json({
+        message: "At least one reviewer or team reviewer is required!",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // GET OCTOKIT INSTANCE
+    const { octokit, error } = await getOctokitForUser(userId);
+    // IF ERROR, RETURN ERROR RESPONSE
+    if (error || !octokit) {
+      // RETURNING ERROR RESPONSE
+      res.status(error?.status || 500).json({
+        message: error?.message || "Error connecting to GitHub.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // REQUEST REVIEWERS
+    try {
+      // REQUEST REVIEWERS
+      const { data: pr } = await octokit.pulls.requestReviewers({
+        owner,
+        repo,
+        pull_number: parseInt(pull_number),
+        reviewers: reviewers || [],
+        team_reviewers: team_reviewers || [],
+      });
+      // FORMAT REQUESTED REVIEWERS
+      const requestedReviewers =
+        pr.requested_reviewers?.map((reviewer) => ({
+          login: (reviewer as { login?: string }).login,
+          avatarUrl: (reviewer as { avatar_url?: string }).avatar_url,
+        })) || [];
+      // RETURNING SUCCESS RESPONSE
+      res.status(200).json({
+        message: "Reviewers requested successfully!",
+        success: true,
+        data: {
+          requestedReviewers,
+        },
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    } catch (error: any) {
+      // TOKEN IS INVALID OR EXPIRED
+      if (error.status === 401) {
+        // RETURNING ERROR RESPONSE
+        res.status(401).json({
+          message: "GitHub token has expired. Please reconnect your account.",
+          success: false,
+        });
+        // RETURNING FROM FUNCTION
+        return;
+      }
+      // NOT FOUND
+      if (error.status === 404) {
+        // RETURNING ERROR RESPONSE
+        res.status(404).json({
+          message: "Pull request not found.",
+          success: false,
+        });
+        // RETURNING FROM FUNCTION
+        return;
+      }
+      // VALIDATION ERROR
+      if (error.status === 422) {
+        // RETURNING ERROR RESPONSE
+        res.status(422).json({
+          message:
+            error.response?.data?.message ||
+            "Invalid reviewers. Please check the usernames.",
+          success: false,
+        });
+        // RETURNING FROM FUNCTION
+        return;
+      }
+      // OTHER ERROR
+      res.status(500).json({
+        message: "Error requesting reviewers. Please try again later.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+  }
+);
