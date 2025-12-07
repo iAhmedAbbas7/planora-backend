@@ -10,6 +10,16 @@ import {
   searchRepositoryCommits,
   getRepositoryIssues,
   getRepositoryPullRequests,
+  getPullRequestDetails,
+  getPullRequestComments,
+  addPullRequestComment,
+  createPullRequest,
+  mergePullRequest,
+  updatePullRequest,
+  getPullRequestReviews,
+  createPullRequestReview,
+  getPullRequestFiles,
+  requestPullRequestReviewers,
   getRepositoryReadme,
   getRepositoryBranches,
   getBranchDetails,
@@ -127,6 +137,53 @@ router.get("/repositories/:owner/:repo/branches/:branch", getBranchDetails);
 router.delete("/repositories/:owner/:repo/branches/:branch", deleteBranch);
 // GET REPOSITORY PULL REQUESTS
 router.get("/repositories/:owner/:repo/pulls", getRepositoryPullRequests);
+// CREATE PULL REQUEST
+router.post("/repositories/:owner/:repo/pulls", createPullRequest);
+// GET PULL REQUEST FILES (BEFORE :pull_number TO AVOID CONFLICT)
+router.get(
+  "/repositories/:owner/:repo/pulls/:pull_number/files",
+  getPullRequestFiles
+);
+// GET PULL REQUEST COMMENTS
+router.get(
+  "/repositories/:owner/:repo/pulls/:pull_number/comments",
+  getPullRequestComments
+);
+// ADD PULL REQUEST COMMENT
+router.post(
+  "/repositories/:owner/:repo/pulls/:pull_number/comments",
+  addPullRequestComment
+);
+// GET PULL REQUEST REVIEWS
+router.get(
+  "/repositories/:owner/:repo/pulls/:pull_number/reviews",
+  getPullRequestReviews
+);
+// CREATE PULL REQUEST REVIEW
+router.post(
+  "/repositories/:owner/:repo/pulls/:pull_number/reviews",
+  createPullRequestReview
+);
+// REQUEST PULL REQUEST REVIEWERS
+router.post(
+  "/repositories/:owner/:repo/pulls/:pull_number/reviewers",
+  requestPullRequestReviewers
+);
+// MERGE PULL REQUEST
+router.put(
+  "/repositories/:owner/:repo/pulls/:pull_number/merge",
+  mergePullRequest
+);
+// GET PULL REQUEST DETAILS (DYNAMIC ROUTE AFTER SPECIFIC)
+router.get(
+  "/repositories/:owner/:repo/pulls/:pull_number",
+  getPullRequestDetails
+);
+// UPDATE PULL REQUEST
+router.patch(
+  "/repositories/:owner/:repo/pulls/:pull_number",
+  updatePullRequest
+);
 // GET REPOSITORY LANGUAGES
 router.get("/repositories/:owner/:repo/languages", getRepositoryLanguages);
 // GET GIT COMMANDS FOR REPOSITORY
