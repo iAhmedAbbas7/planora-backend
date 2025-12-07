@@ -13,6 +13,8 @@ import {
   summarizeCommitHistory,
   suggestBranchStrategy,
   aiCodeReview,
+  aiIssueAnalyzer,
+  aiGenerateIssue,
 } from "../controllers/ai.controller.js";
 import express from "express";
 import isAuthenticated from "../middleware/isAuthenticated.js";
@@ -49,5 +51,9 @@ router.post("/summarize-commits", summarizeCommitHistory);
 router.post("/suggest-branch-strategy", suggestBranchStrategy);
 // AI CODE REVIEW FOR PULL REQUESTS
 router.post("/review-pr", aiCodeReview);
+// AI ISSUE ANALYZER (AUTO-LABEL, DUPLICATES, SOLUTIONS)
+router.post("/analyze-issue", aiIssueAnalyzer);
+// AI GENERATE ISSUE FROM DESCRIPTION
+router.post("/generate-issue", aiGenerateIssue);
 
 export default router;
