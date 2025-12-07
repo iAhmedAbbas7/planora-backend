@@ -12,6 +12,7 @@ import {
   generateCommitMessage,
   summarizeCommitHistory,
   suggestBranchStrategy,
+  aiCodeReview,
 } from "../controllers/ai.controller.js";
 import express from "express";
 import isAuthenticated from "../middleware/isAuthenticated.js";
@@ -46,5 +47,7 @@ router.post("/generate-commit-message", generateCommitMessage);
 router.post("/summarize-commits", summarizeCommitHistory);
 // AI SUGGEST BRANCH STRATEGY
 router.post("/suggest-branch-strategy", suggestBranchStrategy);
+// AI CODE REVIEW FOR PULL REQUESTS
+router.post("/review-pr", aiCodeReview);
 
 export default router;
