@@ -764,6 +764,16 @@ export const getRepositoryDetails = expressAsyncHandler(async (req, res) => {
           avatarUrl: repository.owner.avatar_url,
           htmlUrl: repository.owner.html_url,
         },
+        // USER'S PERMISSIONS ON THIS REPOSITORY
+        permissions: repository.permissions
+          ? {
+              admin: repository.permissions.admin,
+              maintain: repository.permissions.maintain,
+              push: repository.permissions.push,
+              triage: repository.permissions.triage,
+              pull: repository.permissions.pull,
+            }
+          : null,
       },
     });
     // RETURNING FROM FUNCTION
@@ -4691,6 +4701,443 @@ export const removeRepositoryCollaborator = expressAsyncHandler(
     }
   }
 );
+
+/**
+ * GET REPOSITORY INVITATIONS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET REPOSITORY INVITATIONS ==>
+export const getRepositoryInvitations = expressAsyncHandler(
+  async (req, res) => {
+    // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+    const userId = (req as AuthenticatedRequest).id;
+    // IF USER ID NOT FOUND, RETURN ERROR
+    if (!userId) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "Unauthorized!",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // GET OWNER AND REPO FROM PARAMS
+    const { owner, repo } = req.params;
+    // VALIDATE PARAMS
+    if (!owner || !repo) {
+      // RETURNING ERROR RESPONSE
+      res.status(400).json({
+        message: "Owner and repository name are required!",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // GET OCTOKIT INSTANCE
+    const { octokit, error } = await getOctokitForUser(userId);
+    // IF ERROR, RETURN ERROR RESPONSE
+    if (error || !octokit) {
+      // RETURNING ERROR RESPONSE
+      res.status(error?.status || 500).json({
+        message: error?.message || "Error connecting to GitHub.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // FETCH INVITATIONS
+    try {
+      // GET REPOSITORY INVITATIONS
+      const { data: invitations } = await octokit.repos.listInvitations({
+        owner,
+        repo,
+        per_page: 100,
+      });
+      // MAP INVITATIONS TO SIMPLIFIED FORMAT
+      const mappedInvitations = invitations.map((invitation) => ({
+        id: invitation.id,
+        invitee: invitation.invitee
+          ? {
+              login: invitation.invitee.login,
+              avatarUrl: invitation.invitee.avatar_url,
+              htmlUrl: invitation.invitee.html_url,
+            }
+          : null,
+        inviter: invitation.inviter
+          ? {
+              login: invitation.inviter.login,
+              avatarUrl: invitation.inviter.avatar_url,
+            }
+          : null,
+        permissions: invitation.permissions,
+        createdAt: invitation.created_at,
+        htmlUrl: invitation.html_url,
+        expired: invitation.expired,
+      }));
+      // RETURNING SUCCESS RESPONSE
+      res.status(200).json({
+        message: "Invitations retrieved successfully!",
+        success: true,
+        data: {
+          invitations: mappedInvitations,
+        },
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    } catch (error: any) {
+      // TOKEN IS INVALID OR EXPIRED
+      if (error.status === 401) {
+        // RETURNING ERROR RESPONSE
+        res.status(401).json({
+          message: "GitHub token has expired. Please reconnect your account.",
+          success: false,
+        });
+        // RETURNING FROM FUNCTION
+        return;
+      }
+      // REPOSITORY NOT FOUND OR NO PERMISSION
+      if (error.status === 404 || error.status === 403) {
+        // RETURNING ERROR RESPONSE
+        res.status(error.status).json({
+          message:
+            "Repository not found or you don't have permission to view invitations.",
+          success: false,
+        });
+        // RETURNING FROM FUNCTION
+        return;
+      }
+      // OTHER ERROR
+      res.status(500).json({
+        message: "Error fetching invitations. Please try again later.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+  }
+);
+
+/**
+ * DELETE REPOSITORY INVITATION
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== DELETE REPOSITORY INVITATION ==>
+export const deleteRepositoryInvitation = expressAsyncHandler(
+  async (req, res) => {
+    // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+    const userId = (req as AuthenticatedRequest).id;
+    // IF USER ID NOT FOUND, RETURN ERROR
+    if (!userId) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "Unauthorized!",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // GET OWNER, REPO AND INVITATION ID FROM PARAMS
+    const { owner, repo, invitation_id } = req.params;
+    // VALIDATE PARAMS
+    if (!owner || !repo || !invitation_id) {
+      // RETURNING ERROR RESPONSE
+      res.status(400).json({
+        message: "Owner, repository name, and invitation ID are required!",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // GET OCTOKIT INSTANCE
+    const { octokit, error } = await getOctokitForUser(userId);
+    // IF ERROR, RETURN ERROR RESPONSE
+    if (error || !octokit) {
+      // RETURNING ERROR RESPONSE
+      res.status(error?.status || 500).json({
+        message: error?.message || "Error connecting to GitHub.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // DELETE INVITATION
+    try {
+      // DELETE REPOSITORY INVITATION
+      await octokit.repos.deleteInvitation({
+        owner,
+        repo,
+        invitation_id: parseInt(invitation_id),
+      });
+      // RETURNING SUCCESS RESPONSE
+      res.status(200).json({
+        message: "Invitation deleted successfully!",
+        success: true,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    } catch (error: any) {
+      // TOKEN IS INVALID OR EXPIRED
+      if (error.status === 401) {
+        // RETURNING ERROR RESPONSE
+        res.status(401).json({
+          message: "GitHub token has expired. Please reconnect your account.",
+          success: false,
+        });
+        // RETURNING FROM FUNCTION
+        return;
+      }
+      // INVITATION NOT FOUND OR NO PERMISSION
+      if (error.status === 404 || error.status === 403) {
+        // RETURNING ERROR RESPONSE
+        res.status(error.status).json({
+          message:
+            "Invitation not found or you don't have permission to delete it.",
+          success: false,
+        });
+        // RETURNING FROM FUNCTION
+        return;
+      }
+      // OTHER ERROR
+      res.status(500).json({
+        message: "Error deleting invitation. Please try again later.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+  }
+);
+
+/**
+ * UPDATE REPOSITORY INVITATION
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== UPDATE REPOSITORY INVITATION ==>
+export const updateRepositoryInvitation = expressAsyncHandler(
+  async (req, res) => {
+    // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+    const userId = (req as AuthenticatedRequest).id;
+    // IF USER ID NOT FOUND, RETURN ERROR
+    if (!userId) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "Unauthorized!",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // GET OWNER, REPO AND INVITATION ID FROM PARAMS
+    const { owner, repo, invitation_id } = req.params;
+    // GET PERMISSIONS FROM BODY
+    const { permissions } = req.body;
+    // VALIDATE PARAMS
+    if (!owner || !repo || !invitation_id) {
+      // RETURNING ERROR RESPONSE
+      res.status(400).json({
+        message: "Owner, repository name, and invitation ID are required!",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // VALIDATE PERMISSIONS
+    if (!permissions || !["read", "triage", "write", "maintain", "admin"].includes(permissions)) {
+      // RETURNING ERROR RESPONSE
+      res.status(400).json({
+        message: "Valid permission level is required (read, triage, write, maintain, admin)!",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // GET OCTOKIT INSTANCE
+    const { octokit, error } = await getOctokitForUser(userId);
+    // IF ERROR, RETURN ERROR RESPONSE
+    if (error || !octokit) {
+      // RETURNING ERROR RESPONSE
+      res.status(error?.status || 500).json({
+        message: error?.message || "Error connecting to GitHub.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // UPDATE INVITATION
+    try {
+      // UPDATE REPOSITORY INVITATION
+      const { data: invitation } = await octokit.repos.updateInvitation({
+        owner,
+        repo,
+        invitation_id: parseInt(invitation_id),
+        permissions,
+      });
+      // MAP INVITATION TO SIMPLIFIED FORMAT
+      const mappedInvitation = {
+        id: invitation.id,
+        invitee: invitation.invitee
+          ? {
+              login: invitation.invitee.login,
+              avatarUrl: invitation.invitee.avatar_url,
+            }
+          : null,
+        permissions: invitation.permissions,
+        createdAt: invitation.created_at,
+      };
+      // RETURNING SUCCESS RESPONSE
+      res.status(200).json({
+        message: "Invitation updated successfully!",
+        success: true,
+        data: mappedInvitation,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    } catch (error: any) {
+      // TOKEN IS INVALID OR EXPIRED
+      if (error.status === 401) {
+        // RETURNING ERROR RESPONSE
+        res.status(401).json({
+          message: "GitHub token has expired. Please reconnect your account.",
+          success: false,
+        });
+        // RETURNING FROM FUNCTION
+        return;
+      }
+      // INVITATION NOT FOUND OR NO PERMISSION
+      if (error.status === 404 || error.status === 403) {
+        // RETURNING ERROR RESPONSE
+        res.status(error.status).json({
+          message:
+            "Invitation not found or you don't have permission to update it.",
+          success: false,
+        });
+        // RETURNING FROM FUNCTION
+        return;
+      }
+      // OTHER ERROR
+      res.status(500).json({
+        message: "Error updating invitation. Please try again later.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+  }
+);
+
+/**
+ * CHECK IF USER IS COLLABORATOR
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== CHECK COLLABORATOR ==>
+export const checkCollaborator = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER, REPO AND USERNAME FROM PARAMS
+  const { owner, repo, username } = req.params;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !username) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and username are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // CHECK COLLABORATOR
+  try {
+    // CHECK IF USER IS COLLABORATOR
+    const { data } = await octokit.repos.getCollaboratorPermissionLevel({
+      owner,
+      repo,
+      username,
+    });
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Collaborator check successful!",
+      success: true,
+      data: {
+        isCollaborator: true,
+        permission: data.permission,
+        roleName: data.role_name,
+        user: data.user
+          ? {
+              login: data.user.login,
+              avatarUrl: data.user.avatar_url,
+              htmlUrl: data.user.html_url,
+            }
+          : null,
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // USER IS NOT A COLLABORATOR
+    if (error.status === 404) {
+      // RETURNING SUCCESS RESPONSE (NOT A COLLABORATOR)
+      res.status(200).json({
+        message: "User is not a collaborator.",
+        success: true,
+        data: {
+          isCollaborator: false,
+          permission: "none",
+          roleName: null,
+          user: null,
+        },
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error checking collaborator. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
 
 /**
  * TRANSFER REPOSITORY
