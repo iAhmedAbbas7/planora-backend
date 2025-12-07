@@ -15,6 +15,7 @@ import {
   aiCodeReview,
   aiIssueAnalyzer,
   aiGenerateIssue,
+  aiPermissionRecommendation,
 } from "../controllers/ai.controller.js";
 import express from "express";
 import isAuthenticated from "../middleware/isAuthenticated.js";
@@ -55,5 +56,7 @@ router.post("/review-pr", aiCodeReview);
 router.post("/analyze-issue", aiIssueAnalyzer);
 // AI GENERATE ISSUE FROM DESCRIPTION
 router.post("/generate-issue", aiGenerateIssue);
+// AI PERMISSION RECOMMENDATION FOR COLLABORATORS
+router.post("/recommend-permission", aiPermissionRecommendation);
 
 export default router;
