@@ -1083,6 +1083,939 @@ export const getRepositoryIssues = expressAsyncHandler(async (req, res) => {
 });
 
 /**
+ * GET ISSUE DETAILS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET ISSUE DETAILS ==>
+export const getIssueDetails = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER, REPO AND ISSUE NUMBER FROM PARAMS
+  const { owner, repo, issue_number } = req.params;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !issue_number) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and issue number are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FETCH ISSUE DETAILS
+  try {
+    // GET ISSUE DETAILS
+    const { data: issue } = await octokit.issues.get({
+      owner,
+      repo,
+      issue_number: parseInt(issue_number),
+    });
+    // MAP ISSUE TO SIMPLIFIED FORMAT
+    const mappedIssue = {
+      id: issue.id,
+      number: issue.number,
+      title: issue.title,
+      body: issue.body,
+      bodyHtml: issue.body_html,
+      state: issue.state,
+      stateReason: issue.state_reason,
+      htmlUrl: issue.html_url,
+      commentsCount: issue.comments,
+      createdAt: issue.created_at,
+      updatedAt: issue.updated_at,
+      closedAt: issue.closed_at,
+      user: {
+        login: issue.user?.login,
+        avatarUrl: issue.user?.avatar_url,
+        htmlUrl: issue.user?.html_url,
+      },
+      labels: issue.labels.map((label) =>
+        typeof label === "string"
+          ? { id: null, name: label, color: null, description: null }
+          : {
+              id: label.id,
+              name: label.name,
+              color: label.color,
+              description: label.description,
+            }
+      ),
+      assignees: issue.assignees?.map((assignee) => ({
+        login: assignee.login,
+        avatarUrl: assignee.avatar_url,
+        htmlUrl: assignee.html_url,
+      })),
+      milestone: issue.milestone
+        ? {
+            id: issue.milestone.id,
+            number: issue.milestone.number,
+            title: issue.milestone.title,
+            description: issue.milestone.description,
+            state: issue.milestone.state,
+            dueOn: issue.milestone.due_on,
+          }
+        : null,
+      closedBy: issue.closed_by
+        ? {
+            login: issue.closed_by.login,
+            avatarUrl: issue.closed_by.avatar_url,
+          }
+        : null,
+      reactions: {
+        totalCount: issue.reactions?.total_count || 0,
+        plusOne: issue.reactions?.["+1"] || 0,
+        minusOne: issue.reactions?.["-1"] || 0,
+        laugh: issue.reactions?.laugh || 0,
+        hooray: issue.reactions?.hooray || 0,
+        confused: issue.reactions?.confused || 0,
+        heart: issue.reactions?.heart || 0,
+        rocket: issue.reactions?.rocket || 0,
+        eyes: issue.reactions?.eyes || 0,
+      },
+      locked: issue.locked,
+      authorAssociation: issue.author_association,
+    };
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Issue details retrieved successfully!",
+      success: true,
+      data: mappedIssue,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // ISSUE NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Issue not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching issue details. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * CREATE ISSUE
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== CREATE ISSUE ==>
+export const createIssue = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER AND REPO FROM PARAMS
+  const { owner, repo } = req.params;
+  // GET ISSUE DATA FROM BODY
+  const { title, body, labels, assignees, milestone } = req.body;
+  // VALIDATE PARAMS
+  if (!owner || !repo) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner and repository name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // VALIDATE TITLE
+  if (!title || typeof title !== "string" || !title.trim()) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Issue title is required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // CREATE ISSUE
+  try {
+    // CREATE ISSUE ON GITHUB
+    const { data: issue } = await octokit.issues.create({
+      owner,
+      repo,
+      title: title.trim(),
+      body: body || undefined,
+      labels: labels || undefined,
+      assignees: assignees || undefined,
+      milestone: milestone || undefined,
+    });
+    // MAP ISSUE TO SIMPLIFIED FORMAT
+    const mappedIssue = {
+      id: issue.id,
+      number: issue.number,
+      title: issue.title,
+      body: issue.body,
+      state: issue.state,
+      htmlUrl: issue.html_url,
+      commentsCount: issue.comments,
+      createdAt: issue.created_at,
+      updatedAt: issue.updated_at,
+      user: {
+        login: issue.user?.login,
+        avatarUrl: issue.user?.avatar_url,
+      },
+      labels: issue.labels.map((label) =>
+        typeof label === "string"
+          ? { name: label, color: null }
+          : { name: label.name, color: label.color }
+      ),
+      assignees: issue.assignees?.map((assignee) => ({
+        login: assignee.login,
+        avatarUrl: assignee.avatar_url,
+      })),
+    };
+    // RETURNING SUCCESS RESPONSE
+    res.status(201).json({
+      message: "Issue created successfully!",
+      success: true,
+      data: mappedIssue,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // REPOSITORY NOT FOUND OR NO PERMISSION
+    if (error.status === 404 || error.status === 403) {
+      // RETURNING ERROR RESPONSE
+      res.status(error.status).json({
+        message:
+          "Repository not found or you don't have permission to create issues.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // VALIDATION ERROR
+    if (error.status === 422) {
+      // RETURNING ERROR RESPONSE
+      res.status(422).json({
+        message: error.message || "Invalid issue data.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error creating issue. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * UPDATE ISSUE
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== UPDATE ISSUE ==>
+export const updateIssue = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER, REPO AND ISSUE NUMBER FROM PARAMS
+  const { owner, repo, issue_number } = req.params;
+  // GET UPDATE DATA FROM BODY
+  const { title, body, state, stateReason, labels, assignees, milestone } =
+    req.body;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !issue_number) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and issue number are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // UPDATE ISSUE
+  try {
+    // BUILD UPDATE OBJECT
+    const updateData: {
+      title?: string;
+      body?: string;
+      state?: "open" | "closed";
+      state_reason?: "completed" | "not_planned" | "reopened" | null;
+      labels?: string[];
+      assignees?: string[];
+      milestone?: number | null;
+    } = {};
+    // ADD TITLE IF PROVIDED
+    if (title !== undefined) updateData.title = title;
+    // ADD BODY IF PROVIDED
+    if (body !== undefined) updateData.body = body;
+    // ADD STATE IF PROVIDED
+    if (state !== undefined) updateData.state = state;
+    // ADD STATE REASON IF PROVIDED
+    if (stateReason !== undefined) updateData.state_reason = stateReason;
+    // ADD LABELS IF PROVIDED
+    if (labels !== undefined) updateData.labels = labels;
+    // ADD ASSIGNEES IF PROVIDED
+    if (assignees !== undefined) updateData.assignees = assignees;
+    // ADD MILESTONE IF PROVIDED
+    if (milestone !== undefined) updateData.milestone = milestone;
+    // UPDATE ISSUE ON GITHUB
+    const { data: issue } = await octokit.issues.update({
+      owner,
+      repo,
+      issue_number: parseInt(issue_number),
+      ...updateData,
+    });
+    // MAP ISSUE TO SIMPLIFIED FORMAT
+    const mappedIssue = {
+      id: issue.id,
+      number: issue.number,
+      title: issue.title,
+      body: issue.body,
+      state: issue.state,
+      stateReason: issue.state_reason,
+      htmlUrl: issue.html_url,
+      commentsCount: issue.comments,
+      createdAt: issue.created_at,
+      updatedAt: issue.updated_at,
+      closedAt: issue.closed_at,
+      user: {
+        login: issue.user?.login,
+        avatarUrl: issue.user?.avatar_url,
+      },
+      labels: issue.labels.map((label) =>
+        typeof label === "string"
+          ? { name: label, color: null }
+          : { name: label.name, color: label.color }
+      ),
+      assignees: issue.assignees?.map((assignee) => ({
+        login: assignee.login,
+        avatarUrl: assignee.avatar_url,
+      })),
+    };
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Issue updated successfully!",
+      success: true,
+      data: mappedIssue,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // ISSUE NOT FOUND OR NO PERMISSION
+    if (error.status === 404 || error.status === 403) {
+      // RETURNING ERROR RESPONSE
+      res.status(error.status).json({
+        message: "Issue not found or you don't have permission to update it.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error updating issue. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * GET ISSUE COMMENTS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET ISSUE COMMENTS ==>
+export const getIssueComments = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER, REPO AND ISSUE NUMBER FROM PARAMS
+  const { owner, repo, issue_number } = req.params;
+  // SET PAGE QUERY PARAMETERS
+  const page = parseInt(req.query.page as string) || 1;
+  // SET PER PAGE QUERY PARAMETERS
+  const perPage = parseInt(req.query.per_page as string) || 30;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !issue_number) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and issue number are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FETCH ISSUE COMMENTS
+  try {
+    // GET ISSUE COMMENTS
+    const { data: comments } = await octokit.issues.listComments({
+      owner,
+      repo,
+      issue_number: parseInt(issue_number),
+      page,
+      per_page: perPage,
+    });
+    // MAP COMMENTS TO SIMPLIFIED FORMAT
+    const mappedComments = comments.map((comment) => ({
+      id: comment.id,
+      body: comment.body,
+      bodyHtml: comment.body_html,
+      createdAt: comment.created_at,
+      updatedAt: comment.updated_at,
+      user: {
+        login: comment.user?.login,
+        avatarUrl: comment.user?.avatar_url,
+        htmlUrl: comment.user?.html_url,
+      },
+      htmlUrl: comment.html_url,
+      authorAssociation: comment.author_association,
+      reactions: {
+        totalCount: comment.reactions?.total_count || 0,
+        plusOne: comment.reactions?.["+1"] || 0,
+        minusOne: comment.reactions?.["-1"] || 0,
+        laugh: comment.reactions?.laugh || 0,
+        hooray: comment.reactions?.hooray || 0,
+        confused: comment.reactions?.confused || 0,
+        heart: comment.reactions?.heart || 0,
+        rocket: comment.reactions?.rocket || 0,
+        eyes: comment.reactions?.eyes || 0,
+      },
+    }));
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Issue comments retrieved successfully!",
+      success: true,
+      data: {
+        comments: mappedComments,
+        pagination: {
+          page,
+          perPage,
+          hasMore: comments.length === perPage,
+        },
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // ISSUE NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Issue not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching issue comments. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * ADD ISSUE COMMENT
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== ADD ISSUE COMMENT ==>
+export const addIssueComment = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER, REPO AND ISSUE NUMBER FROM PARAMS
+  const { owner, repo, issue_number } = req.params;
+  // GET COMMENT BODY FROM BODY
+  const { body } = req.body;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !issue_number) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and issue number are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // VALIDATE BODY
+  if (!body || typeof body !== "string" || !body.trim()) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Comment body is required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // ADD ISSUE COMMENT
+  try {
+    // CREATE COMMENT ON GITHUB
+    const { data: comment } = await octokit.issues.createComment({
+      owner,
+      repo,
+      issue_number: parseInt(issue_number),
+      body: body.trim(),
+    });
+    // MAP COMMENT TO SIMPLIFIED FORMAT
+    const mappedComment = {
+      id: comment.id,
+      body: comment.body,
+      createdAt: comment.created_at,
+      updatedAt: comment.updated_at,
+      user: {
+        login: comment.user?.login,
+        avatarUrl: comment.user?.avatar_url,
+      },
+      htmlUrl: comment.html_url,
+    };
+    // RETURNING SUCCESS RESPONSE
+    res.status(201).json({
+      message: "Comment added successfully!",
+      success: true,
+      data: mappedComment,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // ISSUE NOT FOUND OR NO PERMISSION
+    if (error.status === 404 || error.status === 403) {
+      // RETURNING ERROR RESPONSE
+      res.status(error.status).json({
+        message: "Issue not found or you don't have permission to comment.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error adding comment. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * GET REPOSITORY LABELS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET REPOSITORY LABELS ==>
+export const getRepositoryLabels = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER AND REPO FROM PARAMS
+  const { owner, repo } = req.params;
+  // SET PAGE QUERY PARAMETERS
+  const page = parseInt(req.query.page as string) || 1;
+  // SET PER PAGE QUERY PARAMETERS
+  const perPage = parseInt(req.query.per_page as string) || 100;
+  // VALIDATE PARAMS
+  if (!owner || !repo) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner and repository name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FETCH REPOSITORY LABELS
+  try {
+    // GET REPOSITORY LABELS
+    const { data: labels } = await octokit.issues.listLabelsForRepo({
+      owner,
+      repo,
+      page,
+      per_page: perPage,
+    });
+    // MAP LABELS TO SIMPLIFIED FORMAT
+    const mappedLabels = labels.map((label) => ({
+      id: label.id,
+      name: label.name,
+      color: label.color,
+      description: label.description,
+      default: label.default,
+    }));
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Labels retrieved successfully!",
+      success: true,
+      data: {
+        labels: mappedLabels,
+        pagination: {
+          page,
+          perPage,
+          hasMore: labels.length === perPage,
+        },
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // REPOSITORY NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Repository not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching labels. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * SEARCH ISSUES
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== SEARCH ISSUES ==>
+export const searchIssues = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER AND REPO FROM PARAMS
+  const { owner, repo } = req.params;
+  // GET SEARCH QUERY FROM QUERY PARAMS
+  const query = req.query.q as string;
+  // SET PAGE QUERY PARAMETERS
+  const page = parseInt(req.query.page as string) || 1;
+  // SET PER PAGE QUERY PARAMETERS
+  const perPage = parseInt(req.query.per_page as string) || 30;
+  // SET STATE QUERY PARAMETERS
+  const state = req.query.state as string;
+  // VALIDATE PARAMS
+  if (!owner || !repo) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner and repository name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // SEARCH ISSUES
+  try {
+    // BUILD SEARCH QUERY
+    let searchQuery = `repo:${owner}/${repo} is:issue`;
+    if (query) searchQuery += ` ${query}`;
+    if (state && state !== "all") searchQuery += ` is:${state}`;
+    // SEARCH ISSUES ON GITHUB
+    const { data } = await octokit.search.issuesAndPullRequests({
+      q: searchQuery,
+      page,
+      per_page: perPage,
+      sort: "updated",
+      order: "desc",
+    });
+    // FILTER OUT PULL REQUESTS (SEARCH API MAY RETURN THEM)
+    const issues = data.items.filter((item) => !item.pull_request);
+    // MAP ISSUES TO SIMPLIFIED FORMAT
+    const mappedIssues = issues.map((issue) => ({
+      id: issue.id,
+      number: issue.number,
+      title: issue.title,
+      body: issue.body,
+      state: issue.state,
+      htmlUrl: issue.html_url,
+      commentsCount: issue.comments,
+      createdAt: issue.created_at,
+      updatedAt: issue.updated_at,
+      closedAt: issue.closed_at,
+      user: {
+        login: issue.user?.login,
+        avatarUrl: issue.user?.avatar_url,
+      },
+      labels: issue.labels.map((label) =>
+        typeof label === "string"
+          ? { name: label, color: null }
+          : { name: label.name, color: label.color }
+      ),
+      assignees: issue.assignees?.map((assignee) => ({
+        login: assignee.login,
+        avatarUrl: assignee.avatar_url,
+      })),
+      score: issue.score,
+    }));
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Issues search completed successfully!",
+      success: true,
+      data: {
+        issues: mappedIssues,
+        totalCount: data.total_count,
+        pagination: {
+          page,
+          perPage,
+          hasMore: page * perPage < data.total_count,
+        },
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error searching issues. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
  * GET REPOSITORY PULL REQUESTS
  * @param req - Request Object
  * @param res - Response Object
