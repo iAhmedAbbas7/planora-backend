@@ -2589,6 +2589,160 @@ export const aiGenerateIssue = expressAsyncHandler(async (req, res) => {
 });
 
 /**
+ * AI PERMISSION RECOMMENDATION
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== AI PERMISSION RECOMMENDATION ==>
+export const aiPermissionRecommendation = expressAsyncHandler(
+  async (req, res) => {
+    // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+    const userId = (req as any).id;
+    // IF USER ID NOT FOUND, RETURN ERROR
+    if (!userId) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "Unauthorized!",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // GET REQUEST DATA
+    const { username, repositoryInfo, userActivity, existingCollaborators } =
+      req.body;
+    // VALIDATE INPUT
+    if (!username || !repositoryInfo) {
+      // RETURNING ERROR RESPONSE
+      res.status(400).json({
+        message: "Username and repository info are required!",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // GET AI MODEL
+    const model = getGeminiModel();
+    // IF MODEL NOT AVAILABLE, RETURN ERROR
+    if (!model) {
+      // RETURNING ERROR RESPONSE
+      res.status(503).json({
+        message: "AI is not configured. Please set up your GEMINI_API_KEY.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // BUILD CONTEXT FOR EXISTING COLLABORATORS
+    const collaboratorsContext =
+      existingCollaborators && existingCollaborators.length > 0
+        ? existingCollaborators
+            .slice(0, 10)
+            .map(
+              (c: { login: string; permission: string }) =>
+                `${c.login}: ${c.permission}`
+            )
+            .join("\n")
+        : "No existing collaborators";
+    // BUILD PROMPT
+    const prompt = `You are an expert at GitHub repository access management. Analyze the following information and recommend the appropriate permission level for a new collaborator.
+    Repository Information:
+    - Name: ${repositoryInfo.name}
+    - Description: ${repositoryInfo.description || "No description"}
+    - Is Private: ${repositoryInfo.isPrivate ? "Yes" : "No"}
+    - Primary Language: ${repositoryInfo.language || "Not specified"}
+    - Has Issues: ${repositoryInfo.hasIssues ? "Yes" : "No"}
+    - Has Wiki: ${repositoryInfo.hasWiki ? "Yes" : "No"}
+    User to Add: ${username}
+    ${userActivity ? `User Activity Info: ${JSON.stringify(userActivity)}` : ""}
+    Existing Collaborators:
+    ${collaboratorsContext}
+    GitHub Permission Levels:
+    - read: Can read and clone repository. Can create issues and pull request comments.
+    - triage: Read plus manage issues and pull requests without write access.
+    - write: Can read, clone, push, and merge. Full contribution access.
+    - maintain: Write plus manage repository settings (except destructive actions).
+    - admin: Full access including destructive actions, settings, and collaborator management.
+    Based on this information, recommend the most appropriate permission level.
+    Respond with a JSON object in this exact format:
+    {
+      "recommendedPermission": "read" | "triage" | "write" | "maintain" | "admin",
+      "confidence": "high" | "medium" | "low",
+      "reasoning": "Detailed explanation of why this permission level is recommended",
+      "considerations": [
+        "Important consideration 1",
+        "Important consideration 2"
+      ],
+      "alternativePermission": {
+        "level": "permission level",
+        "when": "When this alternative might be more appropriate"
+      },
+      "securityNotes": [
+        "Security consideration 1"
+      ]
+    }
+
+    Return ONLY valid JSON, no additional text.`;
+    // TRY TO GENERATE RECOMMENDATION
+    try {
+      // GENERATE RECOMMENDATION
+      const result = await model.generateContent(prompt);
+      // GET RESPONSE
+      const response = result.response;
+      // GET RESPONSE TEXT
+      const text = response.text();
+      // PARSE JSON
+      let recommendation;
+      // TRY TO PARSE AS JSON
+      try {
+        // CLEAN UP RESPONSE (REMOVE MARKDOWN CODE BLOCKS IF PRESENT)
+        const cleanedText = text
+          .replace(/```json\n?/g, "")
+          .replace(/```\n?/g, "")
+          .trim();
+        // PARSE AS JSON
+        recommendation = JSON.parse(cleanedText);
+      } catch {
+        // IF NOT VALID JSON, RETURN DEFAULT
+        recommendation = {
+          recommendedPermission: "read",
+          confidence: "low",
+          reasoning:
+            "Unable to analyze. Defaulting to read (safest permission level).",
+          considerations: ["Review manually before granting higher access"],
+          alternativePermission: null,
+          securityNotes: ["Always follow principle of least privilege"],
+        };
+      }
+      // RETURNING SUCCESS RESPONSE
+      res.status(200).json({
+        message: "Permission recommendation generated successfully!",
+        success: true,
+        data: {
+          username,
+          repository: repositoryInfo.name,
+          recommendation,
+        },
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    } catch (error: any) {
+      // LOG ERROR
+      console.error("Error generating permission recommendation:", error);
+      // RETURNING ERROR RESPONSE
+      res.status(500).json({
+        message:
+          "Error generating permission recommendation. Please try again later.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+  }
+);
+
+/**
  * SUGGEST BRANCH STRATEGY
  * @param req - Request Object
  * @param res - Response Object
