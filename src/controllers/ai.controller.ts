@@ -2136,7 +2136,9 @@ export const aiCodeReview = expressAsyncHandler(async (req, res) => {
         if (file.patch) {
           // LIMIT PATCH TO 1500 CHARS PER FILE
           const patchPreview = file.patch.slice(0, 1500);
-          text += `\n\nDiff:\n\`\`\`\n${patchPreview}${file.patch.length > 1500 ? "\n..." : ""}\n\`\`\``;
+          text += `\n\nDiff:\n\`\`\`\n${patchPreview}${
+            file.patch.length > 1500 ? "\n..." : ""
+          }\n\`\`\``;
         }
         return text;
       }
@@ -2180,9 +2182,18 @@ export const aiCodeReview = expressAsyncHandler(async (req, res) => {
   }
   // BUILD PROMPT
   const prompt = `You are an expert code reviewer. Analyze the following pull request changes and provide a detailed code review.
-  ${pullRequestInfo ? `\nPull Request: ${pullRequestInfo.title}\nDescription: ${pullRequestInfo.body || "No description provided"}\nBranches: ${pullRequestInfo.head} → ${pullRequestInfo.base}` : ""}
+  ${
+    pullRequestInfo
+      ? `\nPull Request: ${pullRequestInfo.title}\nDescription: ${
+          pullRequestInfo.body || "No description provided"
+        }\nBranches: ${pullRequestInfo.head} → ${pullRequestInfo.base}`
+      : ""
+  }
   ${reviewTypePrompt}
-  Files Changed (${files.length} total, showing first ${Math.min(files.length, 10)}):
+  Files Changed (${files.length} total, showing first ${Math.min(
+    files.length,
+    10
+  )}):
   ${filesContext}
   Respond with a JSON object in this exact format:
   {
@@ -2263,6 +2274,313 @@ export const aiCodeReview = expressAsyncHandler(async (req, res) => {
     // RETURNING ERROR RESPONSE
     res.status(500).json({
       message: "Error generating AI code review. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * AI ISSUE ANALYZER (AUTO-LABEL, DUPLICATES, SOLUTIONS)
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== AI ISSUE ANALYZER ==>
+export const aiIssueAnalyzer = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as any).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET REQUEST DATA
+  const {
+    issue,
+    existingIssues,
+    availableLabels,
+    analysisType = "full",
+  } = req.body;
+  // VALIDATE INPUT
+  if (!issue || !issue.title) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Issue data with title is required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET AI MODEL
+  const model = getGeminiModel();
+  // IF MODEL NOT AVAILABLE, RETURN ERROR
+  if (!model) {
+    // RETURNING ERROR RESPONSE
+    res.status(503).json({
+      message: "AI is not configured. Please set up your GEMINI_API_KEY.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // BUILD CONTEXT FOR EXISTING ISSUES
+  const existingIssuesContext =
+    existingIssues && existingIssues.length > 0
+      ? existingIssues
+          .slice(0, 20)
+          .map(
+            (i: {
+              number: number;
+              title: string;
+              labels?: string[];
+              state: string;
+            }) =>
+              `#${i.number}: ${i.title} [${i.state}]${
+                i.labels?.length ? ` (${i.labels.join(", ")})` : ""
+              }`
+          )
+          .join("\n")
+      : "No existing issues provided";
+  // BUILD CONTEXT FOR AVAILABLE LABELS
+  const labelsContext =
+    availableLabels && availableLabels.length > 0
+      ? availableLabels
+          .map(
+            (l: { name: string; description?: string }) =>
+              `- ${l.name}${l.description ? `: ${l.description}` : ""}`
+          )
+          .join("\n")
+      : "bug, enhancement, documentation, question, help wanted, good first issue";
+  // BUILD PROMPT BASED ON ANALYSIS TYPE
+  let prompt = "";
+  // FULL ANALYSIS
+  if (analysisType === "full" || analysisType === "labels") {
+    prompt += `You are an expert at triaging GitHub issues. Analyze the following issue and provide appropriate labels.
+  Available Labels:
+  ${labelsContext}
+  Issue Title: ${issue.title}
+  Issue Body: ${issue.body || "No description provided"}
+  `;
+  }
+  // DUPLICATE DETECTION
+  if (analysisType === "full" || analysisType === "duplicates") {
+    prompt += `
+  Existing Issues in Repository:
+  ${existingIssuesContext}
+  `;
+  }
+  // BUILD FINAL PROMPT
+  prompt += `Analyze this issue and provide:
+  1. Suggested labels (from the available labels list)
+  2. Potential duplicate issues (from existing issues, if any seem related)
+  3. A suggested solution or next steps
+  4. Priority assessment (critical, high, medium, low)
+  5. Issue category (bug, feature, question, documentation, other)
+  Respond with a JSON object in this exact format:
+  {
+    "suggestedLabels": ["label1", "label2"],
+    "labelReasons": {
+      "label1": "Why this label applies"
+    },
+    "potentialDuplicates": [
+      {
+        "issueNumber": 123,
+        "title": "Similar issue title",
+        "similarity": "high" | "medium" | "low",
+        "reason": "Why it might be a duplicate"
+      }
+    ],
+    "suggestedSolution": {
+      "summary": "Brief summary of suggested approach",
+      "steps": ["Step 1", "Step 2"],
+      "additionalContext": "Any additional helpful information"
+    },
+    "priority": "critical" | "high" | "medium" | "low",
+    "priorityReason": "Why this priority level",
+    "category": "bug" | "feature" | "question" | "documentation" | "other",
+    "categoryReason": "Why this category",
+    "estimatedEffort": "small" | "medium" | "large",
+    "suggestedAssigneeType": "maintainer" | "contributor" | "new-contributor" | null
+  }
+  Return ONLY valid JSON, no additional text.`;
+  // TRY TO GENERATE ANALYSIS
+  try {
+    // GENERATE ANALYSIS
+    const result = await model.generateContent(prompt);
+    // GET RESPONSE
+    const response = result.response;
+    // GET RESPONSE TEXT
+    const text = response.text();
+    // PARSE JSON
+    let analysis;
+    // TRY TO PARSE AS JSON
+    try {
+      // CLEAN UP RESPONSE (REMOVE MARKDOWN CODE BLOCKS IF PRESENT)
+      const cleanedText = text
+        .replace(/```json\n?/g, "")
+        .replace(/```\n?/g, "")
+        .trim();
+      // PARSE AS JSON
+      analysis = JSON.parse(cleanedText);
+    } catch {
+      // IF NOT VALID JSON, RETURN DEFAULT
+      analysis = {
+        suggestedLabels: [],
+        labelReasons: {},
+        potentialDuplicates: [],
+        suggestedSolution: {
+          summary: "Unable to analyze. Please review manually.",
+          steps: [],
+          additionalContext: null,
+        },
+        priority: "medium",
+        priorityReason: "Default priority",
+        category: "other",
+        categoryReason: "Unable to categorize",
+        estimatedEffort: "medium",
+        suggestedAssigneeType: null,
+        rawAnalysis: text,
+      };
+    }
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Issue analysis completed successfully!",
+      success: true,
+      data: {
+        issueTitle: issue.title,
+        analysisType,
+        analysis,
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // LOG ERROR
+    console.error("Error analyzing issue:", error);
+    // RETURNING ERROR RESPONSE
+    res.status(500).json({
+      message: "Error analyzing issue. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * AI GENERATE ISSUE FROM DESCRIPTION
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== AI GENERATE ISSUE ==>
+export const aiGenerateIssue = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as any).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET REQUEST DATA
+  const { description, issueType = "bug", context } = req.body;
+  // VALIDATE INPUT
+  if (!description || typeof description !== "string" || !description.trim()) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Description is required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET AI MODEL
+  const model = getGeminiModel();
+  // IF MODEL NOT AVAILABLE, RETURN ERROR
+  if (!model) {
+    // RETURNING ERROR RESPONSE
+    res.status(503).json({
+      message: "AI is not configured. Please set up your GEMINI_API_KEY.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // BUILD PROMPT
+  const prompt = `You are an expert technical writer helping to create well-structured GitHub issues.
+  User Description: ${description}
+  Issue Type: ${issueType}
+  ${context ? `Additional Context: ${context}` : ""}
+  Generate a well-formatted GitHub issue with:
+  1. A clear, concise title
+  2. A detailed description with proper markdown formatting
+  3. Steps to reproduce (if bug)
+  4. Expected vs actual behavior (if bug)
+  5. Suggested labels
+  Respond with a JSON object in this exact format:
+  {
+    "title": "Clear issue title",
+    "body": "Full markdown-formatted issue body with sections",
+    "suggestedLabels": ["label1", "label2"],
+    "priority": "high" | "medium" | "low",
+    "type": "bug" | "feature" | "documentation" | "question"
+  }
+  Return ONLY valid JSON, no additional text.`;
+  // TRY TO GENERATE ISSUE
+  try {
+    // GENERATE ISSUE
+    const result = await model.generateContent(prompt);
+    // GET RESPONSE
+    const response = result.response;
+    // GET RESPONSE TEXT
+    const text = response.text();
+    // PARSE JSON
+    let generatedIssue;
+    // TRY TO PARSE AS JSON
+    try {
+      // CLEAN UP RESPONSE (REMOVE MARKDOWN CODE BLOCKS IF PRESENT)
+      const cleanedText = text
+        .replace(/```json\n?/g, "")
+        .replace(/```\n?/g, "")
+        .trim();
+      // PARSE AS JSON
+      generatedIssue = JSON.parse(cleanedText);
+    } catch {
+      // IF NOT VALID JSON, CREATE SIMPLE ISSUE
+      generatedIssue = {
+        title: description.slice(0, 100),
+        body: description,
+        suggestedLabels: [],
+        priority: "medium",
+        type: issueType,
+      };
+    }
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Issue generated successfully!",
+      success: true,
+      data: generatedIssue,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // LOG ERROR
+    console.error("Error generating issue:", error);
+    // RETURNING ERROR RESPONSE
+    res.status(500).json({
+      message: "Error generating issue. Please try again later.",
       success: false,
     });
     // RETURNING FROM FUNCTION
