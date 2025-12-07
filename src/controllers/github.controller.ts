@@ -9481,3 +9481,1336 @@ export const deleteWorkflowRun = expressAsyncHandler(async (req, res) => {
     return;
   }
 });
+
+/**
+ * LIST RELEASES
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== LIST RELEASES ==>
+export const listReleases = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER AND REPO FROM PARAMS
+  const { owner, repo } = req.params;
+  // GET PAGINATION FROM QUERY
+  const page = parseInt(req.query.page as string) || 1;
+  // GET PER PAGE FROM QUERY
+  const perPage = parseInt(req.query.per_page as string) || 10;
+  // VALIDATE PARAMS
+  if (!owner || !repo) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner and repository name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FETCH RELEASES
+  try {
+    // FETCH RELEASES
+    const response = await octokit.repos.listReleases({
+      owner,
+      repo,
+      page,
+      per_page: perPage,
+    });
+    // MAP RELEASES
+    const releases = response.data.map((release) => ({
+      id: release.id,
+      tagName: release.tag_name,
+      name: release.name || release.tag_name,
+      body: release.body,
+      draft: release.draft,
+      prerelease: release.prerelease,
+      createdAt: release.created_at,
+      publishedAt: release.published_at,
+      htmlUrl: release.html_url,
+      tarballUrl: release.tarball_url,
+      zipballUrl: release.zipball_url,
+      author: release.author
+        ? {
+            login: release.author.login,
+            avatarUrl: release.author.avatar_url,
+            htmlUrl: release.author.html_url,
+          }
+        : null,
+      assets: release.assets.map((asset) => ({
+        id: asset.id,
+        name: asset.name,
+        size: asset.size,
+        downloadCount: asset.download_count,
+        browserDownloadUrl: asset.browser_download_url,
+        contentType: asset.content_type,
+        createdAt: asset.created_at,
+        updatedAt: asset.updated_at,
+      })),
+    }));
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Releases fetched successfully!",
+      success: true,
+      data: {
+        releases,
+        pagination: {
+          page,
+          perPage,
+          hasMore: response.data.length === perPage,
+        },
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Repository not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching releases. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * GET RELEASE DETAILS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET RELEASE DETAILS ==>
+export const getReleaseDetails = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER, REPO, AND RELEASE_ID FROM PARAMS
+  const { owner, repo, release_id } = req.params;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !release_id) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and release ID are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FETCH RELEASE DETAILS
+  try {
+    // FETCH RELEASE
+    const response = await octokit.repos.getRelease({
+      owner,
+      repo,
+      release_id: parseInt(release_id),
+    });
+    // MAP RELEASE
+    const release = {
+      id: response.data.id,
+      tagName: response.data.tag_name,
+      targetCommitish: response.data.target_commitish,
+      name: response.data.name || response.data.tag_name,
+      body: response.data.body,
+      draft: response.data.draft,
+      prerelease: response.data.prerelease,
+      createdAt: response.data.created_at,
+      publishedAt: response.data.published_at,
+      htmlUrl: response.data.html_url,
+      tarballUrl: response.data.tarball_url,
+      zipballUrl: response.data.zipball_url,
+      author: response.data.author
+        ? {
+            login: response.data.author.login,
+            avatarUrl: response.data.author.avatar_url,
+            htmlUrl: response.data.author.html_url,
+          }
+        : null,
+      assets: response.data.assets.map((asset) => ({
+        id: asset.id,
+        name: asset.name,
+        label: asset.label,
+        size: asset.size,
+        downloadCount: asset.download_count,
+        browserDownloadUrl: asset.browser_download_url,
+        contentType: asset.content_type,
+        state: asset.state,
+        createdAt: asset.created_at,
+        updatedAt: asset.updated_at,
+      })),
+    };
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Release details fetched successfully!",
+      success: true,
+      data: release,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Release not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching release details. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * GET LATEST RELEASE
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET LATEST RELEASE ==>
+export const getLatestRelease = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER AND REPO FROM PARAMS
+  const { owner, repo } = req.params;
+  // VALIDATE PARAMS
+  if (!owner || !repo) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner and repository name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FETCH LATEST RELEASE
+  try {
+    // FETCH LATEST RELEASE
+    const response = await octokit.repos.getLatestRelease({
+      owner,
+      repo,
+    });
+    // MAP RELEASE
+    const release = {
+      id: response.data.id,
+      tagName: response.data.tag_name,
+      targetCommitish: response.data.target_commitish,
+      name: response.data.name || response.data.tag_name,
+      body: response.data.body,
+      draft: response.data.draft,
+      prerelease: response.data.prerelease,
+      createdAt: response.data.created_at,
+      publishedAt: response.data.published_at,
+      htmlUrl: response.data.html_url,
+      tarballUrl: response.data.tarball_url,
+      zipballUrl: response.data.zipball_url,
+      author: response.data.author
+        ? {
+            login: response.data.author.login,
+            avatarUrl: response.data.author.avatar_url,
+            htmlUrl: response.data.author.html_url,
+          }
+        : null,
+      assets: response.data.assets.map((asset) => ({
+        id: asset.id,
+        name: asset.name,
+        label: asset.label,
+        size: asset.size,
+        downloadCount: asset.download_count,
+        browserDownloadUrl: asset.browser_download_url,
+        contentType: asset.content_type,
+        state: asset.state,
+        createdAt: asset.created_at,
+        updatedAt: asset.updated_at,
+      })),
+    };
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Latest release fetched successfully!",
+      success: true,
+      data: release,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "No releases found for this repository.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching latest release. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * CREATE RELEASE
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== CREATE RELEASE ==>
+export const createRelease = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER AND REPO FROM PARAMS
+  const { owner, repo } = req.params;
+  // GET RELEASE DATA FROM BODY
+  const {
+    tagName,
+    targetCommitish,
+    name,
+    body,
+    draft,
+    prerelease,
+    generateReleaseNotes,
+  } = req.body;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !tagName) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and tag name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // CREATE RELEASE
+  try {
+    // CREATE RELEASE
+    const response = await octokit.repos.createRelease({
+      owner,
+      repo,
+      tag_name: tagName,
+      target_commitish: targetCommitish,
+      name: name || tagName,
+      body: body || "",
+      draft: draft || false,
+      prerelease: prerelease || false,
+      generate_release_notes: generateReleaseNotes || false,
+    });
+    // MAP RELEASE
+    const release = {
+      id: response.data.id,
+      tagName: response.data.tag_name,
+      targetCommitish: response.data.target_commitish,
+      name: response.data.name || response.data.tag_name,
+      body: response.data.body,
+      draft: response.data.draft,
+      prerelease: response.data.prerelease,
+      createdAt: response.data.created_at,
+      publishedAt: response.data.published_at,
+      htmlUrl: response.data.html_url,
+      author: response.data.author
+        ? {
+            login: response.data.author.login,
+            avatarUrl: response.data.author.avatar_url,
+          }
+        : null,
+    };
+    // RETURNING SUCCESS RESPONSE
+    res.status(201).json({
+      message: "Release created successfully!",
+      success: true,
+      data: release,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // FORBIDDEN
+    if (error.status === 403) {
+      // RETURNING ERROR RESPONSE
+      res.status(403).json({
+        message:
+          "You don't have permission to create releases in this repository.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // VALIDATION ERROR
+    if (error.status === 422) {
+      // RETURNING ERROR RESPONSE
+      res.status(422).json({
+        message:
+          error.message || "Invalid release data. Tag may already exist.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error creating release. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * UPDATE RELEASE
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== UPDATE RELEASE ==>
+export const updateRelease = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER, REPO, AND RELEASE_ID FROM PARAMS
+  const { owner, repo, release_id } = req.params;
+  // GET RELEASE DATA FROM BODY
+  const { tagName, targetCommitish, name, body, draft, prerelease } = req.body;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !release_id) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and release ID are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // UPDATE RELEASE
+  try {
+    // BUILD UPDATE DATA
+    const updateData: any = {};
+    // ADD TAG NAME IF PROVIDED
+    if (tagName !== undefined) updateData.tag_name = tagName;
+    // ADD TARGET COMMITISH IF PROVIDED
+    if (targetCommitish !== undefined)
+      updateData.target_commitish = targetCommitish;
+    // ADD NAME IF PROVIDED
+    if (name !== undefined) updateData.name = name;
+    // ADD BODY IF PROVIDED
+    if (body !== undefined) updateData.body = body;
+    // ADD DRAFT IF PROVIDED
+    if (draft !== undefined) updateData.draft = draft;
+    // ADD PRERELEASE IF PROVIDED
+    if (prerelease !== undefined) updateData.prerelease = prerelease;
+    // UPDATE RELEASE
+    const response = await octokit.repos.updateRelease({
+      owner,
+      repo,
+      release_id: parseInt(release_id),
+      ...updateData,
+    });
+    // MAP RELEASE
+    const release = {
+      id: response.data.id,
+      tagName: response.data.tag_name,
+      targetCommitish: response.data.target_commitish,
+      name: response.data.name || response.data.tag_name,
+      body: response.data.body,
+      draft: response.data.draft,
+      prerelease: response.data.prerelease,
+      createdAt: response.data.created_at,
+      publishedAt: response.data.published_at,
+      htmlUrl: response.data.html_url,
+      author: response.data.author
+        ? {
+            login: response.data.author.login,
+            avatarUrl: response.data.author.avatar_url,
+          }
+        : null,
+    };
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Release updated successfully!",
+      success: true,
+      data: release,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Release not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // FORBIDDEN
+    if (error.status === 403) {
+      // RETURNING ERROR RESPONSE
+      res.status(403).json({
+        message: "You don't have permission to update this release.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error updating release. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * DELETE RELEASE
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== DELETE RELEASE ==>
+export const deleteRelease = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER, REPO, AND RELEASE_ID FROM PARAMS
+  const { owner, repo, release_id } = req.params;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !release_id) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and release ID are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // DELETE RELEASE
+  try {
+    // DELETE RELEASE
+    await octokit.repos.deleteRelease({
+      owner,
+      repo,
+      release_id: parseInt(release_id),
+    });
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Release deleted successfully!",
+      success: true,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Release not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // FORBIDDEN
+    if (error.status === 403) {
+      // RETURNING ERROR RESPONSE
+      res.status(403).json({
+        message: "You don't have permission to delete this release.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error deleting release. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * LIST TAGS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== LIST TAGS ==>
+export const listTags = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER AND REPO FROM PARAMS
+  const { owner, repo } = req.params;
+  // GET PAGINATION FROM QUERY
+  const page = parseInt(req.query.page as string) || 1;
+  // GET PER PAGE FROM QUERY
+  const perPage = parseInt(req.query.per_page as string) || 30;
+  // VALIDATE PARAMS
+  if (!owner || !repo) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner and repository name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FETCH TAGS
+  try {
+    // FETCH TAGS
+    const response = await octokit.repos.listTags({
+      owner,
+      repo,
+      page,
+      per_page: perPage,
+    });
+    // MAP TAGS
+    const tags = response.data.map((tag) => ({
+      name: tag.name,
+      sha: tag.commit.sha,
+      zipballUrl: tag.zipball_url,
+      tarballUrl: tag.tarball_url,
+      nodeId: tag.node_id,
+    }));
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Tags fetched successfully!",
+      success: true,
+      data: {
+        tags,
+        pagination: {
+          page,
+          perPage,
+          hasMore: response.data.length === perPage,
+        },
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Repository not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching tags. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * GET TAG DETAILS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET TAG DETAILS ==>
+export const getTagDetails = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER, REPO, AND TAG FROM PARAMS
+  const { owner, repo, tag } = req.params;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !tag) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and tag name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FETCH TAG DETAILS
+  try {
+    // FETCH GIT REF FOR TAG
+    const refResponse = await octokit.git.getRef({
+      owner,
+      repo,
+      ref: `tags/${tag}`,
+    });
+    // GET TAG OBJECT
+    let tagData: any = {
+      name: tag,
+      sha: refResponse.data.object.sha,
+      type: refResponse.data.object.type,
+    };
+    // IF TAG IS ANNOTATED, GET MORE DETAILS
+    if (refResponse.data.object.type === "tag") {
+      // FETCH TAG OBJECT
+      const tagResponse = await octokit.git.getTag({
+        owner,
+        repo,
+        tag_sha: refResponse.data.object.sha,
+      });
+      // UPDATE TAG DATA
+      tagData = {
+        ...tagData,
+        message: tagResponse.data.message,
+        tagger: tagResponse.data.tagger
+          ? {
+              name: tagResponse.data.tagger.name,
+              email: tagResponse.data.tagger.email,
+              date: tagResponse.data.tagger.date,
+            }
+          : null,
+        objectSha: tagResponse.data.object.sha,
+        objectType: tagResponse.data.object.type,
+        verified: tagResponse.data.verification?.verified || false,
+      };
+    }
+    // TRY TO GET ASSOCIATED RELEASE
+    try {
+      // FETCH RELEASE BY TAG
+      const releaseResponse = await octokit.repos.getReleaseByTag({
+        owner,
+        repo,
+        tag,
+      });
+      // ADD RELEASE INFO
+      tagData.release = {
+        id: releaseResponse.data.id,
+        name: releaseResponse.data.name,
+        htmlUrl: releaseResponse.data.html_url,
+        draft: releaseResponse.data.draft,
+        prerelease: releaseResponse.data.prerelease,
+        publishedAt: releaseResponse.data.published_at,
+      };
+    } catch {
+      // NO RELEASE FOR THIS TAG
+      tagData.release = null;
+    }
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Tag details fetched successfully!",
+      success: true,
+      data: tagData,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Tag not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching tag details. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * CREATE TAG
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== CREATE TAG ==>
+export const createTag = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER AND REPO FROM PARAMS
+  const { owner, repo } = req.params;
+  // GET TAG DATA FROM BODY
+  const { tagName, sha, message } = req.body;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !tagName || !sha) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, tag name, and SHA are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // CREATE TAG
+  try {
+    let tagSha = sha;
+    // IF MESSAGE IS PROVIDED, CREATE ANNOTATED TAG
+    if (message) {
+      // CREATE TAG OBJECT
+      const tagResponse = await octokit.git.createTag({
+        owner,
+        repo,
+        tag: tagName,
+        message,
+        object: sha,
+        type: "commit",
+      });
+      // USE TAG SHA
+      tagSha = tagResponse.data.sha;
+    }
+    // CREATE REF FOR TAG
+    const refResponse = await octokit.git.createRef({
+      owner,
+      repo,
+      ref: `refs/tags/${tagName}`,
+      sha: tagSha,
+    });
+    // RETURNING SUCCESS RESPONSE
+    res.status(201).json({
+      message: "Tag created successfully!",
+      success: true,
+      data: {
+        name: tagName,
+        sha: tagSha,
+        ref: refResponse.data.ref,
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // FORBIDDEN
+    if (error.status === 403) {
+      // RETURNING ERROR RESPONSE
+      res.status(403).json({
+        message: "You don't have permission to create tags in this repository.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // VALIDATION ERROR (TAG EXISTS)
+    if (error.status === 422) {
+      // RETURNING ERROR RESPONSE
+      res.status(422).json({
+        message: "Tag already exists or invalid data provided.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error creating tag. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * DELETE TAG
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== DELETE TAG ==>
+export const deleteTag = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER, REPO, AND TAG FROM PARAMS
+  const { owner, repo, tag } = req.params;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !tag) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and tag name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // DELETE TAG
+  try {
+    // DELETE REF
+    await octokit.git.deleteRef({
+      owner,
+      repo,
+      ref: `tags/${tag}`,
+    });
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Tag deleted successfully!",
+      success: true,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Tag not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // FORBIDDEN
+    if (error.status === 403) {
+      // RETURNING ERROR RESPONSE
+      res.status(403).json({
+        message: "You don't have permission to delete this tag.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error deleting tag. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * GENERATE RELEASE NOTES
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GENERATE RELEASE NOTES ==>
+export const generateReleaseNotes = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER AND REPO FROM PARAMS
+  const { owner, repo } = req.params;
+  // GET DATA FROM BODY
+  const { tagName, targetCommitish, previousTagName } = req.body;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !tagName) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and tag name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GENERATE RELEASE NOTES
+  try {
+    // GENERATE RELEASE NOTES
+    const response = await octokit.repos.generateReleaseNotes({
+      owner,
+      repo,
+      tag_name: tagName,
+      target_commitish: targetCommitish,
+      previous_tag_name: previousTagName,
+    });
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Release notes generated successfully!",
+      success: true,
+      data: {
+        name: response.data.name,
+        body: response.data.body,
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Repository or tag not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error generating release notes. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
