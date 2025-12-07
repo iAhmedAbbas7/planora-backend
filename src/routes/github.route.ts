@@ -63,6 +63,19 @@ import {
   compareCommits,
   getCommitBranches,
   getCommitPullRequests,
+  // GITHUB ACTIONS
+  getRepositoryWorkflows,
+  getWorkflowDetails,
+  getWorkflowRuns,
+  getWorkflowRunDetails,
+  getWorkflowRunJobs,
+  getWorkflowRunLogs,
+  getJobLogs,
+  triggerWorkflowDispatch,
+  rerunWorkflow,
+  rerunFailedJobs,
+  cancelWorkflowRun,
+  deleteWorkflowRun,
 } from "../controllers/github.controller.js";
 import express from "express";
 import isAuthenticated from "../middleware/isAuthenticated.js";
@@ -149,15 +162,24 @@ router.get("/repositories/:owner/:repo/readme", getRepositoryReadme);
 // GET REPOSITORY COMMITS
 router.get("/repositories/:owner/:repo/commits", getRepositoryCommits);
 // SEARCH REPOSITORY COMMITS
-router.get("/repositories/:owner/:repo/commits/search", searchRepositoryCommits);
+router.get(
+  "/repositories/:owner/:repo/commits/search",
+  searchRepositoryCommits
+);
 // COMPARE COMMITS
 router.get("/repositories/:owner/:repo/compare", compareCommits);
 // GET COMMIT DETAILS (SPECIFIC SHA)
 router.get("/repositories/:owner/:repo/commits/:sha", getCommitDetails);
 // GET COMMIT BRANCHES (BRANCHES CONTAINING THIS COMMIT)
-router.get("/repositories/:owner/:repo/commits/:sha/branches", getCommitBranches);
+router.get(
+  "/repositories/:owner/:repo/commits/:sha/branches",
+  getCommitBranches
+);
 // GET COMMIT PULL REQUESTS (PRs ASSOCIATED WITH COMMIT)
-router.get("/repositories/:owner/:repo/commits/:sha/pulls", getCommitPullRequests);
+router.get(
+  "/repositories/:owner/:repo/commits/:sha/pulls",
+  getCommitPullRequests
+);
 // GET REPOSITORY BRANCHES
 router.get("/repositories/:owner/:repo/branches", getRepositoryBranches);
 // CREATE BRANCH
@@ -256,6 +278,60 @@ router.get("/repositories/:owner/:repo/blame", getFileBlame);
 router.post("/repositories/:owner/:repo/fork", forkRepository);
 // TRANSFER REPOSITORY
 router.post("/repositories/:owner/:repo/transfer", transferRepository);
+// GET REPOSITORY WORKFLOWS
+router.get(
+  "/repositories/:owner/:repo/actions/workflows",
+  getRepositoryWorkflows
+);
+// GET WORKFLOW DETAILS
+router.get(
+  "/repositories/:owner/:repo/actions/workflows/:workflow_id",
+  getWorkflowDetails
+);
+// TRIGGER WORKFLOW DISPATCH
+router.post(
+  "/repositories/:owner/:repo/actions/workflows/:workflow_id/dispatches",
+  triggerWorkflowDispatch
+);
+// GET WORKFLOW RUNS (FOR REPO OR SPECIFIC WORKFLOW)
+router.get("/repositories/:owner/:repo/actions/runs", getWorkflowRuns);
+// GET WORKFLOW RUN DETAILS
+router.get(
+  "/repositories/:owner/:repo/actions/runs/:run_id",
+  getWorkflowRunDetails
+);
+// GET WORKFLOW RUN JOBS
+router.get(
+  "/repositories/:owner/:repo/actions/runs/:run_id/jobs",
+  getWorkflowRunJobs
+);
+// GET WORKFLOW RUN LOGS
+router.get(
+  "/repositories/:owner/:repo/actions/runs/:run_id/logs",
+  getWorkflowRunLogs
+);
+// RE-RUN WORKFLOW
+router.post(
+  "/repositories/:owner/:repo/actions/runs/:run_id/rerun",
+  rerunWorkflow
+);
+// RE-RUN FAILED JOBS
+router.post(
+  "/repositories/:owner/:repo/actions/runs/:run_id/rerun-failed-jobs",
+  rerunFailedJobs
+);
+// CANCEL WORKFLOW RUN
+router.post(
+  "/repositories/:owner/:repo/actions/runs/:run_id/cancel",
+  cancelWorkflowRun
+);
+// DELETE WORKFLOW RUN
+router.delete(
+  "/repositories/:owner/:repo/actions/runs/:run_id",
+  deleteWorkflowRun
+);
+// GET JOB LOGS
+router.get("/repositories/:owner/:repo/actions/jobs/:job_id/logs", getJobLogs);
 // GET REPOSITORY DETAILS (DYNAMIC ROUTE AFTER SPECIFIC ROUTES)
 router.get("/repositories/:owner/:repo", getRepositoryDetails);
 // UPDATE REPOSITORY SETTINGS
