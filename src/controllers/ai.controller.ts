@@ -2077,6 +2077,200 @@ export const summarizeCommitHistory = expressAsyncHandler(async (req, res) => {
 });
 
 /**
+ * AI CODE REVIEW FOR PULL REQUEST
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== AI CODE REVIEW ==>
+export const aiCodeReview = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST
+  const userId = (req as any).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET REQUEST DATA
+  const { files, pullRequestInfo, reviewType = "comprehensive" } = req.body;
+  // VALIDATE INPUT
+  if (!files || !Array.isArray(files) || files.length === 0) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Files array is required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET AI MODEL
+  const model = getGeminiModel();
+  // IF MODEL NOT AVAILABLE, RETURN ERROR
+  if (!model) {
+    // RETURNING ERROR RESPONSE
+    res.status(503).json({
+      message: "AI is not configured. Please set up your GEMINI_API_KEY.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FORMAT FILES FOR PROMPT
+  const filesContext = files
+    .slice(0, 10)
+    .map(
+      (file: {
+        filename: string;
+        status: string;
+        additions: number;
+        deletions: number;
+        patch?: string;
+      }) => {
+        let text = `\n--- File: ${file.filename} (${file.status}) ---`;
+        text += `\nChanges: +${file.additions}/-${file.deletions} lines`;
+        if (file.patch) {
+          // LIMIT PATCH TO 1500 CHARS PER FILE
+          const patchPreview = file.patch.slice(0, 1500);
+          text += `\n\nDiff:\n\`\`\`\n${patchPreview}${file.patch.length > 1500 ? "\n..." : ""}\n\`\`\``;
+        }
+        return text;
+      }
+    )
+    .join("\n");
+  // DETERMINE REVIEW TYPE PROMPT
+  let reviewTypePrompt = "";
+  // SET REVIEW TYPE PROMPT
+  switch (reviewType) {
+    case "security":
+      reviewTypePrompt = `Focus primarily on security issues:
+      - SQL injection, XSS, CSRF vulnerabilities
+      - Authentication/authorization issues
+      - Sensitive data exposure
+      - Input validation problems
+      - Dependency vulnerabilities`;
+      break;
+    case "performance":
+      reviewTypePrompt = `Focus primarily on performance issues:
+      - N+1 queries and database optimization
+      - Memory leaks and resource management
+      - Unnecessary computations or loops
+      - Caching opportunities
+      - Algorithm complexity`;
+      break;
+    case "best-practices":
+      reviewTypePrompt = `Focus primarily on code quality and best practices:
+      - Code readability and maintainability
+      - Design patterns and architecture
+      - DRY principle violations
+      - SOLID principles
+      - Error handling`;
+      break;
+    default:
+      reviewTypePrompt = `Provide a comprehensive review covering:
+      - Code quality and readability
+      - Potential bugs and logic errors
+      - Security concerns
+      - Performance issues
+      - Best practices and suggestions`;
+  }
+  // BUILD PROMPT
+  const prompt = `You are an expert code reviewer. Analyze the following pull request changes and provide a detailed code review.
+  ${pullRequestInfo ? `\nPull Request: ${pullRequestInfo.title}\nDescription: ${pullRequestInfo.body || "No description provided"}\nBranches: ${pullRequestInfo.head} → ${pullRequestInfo.base}` : ""}
+  ${reviewTypePrompt}
+  Files Changed (${files.length} total, showing first ${Math.min(files.length, 10)}):
+  ${filesContext}
+  Respond with a JSON object in this exact format:
+  {
+    "summary": "A 2-3 sentence overall assessment of the PR",
+    "overallRating": "approve" | "request_changes" | "comment",
+    "ratingReason": "Brief explanation of the overall rating",
+    "issues": [
+      {
+        "severity": "critical" | "warning" | "suggestion" | "nitpick",
+        "file": "filename where issue was found",
+        "line": "approximate line number or range (e.g., '15-20')",
+        "title": "Short issue title",
+        "description": "Detailed description of the issue",
+        "suggestion": "How to fix or improve (can include code snippet)"
+      }
+    ],
+    "positives": ["List of good practices or well-written code found"],
+    "suggestions": [
+      {
+        "category": "refactoring" | "testing" | "documentation" | "performance" | "security",
+        "description": "General suggestion for improvement"
+      }
+    ],
+    "testingRecommendations": ["Specific test cases that should be added"],
+    "securityNotes": ["Any security-related observations"]
+  }
+  Be thorough but fair. Highlight both issues and positive aspects.
+  Return ONLY valid JSON, no additional text.`;
+  // TRY TO GENERATE REVIEW
+  try {
+    // GENERATE REVIEW
+    const result = await model.generateContent(prompt);
+    // GET RESPONSE
+    const response = result.response;
+    // GET RESPONSE TEXT
+    const text = response.text();
+    // PARSE JSON
+    let review;
+    // TRY TO PARSE AS JSON
+    try {
+      // CLEAN UP RESPONSE (REMOVE MARKDOWN CODE BLOCKS IF PRESENT)
+      const cleanedText = text
+        .replace(/```json\n?/g, "")
+        .replace(/```\n?/g, "")
+        .trim();
+      // PARSE AS JSON
+      review = JSON.parse(cleanedText);
+    } catch {
+      // IF NOT VALID JSON, RETURN RAW TEXT
+      review = {
+        summary: "Unable to parse review. Please try again.",
+        overallRating: "comment",
+        ratingReason: "Review generation encountered an issue",
+        issues: [],
+        positives: [],
+        suggestions: [],
+        testingRecommendations: [],
+        securityNotes: [],
+        rawReview: text,
+      };
+    }
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "AI code review generated successfully!",
+      success: true,
+      data: {
+        filesReviewed: Math.min(files.length, 10),
+        totalFiles: files.length,
+        reviewType,
+        review,
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // LOG ERROR
+    console.error("Error generating AI code review:", error);
+    // RETURNING ERROR RESPONSE
+    res.status(500).json({
+      message: "Error generating AI code review. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
  * SUGGEST BRANCH STRATEGY
  * @param req - Request Object
  * @param res - Response Object
