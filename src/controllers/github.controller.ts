@@ -4948,10 +4948,14 @@ export const updateRepositoryInvitation = expressAsyncHandler(
       return;
     }
     // VALIDATE PERMISSIONS
-    if (!permissions || !["read", "triage", "write", "maintain", "admin"].includes(permissions)) {
+    if (
+      !permissions ||
+      !["read", "triage", "write", "maintain", "admin"].includes(permissions)
+    ) {
       // RETURNING ERROR RESPONSE
       res.status(400).json({
-        message: "Valid permission level is required (read, triage, write, maintain, admin)!",
+        message:
+          "Valid permission level is required (read, triage, write, maintain, admin)!",
         success: false,
       });
       // RETURNING FROM FUNCTION
@@ -8107,3 +8111,1373 @@ export const requestPullRequestReviewers = expressAsyncHandler(
     }
   }
 );
+
+/**
+ * GET REPOSITORY WORKFLOWS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET REPOSITORY WORKFLOWS ==>
+export const getRepositoryWorkflows = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER AND REPO FROM PARAMS
+  const { owner, repo } = req.params;
+  // VALIDATE OWNER AND REPO
+  if (!owner || !repo) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner and repository name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FETCH WORKFLOWS
+  try {
+    // GET REPOSITORY WORKFLOWS
+    const { data } = await octokit.actions.listRepoWorkflows({
+      owner,
+      repo,
+      per_page: 100,
+    });
+    // MAP WORKFLOWS TO SIMPLIFIED FORMAT
+    const workflows = data.workflows.map((workflow) => ({
+      id: workflow.id,
+      name: workflow.name,
+      path: workflow.path,
+      state: workflow.state,
+      createdAt: workflow.created_at,
+      updatedAt: workflow.updated_at,
+      htmlUrl: workflow.html_url,
+      badgeUrl: workflow.badge_url,
+    }));
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Workflows retrieved successfully!",
+      success: true,
+      data: {
+        workflows,
+        totalCount: data.total_count,
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // REPOSITORY NOT FOUND OR NO ACCESS
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Repository not found or Actions not enabled.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching workflows. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * GET WORKFLOW DETAILS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET WORKFLOW DETAILS ==>
+export const getWorkflowDetails = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER, REPO, AND WORKFLOW_ID FROM PARAMS
+  const { owner, repo, workflow_id } = req.params;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !workflow_id) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and workflow ID are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FETCH WORKFLOW DETAILS
+  try {
+    // GET WORKFLOW
+    const { data: workflow } = await octokit.actions.getWorkflow({
+      owner,
+      repo,
+      workflow_id: parseInt(workflow_id),
+    });
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Workflow details retrieved successfully!",
+      success: true,
+      data: {
+        id: workflow.id,
+        name: workflow.name,
+        path: workflow.path,
+        state: workflow.state,
+        createdAt: workflow.created_at,
+        updatedAt: workflow.updated_at,
+        htmlUrl: workflow.html_url,
+        badgeUrl: workflow.badge_url,
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // WORKFLOW NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Workflow not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching workflow details. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * GET WORKFLOW RUNS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET WORKFLOW RUNS ==>
+export const getWorkflowRuns = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER AND REPO FROM PARAMS
+  const { owner, repo } = req.params;
+  // GETTING WORKFLOW ID
+  const workflowId = req.query.workflow_id as string;
+  // GETTING BRANCH
+  const branch = req.query.branch as string;
+  // GETTING EVENT
+  const event = req.query.event as string;
+  // GETTING STATUS
+  const status = req.query.status as string;
+  // GETTING ACTOR
+  const actor = req.query.actor as string;
+  // GETTING PAGE
+  const page = parseInt(req.query.page as string) || 1;
+  // GETTING PER PAGE
+  const perPage = parseInt(req.query.per_page as string) || 20;
+  // VALIDATE OWNER AND REPO
+  if (!owner || !repo) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner and repository name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FETCH WORKFLOW RUNS
+  try {
+    // BUILD QUERY PARAMS
+    const queryParams: {
+      owner: string;
+      repo: string;
+      workflow_id?: number;
+      branch?: string;
+      event?: string;
+      status?:
+        | "completed"
+        | "action_required"
+        | "cancelled"
+        | "failure"
+        | "neutral"
+        | "skipped"
+        | "stale"
+        | "success"
+        | "timed_out"
+        | "in_progress"
+        | "queued"
+        | "requested"
+        | "waiting"
+        | "pending";
+      actor?: string;
+      per_page: number;
+      page: number;
+    } = {
+      owner,
+      repo,
+      per_page: perPage,
+      page,
+    };
+    // IF WORKFLOW ID IS PROVIDED, SET WORKFLOW ID
+    if (workflowId) queryParams.workflow_id = parseInt(workflowId);
+    // IF BRANCH IS PROVIDED, SET BRANCH
+    if (branch) queryParams.branch = branch;
+    // IF EVENT IS PROVIDED, SET EVENT
+    if (event) queryParams.event = event;
+    // IF STATUS IS PROVIDED, SET STATUS
+    if (status)
+      queryParams.status = status as
+        | "completed"
+        | "action_required"
+        | "cancelled"
+        | "failure"
+        | "neutral"
+        | "skipped"
+        | "stale"
+        | "success"
+        | "timed_out"
+        | "in_progress"
+        | "queued"
+        | "requested"
+        | "waiting"
+        | "pending";
+    // IF ACTOR IS PROVIDED, SET ACTOR
+    if (actor) queryParams.actor = actor;
+    // IF WORKFLOW ID IS PROVIDED, GET WORKFLOW RUNS
+    const { data } = workflowId
+      ? // ELSE GET WORKFLOW RUNS FOR REPO
+        await octokit.actions.listWorkflowRuns(queryParams as any)
+      : // ELSE GET WORKFLOW RUNS FOR REPO
+        await octokit.actions.listWorkflowRunsForRepo(queryParams);
+    // MAP WORKFLOW RUNS TO SIMPLIFIED FORMAT
+    const runs = data.workflow_runs.map((run) => ({
+      id: run.id,
+      name: run.name,
+      displayTitle: run.display_title,
+      workflowId: run.workflow_id,
+      headBranch: run.head_branch,
+      headSha: run.head_sha,
+      path: run.path,
+      runNumber: run.run_number,
+      runAttempt: run.run_attempt,
+      event: run.event,
+      status: run.status,
+      conclusion: run.conclusion,
+      createdAt: run.created_at,
+      updatedAt: run.updated_at,
+      runStartedAt: run.run_started_at,
+      htmlUrl: run.html_url,
+      actor: run.actor
+        ? {
+            login: run.actor.login,
+            avatarUrl: run.actor.avatar_url,
+          }
+        : null,
+      triggeringActor: run.triggering_actor
+        ? {
+            login: run.triggering_actor.login,
+            avatarUrl: run.triggering_actor.avatar_url,
+          }
+        : null,
+    }));
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Workflow runs retrieved successfully!",
+      success: true,
+      data: {
+        runs,
+        totalCount: data.total_count,
+        pagination: {
+          page,
+          perPage,
+          hasMore: data.total_count > page * perPage,
+        },
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Repository or workflow not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching workflow runs. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * GET WORKFLOW RUN DETAILS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET WORKFLOW RUN DETAILS ==>
+export const getWorkflowRunDetails = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER, REPO, AND RUN_ID FROM PARAMS
+  const { owner, repo, run_id } = req.params;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !run_id) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and run ID are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FETCH WORKFLOW RUN DETAILS
+  try {
+    // GET WORKFLOW RUN
+    const { data: run } = await octokit.actions.getWorkflowRun({
+      owner,
+      repo,
+      run_id: parseInt(run_id),
+    });
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Workflow run details retrieved successfully!",
+      success: true,
+      data: {
+        id: run.id,
+        name: run.name,
+        displayTitle: run.display_title,
+        workflowId: run.workflow_id,
+        headBranch: run.head_branch,
+        headSha: run.head_sha,
+        path: run.path,
+        runNumber: run.run_number,
+        runAttempt: run.run_attempt,
+        event: run.event,
+        status: run.status,
+        conclusion: run.conclusion,
+        createdAt: run.created_at,
+        updatedAt: run.updated_at,
+        runStartedAt: run.run_started_at,
+        htmlUrl: run.html_url,
+        actor: run.actor
+          ? {
+              login: run.actor.login,
+              avatarUrl: run.actor.avatar_url,
+            }
+          : null,
+        triggeringActor: run.triggering_actor
+          ? {
+              login: run.triggering_actor.login,
+              avatarUrl: run.triggering_actor.avatar_url,
+            }
+          : null,
+        headCommit: run.head_commit
+          ? {
+              id: run.head_commit.id,
+              message: run.head_commit.message,
+              timestamp: run.head_commit.timestamp,
+              author: {
+                name: run.head_commit.author?.name,
+                email: run.head_commit.author?.email,
+              },
+            }
+          : null,
+        repository: {
+          id: run.repository.id,
+          name: run.repository.name,
+          fullName: run.repository.full_name,
+        },
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Workflow run not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching workflow run details. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * GET WORKFLOW RUN JOBS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET WORKFLOW RUN JOBS ==>
+export const getWorkflowRunJobs = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER, REPO, AND RUN_ID FROM PARAMS
+  const { owner, repo, run_id } = req.params;
+  // GET QUERY PARAMS
+  const filter = (req.query.filter as string) || "latest";
+  // VALIDATE PARAMS
+  if (!owner || !repo || !run_id) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and run ID are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FETCH WORKFLOW RUN JOBS
+  try {
+    // GET WORKFLOW RUN JOBS
+    const { data } = await octokit.actions.listJobsForWorkflowRun({
+      owner,
+      repo,
+      run_id: parseInt(run_id),
+      filter: filter as "latest" | "all",
+      per_page: 100,
+    });
+    // MAP JOBS TO SIMPLIFIED FORMAT
+    const jobs = data.jobs.map((job) => ({
+      id: job.id,
+      runId: job.run_id,
+      name: job.name,
+      status: job.status,
+      conclusion: job.conclusion,
+      startedAt: job.started_at,
+      completedAt: job.completed_at,
+      htmlUrl: job.html_url,
+      runnerName: job.runner_name,
+      runnerGroupName: job.runner_group_name,
+      steps: job.steps?.map((step) => ({
+        name: step.name,
+        status: step.status,
+        conclusion: step.conclusion,
+        number: step.number,
+        startedAt: step.started_at,
+        completedAt: step.completed_at,
+      })),
+    }));
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Workflow run jobs retrieved successfully!",
+      success: true,
+      data: {
+        jobs,
+        totalCount: data.total_count,
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Workflow run not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching workflow run jobs. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * GET WORKFLOW RUN LOGS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET WORKFLOW RUN LOGS ==>
+export const getWorkflowRunLogs = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER, REPO, AND RUN_ID FROM PARAMS
+  const { owner, repo, run_id } = req.params;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !run_id) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and run ID are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FETCH WORKFLOW RUN LOGS
+  try {
+    // GET WORKFLOW RUN LOGS URL (RETURNS A REDIRECT URL TO DOWNLOAD)
+    const { url } = await octokit.actions.downloadWorkflowRunLogs({
+      owner,
+      repo,
+      run_id: parseInt(run_id),
+    });
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Workflow run logs URL retrieved successfully!",
+      success: true,
+      data: {
+        logsUrl: url,
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Workflow run logs not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching workflow run logs. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * GET JOB LOGS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET JOB LOGS ==>
+export const getJobLogs = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER, REPO, AND JOB_ID FROM PARAMS
+  const { owner, repo, job_id } = req.params;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !job_id) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and job ID are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FETCH JOB LOGS
+  try {
+    // GET JOB LOGS (RETURNS RAW TEXT)
+    const { data } = await octokit.actions.downloadJobLogsForWorkflowRun({
+      owner,
+      repo,
+      job_id: parseInt(job_id),
+    });
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Job logs retrieved successfully!",
+      success: true,
+      data: {
+        logs: data,
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Job logs not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching job logs. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * TRIGGER WORKFLOW DISPATCH
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== TRIGGER WORKFLOW DISPATCH ==>
+export const triggerWorkflowDispatch = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER, REPO, AND WORKFLOW_ID FROM PARAMS
+  const { owner, repo, workflow_id } = req.params;
+  // GET REF AND INPUTS FROM BODY
+  const { ref, inputs } = req.body;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !workflow_id) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and workflow ID are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // VALIDATE REF
+  if (!ref) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Branch or tag ref is required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // TRIGGER WORKFLOW
+  try {
+    // DISPATCH WORKFLOW
+    await octokit.actions.createWorkflowDispatch({
+      owner,
+      repo,
+      workflow_id: parseInt(workflow_id),
+      ref,
+      inputs: inputs || {},
+    });
+    // RETURNING SUCCESS RESPONSE
+    res.status(204).json({
+      message: "Workflow triggered successfully!",
+      success: true,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Workflow not found or workflow_dispatch not enabled.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // FORBIDDEN
+    if (error.status === 403) {
+      // RETURNING ERROR RESPONSE
+      res.status(403).json({
+        message: "You don't have permission to trigger this workflow.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error triggering workflow. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * RE-RUN WORKFLOW
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== RE-RUN WORKFLOW ==>
+export const rerunWorkflow = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER, REPO, AND RUN_ID FROM PARAMS
+  const { owner, repo, run_id } = req.params;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !run_id) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and run ID are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // RE-RUN WORKFLOW
+  try {
+    // RE-RUN WORKFLOW
+    await octokit.actions.reRunWorkflow({
+      owner,
+      repo,
+      run_id: parseInt(run_id),
+    });
+    // RETURNING SUCCESS RESPONSE
+    res.status(201).json({
+      message: "Workflow re-run triggered successfully!",
+      success: true,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Workflow run not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // FORBIDDEN
+    if (error.status === 403) {
+      // RETURNING ERROR RESPONSE
+      res.status(403).json({
+        message: "You don't have permission to re-run this workflow.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error re-running workflow. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * RE-RUN FAILED JOBS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== RE-RUN FAILED JOBS ==>
+export const rerunFailedJobs = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER, REPO, AND RUN_ID FROM PARAMS
+  const { owner, repo, run_id } = req.params;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !run_id) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and run ID are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // RE-RUN FAILED JOBS
+  try {
+    // RE-RUN FAILED JOBS
+    await octokit.actions.reRunWorkflowFailedJobs({
+      owner,
+      repo,
+      run_id: parseInt(run_id),
+    });
+    // RETURNING SUCCESS RESPONSE
+    res.status(201).json({
+      message: "Failed jobs re-run triggered successfully!",
+      success: true,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Workflow run not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // FORBIDDEN
+    if (error.status === 403) {
+      // RETURNING ERROR RESPONSE
+      res.status(403).json({
+        message: "You don't have permission to re-run failed jobs.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error re-running failed jobs. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * CANCEL WORKFLOW RUN
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== CANCEL WORKFLOW RUN ==>
+export const cancelWorkflowRun = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER, REPO, AND RUN_ID FROM PARAMS
+  const { owner, repo, run_id } = req.params;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !run_id) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and run ID are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // CANCEL WORKFLOW RUN
+  try {
+    // CANCEL WORKFLOW RUN
+    await octokit.actions.cancelWorkflowRun({
+      owner,
+      repo,
+      run_id: parseInt(run_id),
+    });
+    // RETURNING SUCCESS RESPONSE
+    res.status(202).json({
+      message: "Workflow run cancelled successfully!",
+      success: true,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Workflow run not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // FORBIDDEN
+    if (error.status === 403) {
+      // RETURNING ERROR RESPONSE
+      res.status(403).json({
+        message: "You don't have permission to cancel this workflow run.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // CONFLICT - ALREADY COMPLETED
+    if (error.status === 409) {
+      // RETURNING ERROR RESPONSE
+      res.status(409).json({
+        message: "Workflow run has already completed.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error cancelling workflow run. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * DELETE WORKFLOW RUN
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== DELETE WORKFLOW RUN ==>
+export const deleteWorkflowRun = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER, REPO, AND RUN_ID FROM PARAMS
+  const { owner, repo, run_id } = req.params;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !run_id) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and run ID are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // DELETE WORKFLOW RUN
+  try {
+    // DELETE WORKFLOW RUN
+    await octokit.actions.deleteWorkflowRun({
+      owner,
+      repo,
+      run_id: parseInt(run_id),
+    });
+    // RETURNING SUCCESS RESPONSE
+    res.status(204).json({
+      message: "Workflow run deleted successfully!",
+      success: true,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Workflow run not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // FORBIDDEN
+    if (error.status === 403) {
+      // RETURNING ERROR RESPONSE
+      res.status(403).json({
+        message: "You don't have permission to delete this workflow run.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error deleting workflow run. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
