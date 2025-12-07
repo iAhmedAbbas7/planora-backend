@@ -76,6 +76,18 @@ import {
   rerunFailedJobs,
   cancelWorkflowRun,
   deleteWorkflowRun,
+  // RELEASES & TAGS
+  listReleases,
+  getReleaseDetails,
+  getLatestRelease,
+  createRelease,
+  updateRelease,
+  deleteRelease,
+  listTags,
+  getTagDetails,
+  createTag,
+  deleteTag,
+  generateReleaseNotes,
 } from "../controllers/github.controller.js";
 import express from "express";
 import isAuthenticated from "../middleware/isAuthenticated.js";
@@ -332,6 +344,34 @@ router.delete(
 );
 // GET JOB LOGS
 router.get("/repositories/:owner/:repo/actions/jobs/:job_id/logs", getJobLogs);
+// LIST RELEASES
+router.get("/repositories/:owner/:repo/releases", listReleases);
+// GET LATEST RELEASE
+router.get("/repositories/:owner/:repo/releases/latest", getLatestRelease);
+// GENERATE RELEASE NOTES
+router.post(
+  "/repositories/:owner/:repo/releases/generate-notes",
+  generateReleaseNotes
+);
+// CREATE RELEASE
+router.post("/repositories/:owner/:repo/releases", createRelease);
+// GET RELEASE DETAILS
+router.get(
+  "/repositories/:owner/:repo/releases/:release_id",
+  getReleaseDetails
+);
+// UPDATE RELEASE
+router.patch("/repositories/:owner/:repo/releases/:release_id", updateRelease);
+// DELETE RELEASE
+router.delete("/repositories/:owner/:repo/releases/:release_id", deleteRelease);
+// LIST TAGS
+router.get("/repositories/:owner/:repo/tags", listTags);
+// CREATE TAG
+router.post("/repositories/:owner/:repo/tags", createTag);
+// GET TAG DETAILS
+router.get("/repositories/:owner/:repo/tags/:tag", getTagDetails);
+// DELETE TAG
+router.delete("/repositories/:owner/:repo/tags/:tag", deleteTag);
 // GET REPOSITORY DETAILS (DYNAMIC ROUTE AFTER SPECIFIC ROUTES)
 router.get("/repositories/:owner/:repo", getRepositoryDetails);
 // UPDATE REPOSITORY SETTINGS
