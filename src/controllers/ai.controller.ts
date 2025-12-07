@@ -2878,3 +2878,275 @@ export const suggestBranchStrategy = expressAsyncHandler(async (req, res) => {
     return;
   }
 });
+
+/**
+ * AI ANALYZE WORKFLOW FAILURE
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== AI ANALYZE WORKFLOW FAILURE ==>
+export const aiAnalyzeWorkflowFailure = expressAsyncHandler(
+  async (req, res) => {
+    // GET GEMINI MODEL
+    const model = getGeminiModel();
+    // IF MODEL IS NOT CONFIGURED, RETURN ERROR
+    if (!model) {
+      // RETURNING ERROR RESPONSE
+      res.status(503).json({
+        message:
+          "AI service is not configured. Please set GEMINI_API_KEY environment variable.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // GET REQUEST BODY
+    const { workflowName, jobName, logs, conclusion, steps } = req.body;
+    // VALIDATE REQUEST
+    if (!logs && !steps) {
+      // RETURNING ERROR RESPONSE
+      res.status(400).json({
+        message: "Logs or steps information is required for analysis.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // BUILD PROMPT
+    const prompt = `You are an expert DevOps engineer and CI/CD specialist. Analyze this GitHub Actions workflow failure and provide detailed insights.
+    Workflow Information:
+    - Workflow Name: ${workflowName || "Unknown"}
+    - Job Name: ${jobName || "Unknown"}
+    - Conclusion: ${conclusion || "failure"}
+    ${
+      steps
+        ? `Failed Steps:
+    ${steps
+      .filter(
+        (s: { conclusion: string }) =>
+          s.conclusion === "failure" || s.conclusion === "cancelled"
+      )
+      .map(
+        (s: { name: string; conclusion: string }) =>
+          `- ${s.name}: ${s.conclusion}`
+      )
+      .join("\n")}`
+        : ""
+    }
+    ${
+      logs
+        ? `Relevant Logs (last portion):
+    \`\`\`
+    ${logs.slice(-3000)}
+    \`\`\``
+        : ""
+    }
+    Please analyze this failure and provide:
+    1. **Root Cause**: What caused this workflow to fail?
+    2. **Error Type**: Categorize the error (e.g., dependency issue, test failure, build error, timeout, permission issue, etc.)
+    3. **Suggested Fixes**: Step-by-step solutions to fix this issue
+    4. **Prevention Tips**: How to prevent this issue in the future
+    5. **Related Documentation**: Links to relevant documentation if applicable
+    Respond in JSON format:
+    {
+      "rootCause": "Description of what caused the failure",
+      "errorType": "Category of the error",
+      "severity": "high" | "medium" | "low",
+      "suggestedFixes": [
+        {
+          "step": 1,
+          "action": "What to do",
+          "details": "Detailed explanation"
+        }
+      ],
+      "preventionTips": ["Tip 1", "Tip 2"],
+      "relatedDocs": ["URL or documentation reference"],
+      "summary": "One-sentence summary of the issue and fix"
+    }
+    Return ONLY valid JSON, no additional text.`;
+    // TRY TO ANALYZE
+    try {
+      // GENERATE ANALYSIS
+      const result = await model.generateContent(prompt);
+      // GET RESPONSE
+      const response = result.response;
+      // GET RESPONSE TEXT
+      const text = response.text();
+      // PARSE JSON
+      let analysis;
+      // TRY TO PARSE AS JSON
+      try {
+        // CLEAN UP RESPONSE (REMOVE MARKDOWN CODE BLOCKS IF PRESENT)
+        const cleanedText = text
+          .replace(/```json\n?/g, "")
+          .replace(/```\n?/g, "")
+          .trim();
+        // PARSE AS JSON
+        analysis = JSON.parse(cleanedText);
+      } catch {
+        // IF NOT VALID JSON, RETURN RAW TEXT
+        analysis = { rawAnalysis: text };
+      }
+      // RETURNING SUCCESS RESPONSE
+      res.status(200).json({
+        message: "Workflow failure analyzed successfully!",
+        success: true,
+        data: {
+          workflowName,
+          jobName,
+          conclusion,
+          analysis,
+        },
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    } catch (error: any) {
+      // LOG ERROR
+      console.error("Error analyzing workflow failure:", error);
+      // RETURNING ERROR RESPONSE
+      res.status(500).json({
+        message: "Error analyzing workflow failure. Please try again later.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+  }
+);
+
+/**
+ * AI SUGGEST WORKFLOW IMPROVEMENTS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== AI SUGGEST WORKFLOW IMPROVEMENTS ==>
+export const aiSuggestWorkflowImprovements = expressAsyncHandler(
+  async (req, res) => {
+    // GET GEMINI MODEL
+    const model = getGeminiModel();
+    // IF MODEL IS NOT CONFIGURED, RETURN ERROR
+    if (!model) {
+      // RETURNING ERROR RESPONSE
+      res.status(503).json({
+        message:
+          "AI service is not configured. Please set GEMINI_API_KEY environment variable.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // GET REQUEST BODY
+    const { workflowContent, workflowPath, recentRuns } = req.body;
+    // VALIDATE REQUEST
+    if (!workflowContent) {
+      // RETURNING ERROR RESPONSE
+      res.status(400).json({
+        message: "Workflow content is required for analysis.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // BUILD PROMPT
+    const prompt = `You are an expert DevOps engineer specializing in GitHub Actions. Analyze this workflow file and suggest improvements.
+    Workflow File: ${workflowPath || "workflow.yml"}
+    \`\`\`yaml
+    ${workflowContent}
+    \`\`\`
+    ${
+      recentRuns
+        ? `Recent Run Statistics:
+    - Total Runs: ${recentRuns.total}
+    - Success Rate: ${recentRuns.successRate}%
+    - Average Duration: ${recentRuns.avgDuration}
+    - Common Failures: ${recentRuns.commonFailures?.join(", ") || "None"}`
+        : ""
+    }
+    Please analyze and provide:
+    1. **Performance Optimizations**: Ways to make the workflow faster
+    2. **Best Practices**: GitHub Actions best practices not being followed
+    3. **Security Improvements**: Security enhancements
+    4. **Cost Optimizations**: Ways to reduce GitHub Actions minutes usage
+    5. **Reliability Improvements**: Ways to make the workflow more reliable
+    Respond in JSON format:
+    {
+      "overallScore": 1-10,
+      "performance": {
+        "score": 1-10,
+        "suggestions": [
+          {
+            "issue": "What's the issue",
+            "suggestion": "How to fix it",
+            "impact": "high" | "medium" | "low"
+          }
+        ]
+      },
+      "bestPractices": {
+        "score": 1-10,
+        "suggestions": [...]
+      },
+      "security": {
+        "score": 1-10,
+        "suggestions": [...]
+      },
+      "cost": {
+        "score": 1-10,
+        "suggestions": [...]
+      },
+      "reliability": {
+        "score": 1-10,
+        "suggestions": [...]
+      },
+      "summary": "Overall summary and top 3 priorities"
+    }
+    Return ONLY valid JSON, no additional text.`;
+    // TRY TO ANALYZE
+    try {
+      // GENERATE ANALYSIS
+      const result = await model.generateContent(prompt);
+      // GET RESPONSE
+      const response = result.response;
+      // GET RESPONSE TEXT
+      const text = response.text();
+      // PARSE JSON
+      let suggestions;
+      // TRY TO PARSE AS JSON
+      try {
+        // CLEAN UP RESPONSE (REMOVE MARKDOWN CODE BLOCKS IF PRESENT)
+        const cleanedText = text
+          .replace(/```json\n?/g, "")
+          .replace(/```\n?/g, "")
+          .trim();
+        // PARSE AS JSON
+        suggestions = JSON.parse(cleanedText);
+      } catch {
+        // IF NOT VALID JSON, RETURN RAW TEXT
+        suggestions = { rawSuggestions: text };
+      }
+      // RETURNING SUCCESS RESPONSE
+      res.status(200).json({
+        message: "Workflow improvements suggested successfully!",
+        success: true,
+        data: {
+          workflowPath,
+          suggestions,
+        },
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    } catch (error: any) {
+      // LOG ERROR
+      console.error("Error suggesting workflow improvements:", error);
+      // RETURNING ERROR RESPONSE
+      res.status(500).json({
+        message:
+          "Error suggesting workflow improvements. Please try again later.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+  }
+);
