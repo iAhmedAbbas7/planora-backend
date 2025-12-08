@@ -11882,3 +11882,912 @@ export const getEnvironment = expressAsyncHandler(async (req, res) => {
     return;
   }
 });
+
+/**
+ * GET DASHBOARD STATS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET DASHBOARD STATS ==>
+export const getDashboardStats = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FETCH DASHBOARD STATS
+  try {
+    // GET AUTHENTICATED USER
+    const userResponse = await octokit.users.getAuthenticated();
+    // GET USERNAME
+    const username = userResponse.data.login;
+    // FETCH USER'S REPOSITORIES (TOP 100 BY PUSHED)
+    const reposResponse = await octokit.repos.listForAuthenticatedUser({
+      per_page: 100,
+      sort: "pushed",
+      direction: "desc",
+    });
+    // GET REPOSITORIES
+    const repositories = reposResponse.data;
+    // TOTAL REPOSITORIES
+    const totalRepos = repositories.length;
+    // PUBLIC REPOSITORIES
+    const publicRepos = repositories.filter((r) => !r.private).length;
+    // PRIVATE REPOSITORIES
+    const privateRepos = repositories.filter((r) => r.private).length;
+    // TOTAL STARS
+    const totalStars = repositories.reduce(
+      (sum, r) => sum + (r.stargazers_count || 0),
+      0
+    );
+    // TOTAL FORKS
+    const totalForks = repositories.reduce(
+      (sum, r) => sum + (r.forks_count || 0),
+      0
+    );
+    // TOP LANGUAGES
+    const languageCounts: Record<string, number> = {};
+    repositories.forEach((r) => {
+      if (r.language) {
+        languageCounts[r.language] = (languageCounts[r.language] || 0) + 1;
+      }
+    });
+    // TOP 5 LANGUAGES
+    const topLanguages = Object.entries(languageCounts)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 5)
+      .map(([language, count]) => ({ language, count }));
+    // OPEN PULL REQUESTS COUNT
+    let openPRsCount = 0;
+    // PENDING REVIEWS COUNT
+    let pendingReviewsCount = 0;
+    try {
+      // OPEN PULL REQUESTS COUNT
+      const prsResponse = await octokit.search.issuesAndPullRequests({
+        q: `is:pr is:open author:${username}`,
+        per_page: 1,
+      });
+      // OPEN PULL REQUESTS COUNT
+      openPRsCount = prsResponse.data.total_count;
+      // PENDING REVIEWS COUNT
+      const reviewsResponse = await octokit.search.issuesAndPullRequests({
+        q: `is:pr is:open review-requested:${username}`,
+        per_page: 1,
+      });
+      // PENDING REVIEWS COUNT
+      pendingReviewsCount = reviewsResponse.data.total_count;
+    } catch (searchError) {
+      // SEARCH API MIGHT HAVE RATE LIMITS, CONTINUE WITH 0
+      console.error("Error fetching PR stats:", searchError);
+    }
+    // FETCH OPEN ISSUES CREATED BY USER
+    let openIssuesCount = 0;
+    // ASSIGNED ISSUES COUNT
+    let assignedIssuesCount = 0;
+    try {
+      // SEARCH FOR OPEN ISSUES AUTHORED BY USER
+      const issuesResponse = await octokit.search.issuesAndPullRequests({
+        q: `is:issue is:open author:${username}`,
+        per_page: 1,
+      });
+      // OPEN ISSUES COUNT
+      openIssuesCount = issuesResponse.data.total_count;
+      // ASSIGNED ISSUES COUNT
+      const assignedResponse = await octokit.search.issuesAndPullRequests({
+        q: `is:issue is:open assignee:${username}`,
+        per_page: 1,
+      });
+      // ASSIGNED ISSUES COUNT
+      assignedIssuesCount = assignedResponse.data.total_count;
+    } catch (searchError) {
+      // SEARCH API MIGHT HAVE RATE LIMITS, CONTINUE WITH 0
+      console.error("Error fetching issue stats:", searchError);
+    }
+    // GET RECENT REPOSITORIES (TOP 5)
+    const recentRepos = repositories.slice(0, 5).map((r) => ({
+      id: r.id,
+      name: r.name,
+      fullName: r.full_name,
+      description: r.description,
+      language: r.language,
+      stars: r.stargazers_count,
+      forks: r.forks_count,
+      private: r.private,
+      updatedAt: r.updated_at,
+      pushedAt: r.pushed_at,
+      htmlUrl: r.html_url,
+    }));
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Dashboard stats fetched successfully!",
+      success: true,
+      data: {
+        repositories: {
+          total: totalRepos,
+          public: publicRepos,
+          private: privateRepos,
+        },
+        stars: totalStars,
+        forks: totalForks,
+        pullRequests: {
+          open: openPRsCount,
+          pendingReviews: pendingReviewsCount,
+        },
+        issues: {
+          open: openIssuesCount,
+          assigned: assignedIssuesCount,
+        },
+        topLanguages,
+        recentRepos,
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching dashboard stats. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * GET DASHBOARD ACTIVITY
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET DASHBOARD ACTIVITY ==>
+export const getDashboardActivity = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET LIMIT FROM QUERY
+  const limit = parseInt(req.query.limit as string) || 20;
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FETCH DASHBOARD ACTIVITY
+  try {
+    // GET AUTHENTICATED USER
+    const userResponse = await octokit.users.getAuthenticated();
+    // GET USERNAME
+    const username = userResponse.data.login;
+    // FETCH USER'S PUBLIC EVENTS
+    const eventsResponse = await octokit.activity.listPublicEventsForUser({
+      username,
+      per_page: limit,
+    });
+    // ACTIVITY ARRAY
+    const activity = eventsResponse.data.map((event) => {
+      // BASE ACTIVITY OBJECT
+      const baseActivity = {
+        id: event.id,
+        type: event.type,
+        createdAt: event.created_at,
+        repo: {
+          id: event.repo.id,
+          name: event.repo.name,
+          url: `https://github.com/${event.repo.name}`,
+        },
+        actor: {
+          id: event.actor.id,
+          login: event.actor.login,
+          avatarUrl: event.actor.avatar_url,
+        },
+      };
+      // ADD TYPE-SPECIFIC DETAILS
+      const payload = event.payload as any;
+      // ADD TYPE-SPECIFIC DETAILS
+      switch (event.type) {
+        // PUSH EVENT
+        case "PushEvent":
+          // RETURNING ACTIVITY OBJECT
+          return {
+            ...baseActivity,
+            details: {
+              ref: payload.ref,
+              head: payload.head,
+              before: payload.before,
+            },
+          };
+        // PULL REQUEST EVENT
+        case "PullRequestEvent":
+          // RETURNING ACTIVITY OBJECT
+          return {
+            ...baseActivity,
+            details: {
+              action: payload.action,
+              number: payload.pull_request?.number,
+              title: payload.pull_request?.title,
+              state: payload.pull_request?.state,
+              merged: payload.pull_request?.merged,
+            },
+          };
+        // ISSUE EVENT
+        case "IssuesEvent":
+          // RETURNING ACTIVITY OBJECT
+          return {
+            ...baseActivity,
+            details: {
+              action: payload.action,
+              number: payload.issue?.number,
+              title: payload.issue?.title,
+              state: payload.issue?.state,
+            },
+          };
+        // ISSUE COMMENT EVENT
+        case "IssueCommentEvent":
+          // RETURNING ACTIVITY OBJECT
+          return {
+            ...baseActivity,
+            details: {
+              action: payload.action,
+              issueNumber: payload.issue?.number,
+              issueTitle: payload.issue?.title,
+              body: payload.comment?.body?.substring(0, 100),
+            },
+          };
+        // CREATE EVENT
+        case "CreateEvent":
+          // RETURNING ACTIVITY OBJECT
+          return {
+            ...baseActivity,
+            details: {
+              refType: payload.ref_type,
+              ref: payload.ref,
+              description: payload.description,
+            },
+          };
+        // DELETE EVENT
+        case "DeleteEvent":
+          // RETURNING ACTIVITY OBJECT
+          return {
+            ...baseActivity,
+            details: {
+              refType: payload.ref_type,
+              ref: payload.ref,
+            },
+          };
+        // FORK EVENT
+        case "ForkEvent":
+          // RETURNING ACTIVITY OBJECT
+          return {
+            ...baseActivity,
+            details: {
+              forkee: {
+                fullName: payload.forkee?.full_name,
+                htmlUrl: payload.forkee?.html_url,
+              },
+            },
+          };
+        // WATCH EVENT
+        case "WatchEvent":
+          // RETURNING ACTIVITY OBJECT
+          return {
+            ...baseActivity,
+            details: {
+              action: payload.action,
+            },
+          };
+        // RELEASE EVENT
+        case "ReleaseEvent":
+          // RETURNING ACTIVITY OBJECT
+          return {
+            ...baseActivity,
+            details: {
+              action: payload.action,
+              tagName: payload.release?.tag_name,
+              name: payload.release?.name,
+            },
+          };
+        // PULL REQUEST REVIEW EVENT
+        case "PullRequestReviewEvent":
+          // RETURNING ACTIVITY OBJECT
+          return {
+            ...baseActivity,
+            details: {
+              action: payload.action,
+              prNumber: payload.pull_request?.number,
+              prTitle: payload.pull_request?.title,
+              state: payload.review?.state,
+            },
+          };
+        // DEFAULT
+        default:
+          // RETURNING ACTIVITY OBJECT
+          return baseActivity;
+      }
+    });
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Dashboard activity fetched successfully!",
+      success: true,
+      data: {
+        activity,
+        count: activity.length,
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching dashboard activity. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * GET STARRED REPOSITORIES
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET STARRED REPOSITORIES ==>
+export const getStarredRepositories = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // SETTING PAGE FOR QUERY
+  const page = parseInt(req.query.page as string) || 1;
+  // SETTING PER PAGE FOR QUERY
+  const perPage = parseInt(req.query.per_page as string) || 30;
+  // SETTING SORT FOR QUERY
+  const sort = (req.query.sort as string) || "created";
+  // SETTING DIRECTION FOR QUERY
+  const direction = (req.query.direction as string) || "desc";
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FETCH STARRED REPOSITORIES
+  try {
+    // FETCH STARRED REPOS
+    const response = await octokit.activity.listReposStarredByAuthenticatedUser(
+      {
+        per_page: perPage,
+        page,
+        sort: sort as "created" | "updated",
+        direction: direction as "asc" | "desc",
+      }
+    );
+    // MAP REPOSITORIES
+    const repositories = response.data.map((repo: any) => ({
+      id: repo.id,
+      name: repo.name,
+      fullName: repo.full_name,
+      description: repo.description,
+      htmlUrl: repo.html_url,
+      private: repo.private,
+      fork: repo.fork,
+      language: repo.language,
+      stars: repo.stargazers_count,
+      forks: repo.forks_count,
+      openIssues: repo.open_issues_count,
+      defaultBranch: repo.default_branch,
+      createdAt: repo.created_at,
+      updatedAt: repo.updated_at,
+      pushedAt: repo.pushed_at,
+      owner: {
+        login: repo.owner.login,
+        avatarUrl: repo.owner.avatar_url,
+        htmlUrl: repo.owner.html_url,
+      },
+    }));
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Starred repositories fetched successfully!",
+      success: true,
+      data: {
+        repositories,
+        pagination: {
+          page,
+          perPage,
+          hasMore: repositories.length === perPage,
+        },
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching starred repositories. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * STAR REPOSITORY
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== STAR REPOSITORY ==>
+export const starRepository = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER AND REPO FROM PARAMS
+  const { owner, repo } = req.params;
+  // VALIDATE PARAMS
+  if (!owner || !repo) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner and repository name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // STAR REPOSITORY
+  try {
+    // STAR THE REPO
+    await octokit.activity.starRepoForAuthenticatedUser({
+      owner,
+      repo,
+    });
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Repository starred successfully!",
+      success: true,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Repository not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error starring repository. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * UNSTAR REPOSITORY
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== UNSTAR REPOSITORY ==>
+export const unstarRepository = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER AND REPO FROM PARAMS
+  const { owner, repo } = req.params;
+  // VALIDATE PARAMS
+  if (!owner || !repo) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner and repository name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // UNSTAR REPOSITORY
+  try {
+    // UNSTAR THE REPO
+    await octokit.activity.unstarRepoForAuthenticatedUser({
+      owner,
+      repo,
+    });
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Repository unstarred successfully!",
+      success: true,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Repository not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error unstarring repository. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * CHECK IF REPOSITORY IS STARRED
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== CHECK IF STARRED ==>
+export const checkIfStarred = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER AND REPO FROM PARAMS
+  const { owner, repo } = req.params;
+  // VALIDATE PARAMS
+  if (!owner || !repo) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner and repository name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // CHECK IF STARRED
+  try {
+    // CHECK IF REPO IS STARRED
+    await octokit.activity.checkRepoIsStarredByAuthenticatedUser({
+      owner,
+      repo,
+    });
+    // RETURNING SUCCESS RESPONSE (STARRED)
+    res.status(200).json({
+      message: "Repository is starred.",
+      success: true,
+      data: { isStarred: true },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // NOT STARRED (404)
+    if (error.status === 404) {
+      // RETURNING SUCCESS RESPONSE (NOT STARRED)
+      res.status(200).json({
+        message: "Repository is not starred.",
+        success: true,
+        data: { isStarred: false },
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error checking starred status. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * GET PINNED REPOSITORIES
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET PINNED REPOSITORIES ==>
+export const getPinnedRepositories = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FETCH PINNED REPOSITORIES USING GRAPHQL
+  try {
+    // GRAPHQL QUERY FOR PINNED REPOSITORIES
+    const query = `
+      query {
+        viewer {
+          pinnedItems(first: 6, types: REPOSITORY) {
+            nodes {
+              ... on Repository {
+                id
+                databaseId
+                name
+                nameWithOwner
+                description
+                url
+                isPrivate
+                isFork
+                primaryLanguage {
+                  name
+                  color
+                }
+                stargazerCount
+                forkCount
+                defaultBranchRef {
+                  name
+                }
+                createdAt
+                updatedAt
+                pushedAt
+                owner {
+                  login
+                  avatarUrl
+                }
+              }
+            }
+          }
+        }
+      }
+    `;
+    // EXECUTE GRAPHQL QUERY
+    const response: any = await octokit.graphql(query);
+    // MAP PINNED REPOSITORIES
+    const pinnedRepos = response.viewer.pinnedItems.nodes.map((repo: any) => ({
+      id: repo.databaseId,
+      name: repo.name,
+      fullName: repo.nameWithOwner,
+      description: repo.description,
+      htmlUrl: repo.url,
+      private: repo.isPrivate,
+      fork: repo.isFork,
+      language: repo.primaryLanguage?.name || null,
+      languageColor: repo.primaryLanguage?.color || null,
+      stars: repo.stargazerCount,
+      forks: repo.forkCount,
+      defaultBranch: repo.defaultBranchRef?.name || "main",
+      createdAt: repo.createdAt,
+      updatedAt: repo.updatedAt,
+      pushedAt: repo.pushedAt,
+      owner: {
+        login: repo.owner.login,
+        avatarUrl: repo.owner.avatarUrl,
+      },
+    }));
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Pinned repositories fetched successfully!",
+      success: true,
+      data: {
+        repositories: pinnedRepos,
+        count: pinnedRepos.length,
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // GRAPHQL ERRORS
+    if (error.errors) {
+      console.error("GraphQL errors:", error.errors);
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching pinned repositories. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
