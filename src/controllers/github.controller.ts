@@ -10814,3 +10814,1071 @@ export const generateReleaseNotes = expressAsyncHandler(async (req, res) => {
     return;
   }
 });
+
+/**
+ * LIST DEPLOYMENTS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== LIST DEPLOYMENTS ==>
+export const listDeployments = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER AND REPO FROM PARAMS
+  const { owner, repo } = req.params;
+  // GET COMMIT SHA FROM QUERY
+  const sha = req.query.sha as string;
+  // GET REF FROM QUERY
+  const ref = req.query.ref as string;
+  // GET TASK FROM QUERY
+  const task = req.query.task as string;
+  // GET ENVIRONMENT FROM QUERY
+  const environment = req.query.environment as string;
+  // GET PAGE FROM QUERY
+  const page = parseInt(req.query.page as string) || 1;
+  // GET PER PAGE FROM QUERY
+  const perPage = parseInt(req.query.per_page as string) || 20;
+  // VALIDATE PARAMS
+  if (!owner || !repo) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner and repository name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FETCH DEPLOYMENTS
+  try {
+    // BUILD REQUEST PARAMS
+    const params: any = {
+      owner,
+      repo,
+      page,
+      per_page: perPage,
+    };
+    // ADD COMMIT SHA IF PROVIDED
+    if (sha) params.sha = sha;
+    // ADD REF IF PROVIDED
+    if (ref) params.ref = ref;
+    // ADD TASK IF PROVIDED
+    if (task) params.task = task;
+    // ADD ENVIRONMENT IF PROVIDED
+    if (environment) params.environment = environment;
+    // FETCH DEPLOYMENTS
+    const response = await octokit.repos.listDeployments(params);
+    // MAP DEPLOYMENTS
+    const deployments = response.data.map((deployment) => ({
+      id: deployment.id,
+      sha: deployment.sha,
+      ref: deployment.ref,
+      task: deployment.task,
+      environment: deployment.environment,
+      description: deployment.description,
+      creator: deployment.creator
+        ? {
+            login: deployment.creator.login,
+            avatarUrl: deployment.creator.avatar_url,
+            htmlUrl: deployment.creator.html_url,
+          }
+        : null,
+      createdAt: deployment.created_at,
+      updatedAt: deployment.updated_at,
+      transientEnvironment: deployment.transient_environment,
+      productionEnvironment: deployment.production_environment,
+      nodeId: deployment.node_id,
+      statusesUrl: deployment.statuses_url,
+      repositoryUrl: deployment.repository_url,
+    }));
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Deployments fetched successfully!",
+      success: true,
+      data: {
+        deployments,
+        pagination: {
+          page,
+          perPage,
+          hasMore: response.data.length === perPage,
+        },
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Repository not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching deployments. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * GET DEPLOYMENT DETAILS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET DEPLOYMENT DETAILS ==>
+export const getDeploymentDetails = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER, REPO, AND DEPLOYMENT_ID FROM PARAMS
+  const { owner, repo, deployment_id } = req.params;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !deployment_id) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and deployment ID are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FETCH DEPLOYMENT DETAILS
+  try {
+    // FETCH DEPLOYMENT
+    const response = await octokit.repos.getDeployment({
+      owner,
+      repo,
+      deployment_id: parseInt(deployment_id),
+    });
+    // FETCH LATEST STATUS
+    const statusesResponse = await octokit.repos.listDeploymentStatuses({
+      owner,
+      repo,
+      deployment_id: parseInt(deployment_id),
+      per_page: 1,
+    });
+    // MAP DEPLOYMENT
+    const deployment = {
+      id: response.data.id,
+      sha: response.data.sha,
+      ref: response.data.ref,
+      task: response.data.task,
+      environment: response.data.environment,
+      description: response.data.description,
+      creator: response.data.creator
+        ? {
+            login: response.data.creator.login,
+            avatarUrl: response.data.creator.avatar_url,
+            htmlUrl: response.data.creator.html_url,
+          }
+        : null,
+      createdAt: response.data.created_at,
+      updatedAt: response.data.updated_at,
+      transientEnvironment: response.data.transient_environment,
+      productionEnvironment: response.data.production_environment,
+      nodeId: response.data.node_id,
+      latestStatus: statusesResponse.data[0]
+        ? {
+            id: statusesResponse.data[0].id,
+            state: statusesResponse.data[0].state,
+            description: statusesResponse.data[0].description,
+            environmentUrl: statusesResponse.data[0].environment_url,
+            logUrl: statusesResponse.data[0].log_url,
+            createdAt: statusesResponse.data[0].created_at,
+            updatedAt: statusesResponse.data[0].updated_at,
+          }
+        : null,
+    };
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Deployment details fetched successfully!",
+      success: true,
+      data: deployment,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Deployment not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching deployment details. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * GET DEPLOYMENT STATUSES
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET DEPLOYMENT STATUSES ==>
+export const getDeploymentStatuses = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER, REPO, AND DEPLOYMENT_ID FROM PARAMS
+  const { owner, repo, deployment_id } = req.params;
+  // GET PAGINATION FROM QUERY
+  const page = parseInt(req.query.page as string) || 1;
+  // GET PER PAGE FROM QUERY
+  const perPage = parseInt(req.query.per_page as string) || 30;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !deployment_id) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and deployment ID are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FETCH DEPLOYMENT STATUSES
+  try {
+    // FETCH STATUSES
+    const response = await octokit.repos.listDeploymentStatuses({
+      owner,
+      repo,
+      deployment_id: parseInt(deployment_id),
+      page,
+      per_page: perPage,
+    });
+    // MAP STATUSES
+    const statuses = response.data.map((status) => ({
+      id: status.id,
+      state: status.state,
+      description: status.description,
+      environmentUrl: status.environment_url,
+      logUrl: status.log_url,
+      creator: status.creator
+        ? {
+            login: status.creator.login,
+            avatarUrl: status.creator.avatar_url,
+            htmlUrl: status.creator.html_url,
+          }
+        : null,
+      createdAt: status.created_at,
+      updatedAt: status.updated_at,
+      nodeId: status.node_id,
+    }));
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Deployment statuses fetched successfully!",
+      success: true,
+      data: {
+        statuses,
+        pagination: {
+          page,
+          perPage,
+          hasMore: response.data.length === perPage,
+        },
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Deployment not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching deployment statuses. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * CREATE DEPLOYMENT
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== CREATE DEPLOYMENT ==>
+export const createDeployment = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER AND REPO FROM PARAMS
+  const { owner, repo } = req.params;
+  // GET DEPLOYMENT DATA FROM BODY
+  const {
+    ref,
+    task,
+    autoMerge,
+    requiredContexts,
+    payload,
+    environment,
+    description,
+    transientEnvironment,
+    productionEnvironment,
+  } = req.body;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !ref) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and ref are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // CREATE DEPLOYMENT
+  try {
+    // BUILD REQUEST DATA
+    const requestData: any = {
+      owner,
+      repo,
+      ref,
+    };
+    // ADD TASK IF PROVIDED
+    if (task) requestData.task = task;
+    // ADD AUTO MERGE IF PROVIDED
+    if (autoMerge !== undefined) requestData.auto_merge = autoMerge;
+    // ADD REQUIRED CONTEXTS IF PROVIDED
+    if (requiredContexts) requestData.required_contexts = requiredContexts;
+    // ADD PAYLOAD IF PROVIDED
+    if (payload) requestData.payload = payload;
+    // ADD ENVIRONMENT IF PROVIDED
+    if (environment) requestData.environment = environment;
+    // ADD DESCRIPTION IF PROVIDED
+    if (description) requestData.description = description;
+    // ADD TRANSIENT ENVIRONMENT IF PROVIDED
+    if (transientEnvironment !== undefined)
+      requestData.transient_environment = transientEnvironment;
+    // ADD PRODUCTION ENVIRONMENT IF PROVIDED
+    if (productionEnvironment !== undefined)
+      requestData.production_environment = productionEnvironment;
+    // CREATE DEPLOYMENT
+    const response = await octokit.repos.createDeployment(requestData);
+    // CHECK IF DEPLOYMENT WAS CREATED (STATUS 201) OR MERGED (STATUS 202)
+    if (response.status === 202) {
+      // RETURNING MERGE RESPONSE
+      res.status(202).json({
+        message: "Deployment is being auto-merged.",
+        success: true,
+        data: null,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // MAP DEPLOYMENT
+    const deployment = {
+      id: (response.data as any).id,
+      sha: (response.data as any).sha,
+      ref: (response.data as any).ref,
+      task: (response.data as any).task,
+      environment: (response.data as any).environment,
+      description: (response.data as any).description,
+      creator: (response.data as any).creator
+        ? {
+            login: (response.data as any).creator.login,
+            avatarUrl: (response.data as any).creator.avatar_url,
+          }
+        : null,
+      createdAt: (response.data as any).created_at,
+      updatedAt: (response.data as any).updated_at,
+    };
+    // RETURNING SUCCESS RESPONSE
+    res.status(201).json({
+      message: "Deployment created successfully!",
+      success: true,
+      data: deployment,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // FORBIDDEN
+    if (error.status === 403) {
+      // RETURNING ERROR RESPONSE
+      res.status(403).json({
+        message:
+          "You don't have permission to create deployments in this repository.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // CONFLICT (REQUIRED CONTEXTS NOT MET)
+    if (error.status === 409) {
+      // RETURNING ERROR RESPONSE
+      res.status(409).json({
+        message: error.message || "Required status checks have not passed.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // VALIDATION ERROR
+    if (error.status === 422) {
+      // RETURNING ERROR RESPONSE
+      res.status(422).json({
+        message: error.message || "Invalid deployment data.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error creating deployment. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * CREATE DEPLOYMENT STATUS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== CREATE DEPLOYMENT STATUS ==>
+export const createDeploymentStatus = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER, REPO, AND DEPLOYMENT_ID FROM PARAMS
+  const { owner, repo, deployment_id } = req.params;
+  // GET STATUS DATA FROM BODY
+  const { state, logUrl, description, environmentUrl, autoInactive } = req.body;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !deployment_id || !state) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, deployment ID, and state are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // VALIDATE STATE
+  const validStates = [
+    "error",
+    "failure",
+    "inactive",
+    "in_progress",
+    "queued",
+    "pending",
+    "success",
+  ];
+  if (!validStates.includes(state)) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: `Invalid state. Must be one of: ${validStates.join(", ")}`,
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // CREATE DEPLOYMENT STATUS
+  try {
+    // BUILD REQUEST DATA
+    const requestData: any = {
+      owner,
+      repo,
+      deployment_id: parseInt(deployment_id),
+      state,
+    };
+    // ADD LOG URL IF PROVIDED
+    if (logUrl) requestData.log_url = logUrl;
+    // ADD DESCRIPTION IF PROVIDED
+    if (description) requestData.description = description;
+    // ADD ENVIRONMENT URL IF PROVIDED
+    if (environmentUrl) requestData.environment_url = environmentUrl;
+    // ADD AUTO INACTIVE IF PROVIDED
+    if (autoInactive !== undefined) requestData.auto_inactive = autoInactive;
+    // CREATE DEPLOYMENT STATUS
+    const response = await octokit.repos.createDeploymentStatus(requestData);
+    // MAP STATUS
+    const status = {
+      id: response.data.id,
+      state: response.data.state,
+      description: response.data.description,
+      environmentUrl: response.data.environment_url,
+      logUrl: response.data.log_url,
+      creator: response.data.creator
+        ? {
+            login: response.data.creator.login,
+            avatarUrl: response.data.creator.avatar_url,
+          }
+        : null,
+      createdAt: response.data.created_at,
+      updatedAt: response.data.updated_at,
+    };
+    // RETURNING SUCCESS RESPONSE
+    res.status(201).json({
+      message: "Deployment status created successfully!",
+      success: true,
+      data: status,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // FORBIDDEN
+    if (error.status === 403) {
+      // RETURNING ERROR RESPONSE
+      res.status(403).json({
+        message: "You don't have permission to create deployment statuses.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Deployment not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error creating deployment status. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * DELETE DEPLOYMENT
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== DELETE DEPLOYMENT ==>
+export const deleteDeployment = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER, REPO, AND DEPLOYMENT_ID FROM PARAMS
+  const { owner, repo, deployment_id } = req.params;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !deployment_id) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and deployment ID are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // DELETE DEPLOYMENT
+  try {
+    // DELETE DEPLOYMENT (MUST BE INACTIVE FIRST)
+    await octokit.repos.deleteDeployment({
+      owner,
+      repo,
+      deployment_id: parseInt(deployment_id),
+    });
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Deployment deleted successfully!",
+      success: true,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Deployment not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // FORBIDDEN
+    if (error.status === 403) {
+      // RETURNING ERROR RESPONSE
+      res.status(403).json({
+        message: "You don't have permission to delete this deployment.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // CONFLICT (DEPLOYMENT IS NOT INACTIVE)
+    if (error.status === 422) {
+      // RETURNING ERROR RESPONSE
+      res.status(422).json({
+        message:
+          "Deployment must be set to 'inactive' status before it can be deleted.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error deleting deployment. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+// <== LIST ENVIRONMENTS ==>
+export const listEnvironments = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER AND REPO FROM PARAMS
+  const { owner, repo } = req.params;
+  // GET PAGINATION FROM QUERY
+  const page = parseInt(req.query.page as string) || 1;
+  // GET PER PAGE FROM QUERY
+  const perPage = parseInt(req.query.per_page as string) || 30;
+  // VALIDATE PARAMS
+  if (!owner || !repo) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner and repository name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FETCH ENVIRONMENTS
+  try {
+    // FETCH ENVIRONMENTS
+    const response = await octokit.repos.getAllEnvironments({
+      owner,
+      repo,
+      page,
+      per_page: perPage,
+    });
+    // MAP ENVIRONMENTS
+    const environments = (response.data.environments || []).map((env) => ({
+      id: env.id,
+      name: env.name,
+      htmlUrl: env.html_url,
+      createdAt: env.created_at,
+      updatedAt: env.updated_at,
+      protectionRules: env.protection_rules?.map((rule) => ({
+        id: rule.id,
+        type: rule.type,
+        waitTimer: (rule as any).wait_timer,
+        reviewers: (rule as any).reviewers?.map((reviewer: any) => ({
+          type: reviewer.type,
+          login: reviewer.reviewer?.login,
+          avatarUrl: reviewer.reviewer?.avatar_url,
+        })),
+      })),
+      deploymentBranchPolicy: env.deployment_branch_policy
+        ? {
+            protectedBranches: env.deployment_branch_policy.protected_branches,
+            customBranchPolicies:
+              env.deployment_branch_policy.custom_branch_policies,
+          }
+        : null,
+    }));
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Environments fetched successfully!",
+      success: true,
+      data: {
+        environments,
+        totalCount: response.data.total_count,
+        pagination: {
+          page,
+          perPage,
+          hasMore: (response.data.environments || []).length === perPage,
+        },
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Repository not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching environments. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * GET ENVIRONMENT
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET ENVIRONMENT ==>
+export const getEnvironment = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OWNER, REPO, AND ENVIRONMENT_NAME FROM PARAMS
+  const { owner, repo, environment_name } = req.params;
+  // VALIDATE PARAMS
+  if (!owner || !repo || !environment_name) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Owner, repository name, and environment name are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    // RETURNING ERROR RESPONSE
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FETCH ENVIRONMENT
+  try {
+    // FETCH ENVIRONMENT
+    const response = await octokit.repos.getEnvironment({
+      owner,
+      repo,
+      environment_name: decodeURIComponent(environment_name),
+    });
+    // MAP ENVIRONMENT
+    const environment = {
+      id: response.data.id,
+      name: response.data.name,
+      htmlUrl: response.data.html_url,
+      createdAt: response.data.created_at,
+      updatedAt: response.data.updated_at,
+      protectionRules: response.data.protection_rules?.map((rule) => ({
+        id: rule.id,
+        type: rule.type,
+        waitTimer: (rule as any).wait_timer,
+        reviewers: (rule as any).reviewers?.map((reviewer: any) => ({
+          type: reviewer.type,
+          login: reviewer.reviewer?.login,
+          avatarUrl: reviewer.reviewer?.avatar_url,
+        })),
+      })),
+      deploymentBranchPolicy: response.data.deployment_branch_policy
+        ? {
+            protectedBranches:
+              response.data.deployment_branch_policy.protected_branches,
+            customBranchPolicies:
+              response.data.deployment_branch_policy.custom_branch_policies,
+          }
+        : null,
+    };
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Environment fetched successfully!",
+      success: true,
+      data: environment,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // NOT FOUND
+    if (error.status === 404) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Environment not found.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching environment. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
