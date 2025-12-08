@@ -101,6 +101,12 @@ import {
   unstarRepository,
   checkIfStarred,
   getPinnedRepositories,
+  getGitHubNotifications,
+  markGitHubNotificationAsRead,
+  markAllGitHubNotificationsAsRead,
+  markRepoGitHubNotificationsAsRead,
+  getGitHubNotificationThread,
+  unsubscribeGitHubNotification,
 } from "../controllers/github.controller.js";
 import express from "express";
 import isAuthenticated from "../middleware/isAuthenticated.js";
@@ -131,6 +137,18 @@ router.delete("/starred/:owner/:repo", unstarRepository);
 router.get("/starred/:owner/:repo", checkIfStarred);
 // GET PINNED REPOSITORIES (USES GRAPHQL)
 router.get("/pinned", getPinnedRepositories);
+// GET GITHUB NOTIFICATIONS
+router.get("/notifications", getGitHubNotifications);
+// MARK ALL GITHUB NOTIFICATIONS AS READ
+router.put("/notifications", markAllGitHubNotificationsAsRead);
+// GET GITHUB NOTIFICATION THREAD
+router.get("/notifications/:thread_id", getGitHubNotificationThread);
+// MARK GITHUB NOTIFICATION AS READ
+router.patch("/notifications/:thread_id", markGitHubNotificationAsRead);
+// UNSUBSCRIBE FROM GITHUB NOTIFICATION THREAD
+router.delete("/notifications/:thread_id/subscription", unsubscribeGitHubNotification);
+// MARK REPOSITORY GITHUB NOTIFICATIONS AS READ
+router.put("/repositories/:owner/:repo/notifications", markRepoGitHubNotificationsAsRead);
 // GET USER REPOSITORIES
 router.get("/repositories", getRepositories);
 // CREATE NEW REPOSITORY
