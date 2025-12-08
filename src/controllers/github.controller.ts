@@ -12791,3 +12791,514 @@ export const getPinnedRepositories = expressAsyncHandler(async (req, res) => {
     return;
   }
 });
+
+// <=== GITHUB NOTIFICATIONS ===>
+
+/**
+ * GET GITHUB NOTIFICATIONS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+export const getGitHubNotifications = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    return;
+  }
+  // GET QUERY PARAMETERS
+  const {
+    all = "false",
+    participating = "false",
+    since,
+    before,
+    per_page = "50",
+    page = "1",
+  } = req.query;
+  try {
+    // FETCH NOTIFICATIONS FROM GITHUB
+    const response =
+      await octokit.rest.activity.listNotificationsForAuthenticatedUser({
+        all: all === "true",
+        participating: participating === "true",
+        since: since as string | undefined,
+        before: before as string | undefined,
+        per_page: parseInt(per_page as string),
+        page: parseInt(page as string),
+      });
+    // MAP NOTIFICATIONS TO CLEANER FORMAT
+    const notifications = response.data.map((notification) => ({
+      id: notification.id,
+      unread: notification.unread,
+      reason: notification.reason,
+      updatedAt: notification.updated_at,
+      lastReadAt: notification.last_read_at,
+      subject: {
+        title: notification.subject.title,
+        url: notification.subject.url,
+        latestCommentUrl: notification.subject.latest_comment_url,
+        type: notification.subject.type,
+      },
+      repository: {
+        id: notification.repository.id,
+        name: notification.repository.name,
+        fullName: notification.repository.full_name,
+        owner: {
+          login: notification.repository.owner.login,
+          avatarUrl: notification.repository.owner.avatar_url,
+        },
+        private: notification.repository.private,
+        htmlUrl: notification.repository.html_url,
+      },
+      url: notification.url,
+      subscriptionUrl: notification.subscription_url,
+    }));
+    // GET PAGINATION INFO FROM HEADERS
+    const linkHeader = response.headers.link || "";
+    // CHECK IF HAS NEXT
+    const hasNext = linkHeader.includes('rel="next"');
+    // CHECK IF HAS PREV
+    const hasPrev = linkHeader.includes('rel="prev"');
+    // RETURN SUCCESS RESPONSE
+    res.status(200).json({
+      message: "GitHub notifications fetched successfully!",
+      success: true,
+      data: {
+        notifications,
+        count: notifications.length,
+        pagination: {
+          page: parseInt(page as string),
+          perPage: parseInt(per_page as string),
+          hasNext,
+          hasPrev,
+        },
+      },
+    });
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching GitHub notifications. Please try again later.",
+      success: false,
+    });
+    return;
+  }
+});
+
+/**
+ * MARK GITHUB NOTIFICATION AS READ
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+export const markGitHubNotificationAsRead = expressAsyncHandler(
+  async (req, res) => {
+    // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+    const userId = (req as AuthenticatedRequest).id;
+    // IF USER ID NOT FOUND, RETURN ERROR
+    if (!userId) {
+      res.status(401).json({
+        message: "Unauthorized!",
+        success: false,
+      });
+      return;
+    }
+    // GET NOTIFICATION ID FROM PARAMS
+    const { thread_id } = req.params;
+    // IF NO THREAD ID, RETURN ERROR
+    if (!thread_id) {
+      res.status(400).json({
+        message: "Notification thread ID is required!",
+        success: false,
+      });
+      return;
+    }
+    // GET OCTOKIT INSTANCE
+    const { octokit, error } = await getOctokitForUser(userId);
+    // IF ERROR, RETURN ERROR RESPONSE
+    if (error || !octokit) {
+      res.status(error?.status || 500).json({
+        message: error?.message || "Error connecting to GitHub.",
+        success: false,
+      });
+      return;
+    }
+    try {
+      // MARK NOTIFICATION AS READ
+      await octokit.rest.activity.markThreadAsRead({
+        thread_id: parseInt(thread_id),
+      });
+      // RETURN SUCCESS RESPONSE
+      res.status(200).json({
+        message: "Notification marked as read!",
+        success: true,
+      });
+      return;
+    } catch (error: any) {
+      // TOKEN IS INVALID OR EXPIRED
+      if (error.status === 401) {
+        res.status(401).json({
+          message: "GitHub token has expired. Please reconnect your account.",
+          success: false,
+        });
+        return;
+      }
+      // NOT FOUND
+      if (error.status === 404) {
+        res.status(404).json({
+          message: "Notification not found.",
+          success: false,
+        });
+        return;
+      }
+      // OTHER ERROR
+      res.status(500).json({
+        message: "Error marking notification as read. Please try again later.",
+        success: false,
+      });
+      return;
+    }
+  }
+);
+
+/**
+ * MARK ALL GITHUB NOTIFICATIONS AS READ
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+export const markAllGitHubNotificationsAsRead = expressAsyncHandler(
+  async (req, res) => {
+    // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+    const userId = (req as AuthenticatedRequest).id;
+    // IF USER ID NOT FOUND, RETURN ERROR
+    if (!userId) {
+      res.status(401).json({
+        message: "Unauthorized!",
+        success: false,
+      });
+      return;
+    }
+    // GET OCTOKIT INSTANCE
+    const { octokit, error } = await getOctokitForUser(userId);
+    // IF ERROR, RETURN ERROR RESPONSE
+    if (error || !octokit) {
+      res.status(error?.status || 500).json({
+        message: error?.message || "Error connecting to GitHub.",
+        success: false,
+      });
+      return;
+    }
+    try {
+      // MARK ALL NOTIFICATIONS AS READ
+      await octokit.rest.activity.markNotificationsAsRead({
+        last_read_at: new Date().toISOString(),
+      });
+      // RETURN SUCCESS RESPONSE
+      res.status(200).json({
+        message: "All notifications marked as read!",
+        success: true,
+      });
+      return;
+    } catch (error: any) {
+      // TOKEN IS INVALID OR EXPIRED
+      if (error.status === 401) {
+        res.status(401).json({
+          message: "GitHub token has expired. Please reconnect your account.",
+          success: false,
+        });
+        return;
+      }
+      // OTHER ERROR
+      res.status(500).json({
+        message:
+          "Error marking all notifications as read. Please try again later.",
+        success: false,
+      });
+      return;
+    }
+  }
+);
+
+/**
+ * MARK REPOSITORY GITHUB NOTIFICATIONS AS READ
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+export const markRepoGitHubNotificationsAsRead = expressAsyncHandler(
+  async (req, res) => {
+    // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+    const userId = (req as AuthenticatedRequest).id;
+    // IF USER ID NOT FOUND, RETURN ERROR
+    if (!userId) {
+      res.status(401).json({
+        message: "Unauthorized!",
+        success: false,
+      });
+      return;
+    }
+    // GET OWNER AND REPO FROM PARAMS
+    const { owner, repo } = req.params;
+    // IF NO OWNER OR REPO, RETURN ERROR
+    if (!owner || !repo) {
+      res.status(400).json({
+        message: "Owner and repo are required!",
+        success: false,
+      });
+      return;
+    }
+    // GET OCTOKIT INSTANCE
+    const { octokit, error } = await getOctokitForUser(userId);
+    // IF ERROR, RETURN ERROR RESPONSE
+    if (error || !octokit) {
+      res.status(error?.status || 500).json({
+        message: error?.message || "Error connecting to GitHub.",
+        success: false,
+      });
+      return;
+    }
+    try {
+      // MARK ALL REPO NOTIFICATIONS AS READ
+      await octokit.rest.activity.markRepoNotificationsAsRead({
+        owner,
+        repo,
+        last_read_at: new Date().toISOString(),
+      });
+      // RETURN SUCCESS RESPONSE
+      res.status(200).json({
+        message: `All notifications for ${owner}/${repo} marked as read!`,
+        success: true,
+      });
+      return;
+    } catch (error: any) {
+      // TOKEN IS INVALID OR EXPIRED
+      if (error.status === 401) {
+        res.status(401).json({
+          message: "GitHub token has expired. Please reconnect your account.",
+          success: false,
+        });
+        return;
+      }
+      // NOT FOUND
+      if (error.status === 404) {
+        res.status(404).json({
+          message: "Repository not found.",
+          success: false,
+        });
+        return;
+      }
+      // OTHER ERROR
+      res.status(500).json({
+        message:
+          "Error marking repository notifications as read. Please try again later.",
+        success: false,
+      });
+      return;
+    }
+  }
+);
+
+/**
+ * GET GITHUB NOTIFICATION THREAD
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+export const getGitHubNotificationThread = expressAsyncHandler(
+  async (req, res) => {
+    // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+    const userId = (req as AuthenticatedRequest).id;
+    // IF USER ID NOT FOUND, RETURN ERROR
+    if (!userId) {
+      res.status(401).json({
+        message: "Unauthorized!",
+        success: false,
+      });
+      return;
+    }
+    // GET THREAD ID FROM PARAMS
+    const { thread_id } = req.params;
+    // IF NO THREAD ID, RETURN ERROR
+    if (!thread_id) {
+      res.status(400).json({
+        message: "Notification thread ID is required!",
+        success: false,
+      });
+      return;
+    }
+    // GET OCTOKIT INSTANCE
+    const { octokit, error } = await getOctokitForUser(userId);
+    // IF ERROR, RETURN ERROR RESPONSE
+    if (error || !octokit) {
+      res.status(error?.status || 500).json({
+        message: error?.message || "Error connecting to GitHub.",
+        success: false,
+      });
+      return;
+    }
+    try {
+      // GET NOTIFICATION THREAD
+      const response = await octokit.rest.activity.getThread({
+        thread_id: parseInt(thread_id),
+      });
+      // MAP TO CLEANER FORMAT
+      const notification = {
+        id: response.data.id,
+        unread: response.data.unread,
+        reason: response.data.reason,
+        updatedAt: response.data.updated_at,
+        lastReadAt: response.data.last_read_at,
+        subject: {
+          title: response.data.subject.title,
+          url: response.data.subject.url,
+          latestCommentUrl: response.data.subject.latest_comment_url,
+          type: response.data.subject.type,
+        },
+        repository: {
+          id: response.data.repository.id,
+          name: response.data.repository.name,
+          fullName: response.data.repository.full_name,
+          owner: {
+            login: response.data.repository.owner.login,
+            avatarUrl: response.data.repository.owner.avatar_url,
+          },
+          private: response.data.repository.private,
+          htmlUrl: response.data.repository.html_url,
+        },
+        url: response.data.url,
+        subscriptionUrl: response.data.subscription_url,
+      };
+      // RETURN SUCCESS RESPONSE
+      res.status(200).json({
+        message: "Notification thread fetched successfully!",
+        success: true,
+        data: notification,
+      });
+      return;
+    } catch (error: any) {
+      // TOKEN IS INVALID OR EXPIRED
+      if (error.status === 401) {
+        res.status(401).json({
+          message: "GitHub token has expired. Please reconnect your account.",
+          success: false,
+        });
+        return;
+      }
+      // NOT FOUND
+      if (error.status === 404) {
+        res.status(404).json({
+          message: "Notification thread not found.",
+          success: false,
+        });
+        return;
+      }
+      // OTHER ERROR
+      res.status(500).json({
+        message: "Error fetching notification thread. Please try again later.",
+        success: false,
+      });
+      return;
+    }
+  }
+);
+
+/**
+ * DELETE GITHUB NOTIFICATION THREAD SUBSCRIPTION
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+export const unsubscribeGitHubNotification = expressAsyncHandler(
+  async (req, res) => {
+    // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+    const userId = (req as AuthenticatedRequest).id;
+    // IF USER ID NOT FOUND, RETURN ERROR
+    if (!userId) {
+      res.status(401).json({
+        message: "Unauthorized!",
+        success: false,
+      });
+      return;
+    }
+    // GET THREAD ID FROM PARAMS
+    const { thread_id } = req.params;
+    // IF NO THREAD ID, RETURN ERROR
+    if (!thread_id) {
+      res.status(400).json({
+        message: "Notification thread ID is required!",
+        success: false,
+      });
+      return;
+    }
+    // GET OCTOKIT INSTANCE
+    const { octokit, error } = await getOctokitForUser(userId);
+    // IF ERROR, RETURN ERROR RESPONSE
+    if (error || !octokit) {
+      res.status(error?.status || 500).json({
+        message: error?.message || "Error connecting to GitHub.",
+        success: false,
+      });
+      return;
+    }
+    try {
+      // DELETE THREAD SUBSCRIPTION (MUTE)
+      await octokit.rest.activity.deleteThreadSubscription({
+        thread_id: parseInt(thread_id),
+      });
+      // RETURN SUCCESS RESPONSE
+      res.status(200).json({
+        message: "Unsubscribed from notification thread!",
+        success: true,
+      });
+      return;
+    } catch (error: any) {
+      // TOKEN IS INVALID OR EXPIRED
+      if (error.status === 401) {
+        res.status(401).json({
+          message: "GitHub token has expired. Please reconnect your account.",
+          success: false,
+        });
+        return;
+      }
+      // NOT FOUND
+      if (error.status === 404) {
+        res.status(404).json({
+          message: "Notification thread not found.",
+          success: false,
+        });
+        return;
+      }
+      // OTHER ERROR
+      res.status(500).json({
+        message:
+          "Error unsubscribing from notification. Please try again later.",
+        success: false,
+      });
+      return;
+    }
+  }
+);
