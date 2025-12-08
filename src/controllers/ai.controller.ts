@@ -3150,3 +3150,704 @@ export const aiSuggestWorkflowImprovements = expressAsyncHandler(
     }
   }
 );
+
+/**
+ * AI REPOSITORY COMPREHENSIVE ANALYSIS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== AI REPOSITORY COMPREHENSIVE ANALYSIS ==>
+export const aiRepositoryAnalysis = expressAsyncHandler(async (req, res) => {
+  // GET GEMINI MODEL
+  const model = getGeminiModel();
+  // IF NOT CONFIGURED, RETURN ERROR
+  if (!model) {
+    res.status(503).json({
+      message: "AI service is not configured.",
+      success: false,
+    });
+    return;
+  }
+  // GET DATA FROM BODY
+  const {
+    owner,
+    repo,
+    readme,
+    languages,
+    recentCommits,
+    openIssues,
+    openPRs,
+    contributors,
+    repoInfo,
+  } = req.body;
+  // VALIDATE DATA
+  if (!owner || !repo) {
+    res.status(400).json({
+      message: "Owner and repository name are required!",
+      success: false,
+    });
+    return;
+  }
+  // BUILD PROMPT
+  const prompt = `You are an expert software analyst. Analyze this GitHub repository and provide comprehensive insights.
+  Repository: ${owner}/${repo}
+  ${repoInfo ? `Description: ${repoInfo.description || "N/A"}` : ""}
+  ${
+    repoInfo
+      ? `Stars: ${repoInfo.stars}, Forks: ${repoInfo.forks}, Watchers: ${repoInfo.watchers}`
+      : ""
+  }
+  ${
+    repoInfo
+      ? `Created: ${repoInfo.createdAt}, Last Updated: ${repoInfo.updatedAt}`
+      : ""
+  }
+  ${
+    languages
+      ? `Languages: ${Object.entries(languages)
+          .map(([lang, bytes]) => `${lang}: ${bytes}`)
+          .join(", ")}`
+      : ""
+  }
+  ${
+    readme
+      ? `README Preview (first 2000 chars): ${readme.substring(0, 2000)}`
+      : "No README available"
+  }
+  ${
+    recentCommits
+      ? `Recent Commits (last 10): ${JSON.stringify(
+          recentCommits
+            .slice(0, 10)
+            .map((c: any) => ({
+              message: c.message,
+              date: c.date,
+              author: c.author,
+            }))
+        )}`
+      : ""
+  }
+  ${openIssues ? `Open Issues: ${openIssues.length}` : ""}
+  ${openPRs ? `Open PRs: ${openPRs.length}` : ""}
+  ${contributors ? `Contributors: ${contributors.length}` : ""}
+  Please provide a comprehensive analysis with:
+  1. **Project Overview**: What the project does, its purpose
+  2. **Code Quality Assessment**: Based on commit patterns, file structure indicators
+  3. **Activity Analysis**: Commit frequency, contributor engagement
+  4. **Documentation Quality**: README completeness, clarity
+  5. **Security Observations**: Any potential concerns based on visible patterns
+  6. **Improvement Suggestions**: Top actionable improvements
+  7. **Project Health Score**: Overall health rating
+  Respond in JSON format:
+  {
+    "overview": {
+      "summary": "Brief project description",
+      "primaryPurpose": "Main use case",
+      "targetAudience": "Who would use this",
+      "techStack": ["tech1", "tech2"]
+    },
+    "codeQuality": {
+      "score": 1-10,
+      "strengths": ["strength1", "strength2"],
+      "concerns": ["concern1", "concern2"],
+      "recommendations": ["rec1", "rec2"]
+    },
+    "activity": {
+      "score": 1-10,
+      "commitFrequency": "daily/weekly/monthly/sporadic",
+      "contributorEngagement": "high/medium/low",
+      "recentActivitySummary": "summary of recent activity",
+      "trend": "growing/stable/declining"
+    },
+    "documentation": {
+      "score": 1-10,
+      "hasReadme": true/false,
+      "readmeQuality": "comprehensive/adequate/minimal/missing",
+      "suggestions": ["suggestion1"]
+    },
+    "security": {
+      "score": 1-10,
+      "observations": ["observation1"],
+      "recommendations": ["rec1"]
+    },
+    "improvements": [
+      {
+        "category": "category name",
+        "priority": "high/medium/low",
+        "suggestion": "what to improve",
+        "impact": "expected impact"
+      }
+    ],
+    "healthScore": {
+      "overall": 1-100,
+      "breakdown": {
+        "codeQuality": 1-100,
+        "activity": 1-100,
+        "documentation": 1-100,
+        "community": 1-100,
+        "security": 1-100
+      }
+    },
+    "keyInsights": ["insight1", "insight2", "insight3"]
+  }
+  Return ONLY valid JSON, no additional text.`;
+  // TRY TO ANALYZE
+  try {
+    // GENERATE ANALYSIS
+    const result = await model.generateContent(prompt);
+    // GET RESPONSE
+    const response = result.response;
+    // GET RESPONSE TEXT
+    const text = response.text();
+    // PARSE JSON
+    let analysis;
+    // TRY TO PARSE AS JSON
+    try {
+      // CLEAN UP RESPONSE
+      const cleanedText = text
+        .replace(/```json\n?/g, "")
+        .replace(/```\n?/g, "")
+        .trim();
+      // PARSE AS JSON
+      analysis = JSON.parse(cleanedText);
+    } catch {
+      // IF NOT VALID JSON, RETURN ERROR
+      res.status(500).json({
+        message: "Error parsing AI response.",
+        success: false,
+      });
+      return;
+    }
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Repository analysis completed successfully!",
+      success: true,
+      data: analysis,
+    });
+    return;
+  } catch (error: any) {
+    // LOG ERROR
+    console.error("Error analyzing repository:", error);
+    // RETURNING ERROR RESPONSE
+    res.status(500).json({
+      message: "Error analyzing repository. Please try again later.",
+      success: false,
+    });
+    return;
+  }
+});
+
+/**
+ * AI CODE QUALITY SCAN
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== AI CODE QUALITY SCAN ==>
+export const aiCodeQualityScan = expressAsyncHandler(async (req, res) => {
+  // GET GEMINI MODEL
+  const model = getGeminiModel();
+  // IF NOT CONFIGURED, RETURN ERROR
+  if (!model) {
+    res.status(503).json({
+      message: "AI service is not configured.",
+      success: false,
+    });
+    return;
+  }
+  // GET DATA FROM BODY
+  const { files, languages, recentCommits, owner, repo } = req.body;
+  // VALIDATE DATA
+  if (!files || files.length === 0) {
+    res.status(400).json({
+      message: "Files to analyze are required!",
+      success: false,
+    });
+    return;
+  }
+  // BUILD FILES SUMMARY
+  const filesSummary = files
+    .slice(0, 20)
+    .map((f: any) => `- ${f.path} (${f.type}, ${f.size || "unknown"} bytes)`)
+    .join("\n");
+  // BUILD PROMPT
+  const prompt = `You are a code quality expert. Analyze this repository structure and provide a code quality assessment.
+  Repository: ${owner}/${repo}
+  Languages: ${languages ? Object.keys(languages).join(", ") : "Unknown"}
+  File Structure (first 20 files):
+  ${filesSummary}
+  ${
+    recentCommits
+      ? `Recent Commits: ${JSON.stringify(
+          recentCommits.slice(0, 5).map((c: any) => c.message)
+        )}`
+      : ""
+  }
+  Based on the file structure and naming patterns, analyze:
+  1. **Architecture**: Code organization and structure
+  2. **Best Practices**: Adherence to common best practices
+  3. **Potential Issues**: Red flags or concerns
+  4. **Testing**: Test coverage indicators
+  5. **Dependencies**: Dependency management patterns
+  Respond in JSON format:
+  {
+    "overallScore": 1-100,
+    "architecture": {
+      "score": 1-10,
+      "pattern": "detected pattern (e.g., MVC, Clean Architecture, etc.)",
+      "observations": ["observation1"],
+      "suggestions": ["suggestion1"]
+    },
+    "bestPractices": {
+      "score": 1-10,
+      "followed": ["practice1"],
+      "missing": ["practice1"],
+      "suggestions": ["suggestion1"]
+    },
+    "potentialIssues": [
+      {
+        "severity": "high/medium/low",
+        "issue": "issue description",
+        "location": "where it's detected",
+        "suggestion": "how to fix"
+      }
+    ],
+    "testing": {
+      "score": 1-10,
+      "hasTestDirectory": true/false,
+      "testingFrameworkDetected": "framework name or null",
+      "suggestions": ["suggestion1"]
+    },
+    "dependencies": {
+      "score": 1-10,
+      "hasPackageManager": true/false,
+      "packageManager": "npm/yarn/pip/etc or null",
+      "observations": ["observation1"]
+    },
+    "recommendations": [
+      {
+        "priority": "high/medium/low",
+        "category": "category",
+        "action": "what to do",
+        "benefit": "expected benefit"
+      }
+    ]
+  }
+  Return ONLY valid JSON, no additional text.`;
+  // TRY TO ANALYZE
+  try {
+    // GENERATE ANALYSIS
+    const result = await model.generateContent(prompt);
+    // GET RESPONSE
+    const response = result.response;
+    // GET RESPONSE TEXT
+    const text = response.text();
+    // PARSE JSON
+    let analysis;
+    // TRY TO PARSE AS JSON
+    try {
+      // CLEAN UP RESPONSE
+      const cleanedText = text
+        .replace(/```json\n?/g, "")
+        .replace(/```\n?/g, "")
+        .trim();
+      // PARSE AS JSON
+      analysis = JSON.parse(cleanedText);
+    } catch {
+      // IF NOT VALID JSON, RETURN ERROR
+      res.status(500).json({
+        message: "Error parsing AI response.",
+        success: false,
+      });
+      return;
+    }
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Code quality scan completed successfully!",
+      success: true,
+      data: analysis,
+    });
+    return;
+  } catch (error: any) {
+    // LOG ERROR
+    console.error("Error scanning code quality:", error);
+    // RETURNING ERROR RESPONSE
+    res.status(500).json({
+      message: "Error scanning code quality. Please try again later.",
+      success: false,
+    });
+    return;
+  }
+});
+
+/**
+ * AI SECURITY SCAN
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== AI SECURITY SCAN ==>
+export const aiSecurityScan = expressAsyncHandler(async (req, res) => {
+  // GET GEMINI MODEL
+  const model = getGeminiModel();
+  // IF NOT CONFIGURED, RETURN ERROR
+  if (!model) {
+    res.status(503).json({
+      message: "AI service is not configured.",
+      success: false,
+    });
+    return;
+  }
+  // GET DATA FROM BODY
+  const { files, languages, packageFiles, owner, repo, isPublic } = req.body;
+  // VALIDATE DATA
+  if (!owner || !repo) {
+    res.status(400).json({
+      message: "Owner and repository name are required!",
+      success: false,
+    });
+    return;
+  }
+  // BUILD FILES SUMMARY
+  const filesSummary =
+    files
+      ?.slice(0, 30)
+      .map((f: any) => f.path)
+      .join("\n") || "No files provided";
+  // BUILD PROMPT
+  const prompt = `You are a security expert. Analyze this repository structure for potential security concerns.
+  Repository: ${owner}/${repo}
+  Visibility: ${isPublic ? "Public" : "Private"}
+  Languages: ${languages ? Object.keys(languages).join(", ") : "Unknown"}
+  File Structure:
+  ${filesSummary}
+  ${packageFiles ? `Package Files Found: ${packageFiles.join(", ")}` : ""}
+  Analyze for security concerns:
+  1. **Sensitive Files**: Files that shouldn't be in version control
+  2. **Configuration Security**: Exposed configs, hardcoded secrets patterns
+  3. **Dependency Risks**: Based on detected package managers
+  4. **Access Patterns**: Branch protection, file permissions patterns
+  5. **Best Practices**: Security best practices compliance
+  Respond in JSON format:
+  {
+    "overallRisk": "low/medium/high/critical",
+    "securityScore": 1-100,
+    "sensitiveFiles": {
+      "found": ["file1"],
+      "risk": "high/medium/low",
+      "recommendation": "what to do"
+    },
+    "configurationSecurity": {
+      "score": 1-10,
+      "concerns": [
+        {
+          "file": "filename",
+          "concern": "what's wrong",
+          "severity": "high/medium/low",
+          "recommendation": "how to fix"
+        }
+      ]
+    },
+    "dependencyRisks": {
+      "score": 1-10,
+      "observations": ["observation1"],
+      "recommendations": ["rec1"]
+    },
+    "securityBestPractices": {
+      "implemented": ["practice1"],
+      "missing": ["practice1"],
+      "recommendations": ["rec1"]
+    },
+    "prioritizedActions": [
+      {
+        "priority": 1,
+        "action": "what to do",
+        "severity": "critical/high/medium/low",
+        "effort": "low/medium/high"
+      }
+    ],
+    "summary": "Overall security assessment summary"
+  }
+  Return ONLY valid JSON, no additional text.`;
+  // TRY TO ANALYZE
+  try {
+    // GENERATE ANALYSIS
+    const result = await model.generateContent(prompt);
+    // GET RESPONSE
+    const response = result.response;
+    // GET RESPONSE TEXT
+    const text = response.text();
+    // PARSE JSON
+    let analysis;
+    // TRY TO PARSE AS JSON
+    try {
+      // CLEAN UP RESPONSE
+      const cleanedText = text
+        .replace(/```json\n?/g, "")
+        .replace(/```\n?/g, "")
+        .trim();
+      // PARSE AS JSON
+      analysis = JSON.parse(cleanedText);
+    } catch {
+      // IF NOT VALID JSON, RETURN ERROR
+      res.status(500).json({
+        message: "Error parsing AI response.",
+        success: false,
+      });
+      return;
+    }
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Security scan completed successfully!",
+      success: true,
+      data: analysis,
+    });
+    return;
+  } catch (error: any) {
+    // LOG ERROR
+    console.error("Error running security scan:", error);
+    // RETURNING ERROR RESPONSE
+    res.status(500).json({
+      message: "Error running security scan. Please try again later.",
+      success: false,
+    });
+    return;
+  }
+});
+
+/**
+ * AI GENERATE README
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== AI GENERATE README ==>
+export const aiGenerateReadme = expressAsyncHandler(async (req, res) => {
+  // GET GEMINI MODEL
+  const model = getGeminiModel();
+  // IF NOT CONFIGURED, RETURN ERROR
+  if (!model) {
+    res.status(503).json({
+      message: "AI service is not configured.",
+      success: false,
+    });
+    return;
+  }
+  // GET DATA FROM BODY
+  const { owner, repo, files, languages, packageJson, repoInfo } = req.body;
+  // VALIDATE DATA
+  if (!owner || !repo) {
+    res.status(400).json({
+      message: "Owner and repository name are required!",
+      success: false,
+    });
+    return;
+  }
+  // BUILD FILES SUMMARY
+  const filesSummary =
+    files
+      ?.slice(0, 30)
+      .map((f: any) => f.path)
+      .join("\n") || "";
+  // BUILD PROMPT
+  const prompt = `You are a technical writer. Generate a professional README.md for this repository.
+  Repository: ${owner}/${repo}
+  ${repoInfo?.description ? `Description: ${repoInfo.description}` : ""}
+  Languages: ${languages ? Object.keys(languages).join(", ") : "Unknown"}
+  File Structure:
+  ${filesSummary}
+  ${packageJson ? `Package.json info: ${JSON.stringify(packageJson)}` : ""}
+  Generate a comprehensive README.md with these sections:
+  1. **Title and Description**: Clear project title with badges and description
+  2. **Features**: Key features list
+  3. **Tech Stack**: Technologies used
+  4. **Getting Started**: Prerequisites and installation steps
+  5. **Usage**: Basic usage examples
+  6. **Configuration**: Environment variables or config needed
+  7. **Contributing**: How to contribute
+  8. **License**: License information placeholder
+  Make it professional, well-formatted with proper markdown, and include relevant badges.
+  Include code blocks where appropriate.
+  Be specific based on the detected tech stack.
+  Return ONLY the README content in markdown format, ready to be saved as README.md.`;
+  // TRY TO GENERATE
+  try {
+    // GENERATE README
+    const result = await model.generateContent(prompt);
+    // GET RESPONSE
+    const response = result.response;
+    // GET RESPONSE TEXT
+    const readme = response.text();
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "README generated successfully!",
+      success: true,
+      data: {
+        content: readme,
+      },
+    });
+    return;
+  } catch (error: any) {
+    // LOG ERROR
+    console.error("Error generating README:", error);
+    // RETURNING ERROR RESPONSE
+    res.status(500).json({
+      message: "Error generating README. Please try again later.",
+      success: false,
+    });
+    return;
+  }
+});
+
+/**
+ * AI ACTIVITY INSIGHTS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== AI ACTIVITY INSIGHTS ==>
+export const aiActivityInsights = expressAsyncHandler(async (req, res) => {
+  // GET GEMINI MODEL
+  const model = getGeminiModel();
+  // IF NOT CONFIGURED, RETURN ERROR
+  if (!model) {
+    res.status(503).json({
+      message: "AI service is not configured.",
+      success: false,
+    });
+    return;
+  }
+  // GET DATA FROM BODY
+  const { commits, issues, pullRequests, owner, repo } = req.body;
+  // VALIDATE DATA
+  if (!owner || !repo) {
+    res.status(400).json({
+      message: "Owner and repository name are required!",
+      success: false,
+    });
+    return;
+  }
+  // BUILD COMMITS SUMMARY
+  const commitsSummary =
+    commits?.slice(0, 30).map((c: any) => ({
+      message: c.message,
+      date: c.date,
+      author: c.author,
+    })) || [];
+  // BUILD ISSUES SUMMARY
+  const issuesSummary =
+    issues?.slice(0, 20).map((i: any) => ({
+      title: i.title,
+      state: i.state,
+      createdAt: i.createdAt,
+      labels: i.labels,
+    })) || [];
+  // BUILD PRS SUMMARY
+  const prsSummary =
+    pullRequests?.slice(0, 20).map((pr: any) => ({
+      title: pr.title,
+      state: pr.state,
+      createdAt: pr.createdAt,
+      merged: pr.merged,
+    })) || [];
+  // BUILD PROMPT
+  const prompt = `You are a project analyst. Analyze the activity patterns of this repository.
+  Repository: ${owner}/${repo}
+  Recent Commits (last 30):
+  ${JSON.stringify(commitsSummary)}
+  Recent Issues (last 20):
+  ${JSON.stringify(issuesSummary)}
+  Recent Pull Requests (last 20):
+  ${JSON.stringify(prsSummary)}
+  Analyze and provide:
+  1. **Activity Patterns**: When is the repo most active
+  2. **Contributor Analysis**: Top contributors, engagement patterns
+  3. **Development Velocity**: Speed of development
+  4. **Issue Resolution**: How issues are handled
+  5. **PR Workflow**: PR patterns and merge efficiency
+  6. **Predictions**: What to expect based on patterns
+  Respond in JSON format:
+  {
+    "activityScore": 1-100,
+    "patterns": {
+      "peakDays": ["Monday", "Tuesday"],
+      "peakHours": "9AM-5PM UTC",
+      "averageCommitsPerWeek": 10,
+      "trend": "increasing/stable/decreasing"
+    },
+    "contributors": {
+      "totalActive": 5,
+      "topContributors": [{"name": "user", "commits": 50}],
+      "diversityScore": 1-10
+    },
+    "velocity": {
+      "score": 1-10,
+      "averageTimeBetweenCommits": "2 hours",
+      "assessment": "fast/moderate/slow"
+    },
+    "issueResolution": {
+      "score": 1-10,
+      "averageTimeToClose": "3 days",
+      "openToClosedRatio": 0.5,
+      "commonLabels": ["bug", "feature"]
+    },
+    "prWorkflow": {
+      "score": 1-10,
+      "averageTimeToMerge": "1 day",
+      "mergeRate": 85,
+      "reviewEfficiency": "good/moderate/needs improvement"
+    },
+    "predictions": {
+      "nextMilestone": "what might happen next",
+      "potentialBottlenecks": ["bottleneck1"],
+      "recommendations": ["rec1"]
+    },
+    "summary": "Overall activity summary"
+  }
+  Return ONLY valid JSON, no additional text.`;
+  // TRY TO ANALYZE
+  try {
+    // GENERATE ANALYSIS
+    const result = await model.generateContent(prompt);
+    // GET RESPONSE
+    const response = result.response;
+    // GET RESPONSE TEXT
+    const text = response.text();
+    // PARSE JSON
+    let analysis;
+    // TRY TO PARSE AS JSON
+    try {
+      // CLEAN UP RESPONSE
+      const cleanedText = text
+        .replace(/```json\n?/g, "")
+        .replace(/```\n?/g, "")
+        .trim();
+      // PARSE AS JSON
+      analysis = JSON.parse(cleanedText);
+    } catch {
+      // IF NOT VALID JSON, RETURN ERROR
+      res.status(500).json({
+        message: "Error parsing AI response.",
+        success: false,
+      });
+      return;
+    }
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Activity insights generated successfully!",
+      success: true,
+      data: analysis,
+    });
+    return;
+  } catch (error: any) {
+    // LOG ERROR
+    console.error("Error generating activity insights:", error);
+    // RETURNING ERROR RESPONSE
+    res.status(500).json({
+      message: "Error generating activity insights. Please try again later.",
+      success: false,
+    });
+    return;
+  }
+});
