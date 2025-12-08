@@ -18,6 +18,11 @@ import {
   aiPermissionRecommendation,
   aiAnalyzeWorkflowFailure,
   aiSuggestWorkflowImprovements,
+  aiRepositoryAnalysis,
+  aiCodeQualityScan,
+  aiSecurityScan,
+  aiGenerateReadme,
+  aiActivityInsights,
 } from "../controllers/ai.controller.js";
 import express from "express";
 import isAuthenticated from "../middleware/isAuthenticated.js";
@@ -64,5 +69,15 @@ router.post("/recommend-permission", aiPermissionRecommendation);
 router.post("/analyze-workflow-failure", aiAnalyzeWorkflowFailure);
 // AI SUGGEST WORKFLOW IMPROVEMENTS
 router.post("/suggest-workflow-improvements", aiSuggestWorkflowImprovements);
+// AI REPOSITORY COMPREHENSIVE ANALYSIS
+router.post("/repository-analysis", aiRepositoryAnalysis);
+// AI CODE QUALITY SCAN
+router.post("/code-quality-scan", aiCodeQualityScan);
+// AI SECURITY SCAN
+router.post("/security-scan", aiSecurityScan);
+// AI GENERATE README
+router.post("/generate-readme", aiGenerateReadme);
+// AI ACTIVITY INSIGHTS
+router.post("/activity-insights", aiActivityInsights);
 
 export default router;
