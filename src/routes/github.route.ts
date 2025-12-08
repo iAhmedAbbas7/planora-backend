@@ -94,6 +94,13 @@ import {
   deleteDeployment,
   listEnvironments,
   getEnvironment,
+  getDashboardStats,
+  getDashboardActivity,
+  getStarredRepositories,
+  starRepository,
+  unstarRepository,
+  checkIfStarred,
+  getPinnedRepositories,
 } from "../controllers/github.controller.js";
 import express from "express";
 import isAuthenticated from "../middleware/isAuthenticated.js";
@@ -110,6 +117,20 @@ router.get("/status", getGitHubStatus);
 router.get("/verify", verifyGitHubToken);
 // GET GITHUB USER PROFILE
 router.get("/profile", getGitHubProfile);
+// GET DASHBOARD STATS (AGGREGATED ACROSS ALL REPOS)
+router.get("/dashboard/stats", getDashboardStats);
+// GET DASHBOARD ACTIVITY (RECENT EVENTS)
+router.get("/dashboard/activity", getDashboardActivity);
+// GET STARRED REPOSITORIES
+router.get("/starred", getStarredRepositories);
+// STAR A REPOSITORY
+router.put("/starred/:owner/:repo", starRepository);
+// UNSTAR A REPOSITORY
+router.delete("/starred/:owner/:repo", unstarRepository);
+// CHECK IF REPOSITORY IS STARRED
+router.get("/starred/:owner/:repo", checkIfStarred);
+// GET PINNED REPOSITORIES (USES GRAPHQL)
+router.get("/pinned", getPinnedRepositories);
 // GET USER REPOSITORIES
 router.get("/repositories", getRepositories);
 // CREATE NEW REPOSITORY
