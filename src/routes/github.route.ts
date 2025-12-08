@@ -63,7 +63,6 @@ import {
   compareCommits,
   getCommitBranches,
   getCommitPullRequests,
-  // GITHUB ACTIONS
   getRepositoryWorkflows,
   getWorkflowDetails,
   getWorkflowRuns,
@@ -76,7 +75,6 @@ import {
   rerunFailedJobs,
   cancelWorkflowRun,
   deleteWorkflowRun,
-  // RELEASES & TAGS
   listReleases,
   getReleaseDetails,
   getLatestRelease,
@@ -88,6 +86,14 @@ import {
   createTag,
   deleteTag,
   generateReleaseNotes,
+  listDeployments,
+  getDeploymentDetails,
+  getDeploymentStatuses,
+  createDeployment,
+  createDeploymentStatus,
+  deleteDeployment,
+  listEnvironments,
+  getEnvironment,
 } from "../controllers/github.controller.js";
 import express from "express";
 import isAuthenticated from "../middleware/isAuthenticated.js";
@@ -372,6 +378,37 @@ router.post("/repositories/:owner/:repo/tags", createTag);
 router.get("/repositories/:owner/:repo/tags/:tag", getTagDetails);
 // DELETE TAG
 router.delete("/repositories/:owner/:repo/tags/:tag", deleteTag);
+// LIST ENVIRONMENTS
+router.get("/repositories/:owner/:repo/environments", listEnvironments);
+// GET ENVIRONMENT
+router.get(
+  "/repositories/:owner/:repo/environments/:environment_name",
+  getEnvironment
+);
+// LIST DEPLOYMENTS
+router.get("/repositories/:owner/:repo/deployments", listDeployments);
+// CREATE DEPLOYMENT
+router.post("/repositories/:owner/:repo/deployments", createDeployment);
+// GET DEPLOYMENT DETAILS
+router.get(
+  "/repositories/:owner/:repo/deployments/:deployment_id",
+  getDeploymentDetails
+);
+// DELETE DEPLOYMENT
+router.delete(
+  "/repositories/:owner/:repo/deployments/:deployment_id",
+  deleteDeployment
+);
+// GET DEPLOYMENT STATUSES
+router.get(
+  "/repositories/:owner/:repo/deployments/:deployment_id/statuses",
+  getDeploymentStatuses
+);
+// CREATE DEPLOYMENT STATUS
+router.post(
+  "/repositories/:owner/:repo/deployments/:deployment_id/statuses",
+  createDeploymentStatus
+);
 // GET REPOSITORY DETAILS (DYNAMIC ROUTE AFTER SPECIFIC ROUTES)
 router.get("/repositories/:owner/:repo", getRepositoryDetails);
 // UPDATE REPOSITORY SETTINGS
