@@ -23,6 +23,7 @@ import accountRoute from "./routes/account.route.js";
 import settingsRoute from "./routes/settings.route.js";
 import securityRoute from "./routes/security.route.js";
 import { initializeCronJobs } from "./jobs/cronJobs.js";
+import workspaceRoute from "./routes/workspace.route.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import notificationRoute from "./routes/notification.route.js";
 import helmetMiddleware from "./middleware/helmetMiddleware.js";
@@ -102,6 +103,8 @@ app.use("/api/v1/projects", projectRoute);
 app.use("/api/v1/security", securityRoute);
 // <== SETTINGS ROUTE ==>
 app.use("/api/v1/settings", settingsRoute);
+// <== WORKSPACE ROUTE ==>
+app.use("/api/v1/workspaces", workspaceRoute);
 // <== NOTIFICATION ROUTE ==>
 app.use("/api/v1/notifications", notificationRoute);
 // <== NOTIFICATION SETTINGS ROUTE ==>
