@@ -9,7 +9,13 @@ export type NotificationType =
   | "task_created"
   | "task_updated"
   | "task_deleted"
-  | "task_due_soon";
+  | "task_due_soon"
+  | "workspace_created"
+  | "workspace_updated"
+  | "workspace_deleted"
+  | "workspace_member_added"
+  | "workspace_member_removed"
+  | "workspace_invitation_received";
 
 // <== NOTIFICATION INTERFACE ==>
 export interface INotification {
@@ -53,6 +59,12 @@ const notificationSchema = new mongoose.Schema(
         "task_updated",
         "task_deleted",
         "task_due_soon",
+        "workspace_created",
+        "workspace_updated",
+        "workspace_deleted",
+        "workspace_member_added",
+        "workspace_member_removed",
+        "workspace_invitation_received",
       ],
       index: true,
     },
