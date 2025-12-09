@@ -114,6 +114,10 @@ import {
   addDiscussionComment,
   markDiscussionCommentAsAnswer,
   unmarkDiscussionCommentAsAnswer,
+  getExtendedProfile,
+  getContributionStats,
+  getProfileReadme,
+  getContributionActivity,
 } from "../controllers/github.controller.js";
 import express from "express";
 import isAuthenticated from "../middleware/isAuthenticated.js";
@@ -130,6 +134,14 @@ router.get("/status", getGitHubStatus);
 router.get("/verify", verifyGitHubToken);
 // GET GITHUB USER PROFILE
 router.get("/profile", getGitHubProfile);
+// GET EXTENDED PROFILE (GRAPHQL - FOR PROFILE PAGE)
+router.get("/profile/extended", getExtendedProfile);
+// GET PROFILE README
+router.get("/profile/readme", getProfileReadme);
+// GET CONTRIBUTION STATS
+router.get("/profile/contributions", getContributionStats);
+// GET CONTRIBUTION ACTIVITY
+router.get("/profile/activity", getContributionActivity);
 // GET DASHBOARD STATS (AGGREGATED ACROSS ALL REPOS)
 router.get("/dashboard/stats", getDashboardStats);
 // GET DASHBOARD ACTIVITY (RECENT EVENTS)
