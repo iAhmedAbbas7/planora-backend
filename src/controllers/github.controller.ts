@@ -15396,3 +15396,372 @@ export const getContributionActivity = expressAsyncHandler(async (req, res) => {
     return;
   }
 });
+
+/**
+ * UPDATE USER PROFILE
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== UPDATE USER PROFILE ==>
+export const updateProfile = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  }
+  // GET PROFILE DATA FROM REQUEST BODY
+  const { name, bio, company, location, blog, twitterUsername, hireable } =
+    req.body;
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  }
+  try {
+    // BUILD UPDATE OBJECT (ONLY INCLUDE DEFINED VALUES)
+    const updateData: {
+      name?: string;
+      bio?: string;
+      company?: string;
+      location?: string;
+      blog?: string;
+      twitter_username?: string;
+      hireable?: boolean;
+    } = {};
+    // ADD PROFILE NAME IF PROVIDED
+    if (name !== undefined) updateData.name = name;
+    // ADD PROFILE BIO IF PROVIDED
+    if (bio !== undefined) updateData.bio = bio;
+    // ADD PROFILE COMPANY IF PROVIDED
+    if (company !== undefined) updateData.company = company;
+    // ADD PROFILE LOCATION IF PROVIDED
+    if (location !== undefined) updateData.location = location;
+    // ADD PROFILE BLOG IF PROVIDED
+    if (blog !== undefined) updateData.blog = blog;
+    // ADD PROFILE TWITTER USERNAME IF PROVIDED
+    if (twitterUsername !== undefined)
+      updateData.twitter_username = twitterUsername;
+    // ADD PROFILE HIREABLE IF PROVIDED
+    if (hireable !== undefined) updateData.hireable = hireable;
+    // UPDATE USER PROFILE USING OCTOKIT
+    const { data: updatedUser } = await octokit.rest.users.updateAuthenticated(
+      updateData
+    );
+    // MAP RESPONSE
+    const profile = {
+      login: updatedUser.login,
+      name: updatedUser.name,
+      bio: updatedUser.bio,
+      company: updatedUser.company,
+      location: updatedUser.location,
+      blog: updatedUser.blog,
+      twitterUsername: updatedUser.twitter_username,
+      hireable: updatedUser.hireable,
+      avatarUrl: updatedUser.avatar_url,
+      email: updatedUser.email,
+    };
+    // RETURN SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Profile updated successfully!",
+      success: true,
+      data: profile,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURN ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURN FROM FUNCTION
+      return;
+    }
+    // VALIDATION ERROR
+    if (error.status === 422) {
+      res.status(422).json({
+        message:
+          error.response?.data?.message || "Invalid profile data provided.",
+        success: false,
+      });
+      // RETURN FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error updating profile. Please try again later.",
+      success: false,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * UPDATE USER STATUS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== UPDATE USER STATUS ==>
+export const updateUserStatus = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  }
+  // GET STATUS DATA FROM REQUEST BODY
+  const { emoji, message, limitedAvailability, expiresAt } = req.body;
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  }
+  try {
+    // BUILD GRAPHQL MUTATION
+    const mutation = `
+      mutation($emoji: String, $message: String, $limitedAvailability: Boolean, $expiresAt: DateTime) {
+        changeUserStatus(input: {
+          emoji: $emoji
+          message: $message
+          limitedAvailability: $limitedAvailability
+          expiresAt: $expiresAt
+        }) {
+          status {
+            emoji
+            message
+            indicatesLimitedAvailability
+            expiresAt
+            createdAt
+            updatedAt
+          }
+        }
+      }
+    `;
+    // EXECUTE GRAPHQL MUTATION
+    const response: any = await octokit.graphql(mutation, {
+      emoji: emoji || null,
+      message: message || null,
+      limitedAvailability: limitedAvailability || false,
+      expiresAt: expiresAt || null,
+    });
+    // MAP RESPONSE
+    const status = response.changeUserStatus.status;
+    // RETURN SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Status updated successfully!",
+      success: true,
+      data: {
+        emoji: status.emoji,
+        message: status.message,
+        busy: status.indicatesLimitedAvailability,
+        expiresAt: status.expiresAt,
+        createdAt: status.createdAt,
+        updatedAt: status.updatedAt,
+      },
+    });
+    // RETURN FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURN ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURN FROM FUNCTION
+      return;
+    }
+    // GRAPHQL ERRORS
+    if (error.errors) {
+      // LOG ERRORS
+      console.error("GraphQL errors:", error.errors);
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error updating status. Please try again later.",
+      success: false,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * CLEAR USER STATUS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== CLEAR USER STATUS ==>
+export const clearUserStatus = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  }
+  try {
+    // BUILD GRAPHQL MUTATION TO CLEAR STATUS
+    const mutation = `
+      mutation {
+        changeUserStatus(input: {
+          emoji: null
+          message: null
+          limitedAvailability: false
+        }) {
+          status {
+            emoji
+            message
+          }
+        }
+      }
+    `;
+    // EXECUTE GRAPHQL MUTATION
+    await octokit.graphql(mutation);
+    // RETURN SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Status cleared successfully!",
+      success: true,
+      data: null,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURN ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURN FROM FUNCTION
+      return;
+    }
+    // GRAPHQL ERRORS
+    if (error.errors) {
+      // LOG ERRORS
+      console.error("GraphQL errors:", error.errors);
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error clearing status. Please try again later.",
+      success: false,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * GET USER EMAILS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET USER EMAILS ==>
+export const getUserEmails = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  }
+  try {
+    // FETCH USER EMAILS
+    const { data: emails } =
+      await octokit.rest.users.listEmailsForAuthenticatedUser();
+    // MAP EMAILS
+    const mappedEmails = emails.map((email) => ({
+      email: email.email,
+      primary: email.primary,
+      verified: email.verified,
+      visibility: email.visibility,
+    }));
+    // RETURN SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Emails fetched successfully!",
+      success: true,
+      data: mappedEmails,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURN FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching emails. Please try again later.",
+      success: false,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  }
+});
