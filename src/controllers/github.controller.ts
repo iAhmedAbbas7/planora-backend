@@ -14525,3 +14525,874 @@ export const unmarkDiscussionCommentAsAnswer = expressAsyncHandler(
     }
   }
 );
+
+/**
+ * GET EXTENDED PROFILE WITH CONTRIBUTIONS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET EXTENDED PROFILE ==>
+export const getExtendedProfile = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  }
+  try {
+    // GRAPHQL QUERY FOR EXTENDED PROFILE
+    const query = `
+      query {
+        viewer {
+          id
+          login
+          name
+          email
+          bio
+          company
+          location
+          websiteUrl
+          twitterUsername
+          avatarUrl
+          url
+          createdAt
+          updatedAt
+          isHireable
+          pronouns
+          followers {
+            totalCount
+          }
+          following {
+            totalCount
+          }
+          repositories(first: 1, privacy: PUBLIC) {
+            totalCount
+          }
+          privateRepositories: repositories(first: 1, privacy: PRIVATE) {
+            totalCount
+          }
+          starredRepositories {
+            totalCount
+          }
+          watching {
+            totalCount
+          }
+          gists {
+            totalCount
+          }
+          publicGists: gists(first: 1, privacy: PUBLIC) {
+            totalCount
+          }
+          sponsoring {
+            totalCount
+          }
+          sponsors {
+            totalCount
+          }
+          status {
+            emoji
+            message
+            indicatesLimitedAvailability
+          }
+          socialAccounts(first: 10) {
+            nodes {
+              provider
+              url
+              displayName
+            }
+          }
+        }
+      }
+    `;
+    // EXECUTE GRAPHQL QUERY
+    const response: any = await octokit.graphql(query);
+    // MAP PROFILE DATA
+    const viewer = response.viewer;
+    // BUILD PROFILE DATA
+    const profile = {
+      id: viewer.id,
+      login: viewer.login,
+      name: viewer.name,
+      email: viewer.email,
+      bio: viewer.bio,
+      company: viewer.company,
+      location: viewer.location,
+      websiteUrl: viewer.websiteUrl,
+      twitterUsername: viewer.twitterUsername,
+      avatarUrl: viewer.avatarUrl,
+      profileUrl: viewer.url,
+      createdAt: viewer.createdAt,
+      updatedAt: viewer.updatedAt,
+      isHireable: viewer.isHireable,
+      pronouns: viewer.pronouns,
+      followers: viewer.followers.totalCount,
+      following: viewer.following.totalCount,
+      publicRepos: viewer.repositories.totalCount,
+      privateRepos: viewer.privateRepositories.totalCount,
+      totalRepos:
+        viewer.repositories.totalCount + viewer.privateRepositories.totalCount,
+      starredRepos: viewer.starredRepositories.totalCount,
+      watching: viewer.watching.totalCount,
+      gists: viewer.gists.totalCount,
+      publicGists: viewer.publicGists.totalCount,
+      sponsoring: viewer.sponsoring.totalCount,
+      sponsors: viewer.sponsors.totalCount,
+      status: viewer.status
+        ? {
+            emoji: viewer.status.emoji,
+            message: viewer.status.message,
+            busy: viewer.status.indicatesLimitedAvailability,
+          }
+        : null,
+      socialAccounts: viewer.socialAccounts.nodes.map((s: any) => ({
+        provider: s.provider,
+        url: s.url,
+        displayName: s.displayName,
+      })),
+    };
+    // RETURN SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Extended profile fetched successfully!",
+      success: true,
+      data: profile,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURN ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURN FROM FUNCTION
+      return;
+    }
+    // GRAPHQL ERRORS
+    if (error.errors) {
+      // LOG ERRORS
+      console.error("GraphQL errors:", error.errors);
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching extended profile. Please try again later.",
+      success: false,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * GET CONTRIBUTION STATS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET CONTRIBUTION STATS ==>
+export const getContributionStats = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    return;
+  }
+  // GET YEAR FROM QUERY (OPTIONAL)
+  const { year } = req.query;
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  }
+  try {
+    // SET FROM DATE
+    let fromDate: string;
+    // SET TO DATE
+    let toDate: string;
+    // IF YEAR IS PROVIDED
+    if (year) {
+      // SET FROM DATE TO START OF YEAR
+      fromDate = `${year}-01-01T00:00:00Z`;
+      // SET TO DATE TO END OF YEAR
+      toDate = `${year}-12-31T23:59:59Z`;
+    } else {
+      // SET TO DATE TO CURRENT DATE
+      const now = new Date();
+      // SET TO DATE TO CURRENT DATE
+      toDate = now.toISOString();
+      // SET FROM DATE TO ONE YEAR AGO
+      const oneYearAgo = new Date(now);
+      // SET ONE YEAR AGO
+      oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+      // SET FROM DATE TO ONE YEAR AGO
+      fromDate = oneYearAgo.toISOString();
+    }
+    // BUILD GRAPHQL QUERY FOR CONTRIBUTION STATS
+    const query = `
+      query($from: DateTime!, $to: DateTime!) {
+        viewer {
+          login
+          contributionsCollection(from: $from, to: $to) {
+            totalCommitContributions
+            totalIssueContributions
+            totalPullRequestContributions
+            totalPullRequestReviewContributions
+            totalRepositoriesWithContributedCommits
+            totalRepositoriesWithContributedIssues
+            totalRepositoriesWithContributedPullRequests
+            totalRepositoriesWithContributedPullRequestReviews
+            restrictedContributionsCount
+            contributionCalendar {
+              totalContributions
+              weeks {
+                contributionDays {
+                  contributionCount
+                  contributionLevel
+                  date
+                  weekday
+                }
+                firstDay
+              }
+              months {
+                name
+                year
+                firstDay
+                totalWeeks
+              }
+            }
+            commitContributionsByRepository(maxRepositories: 10) {
+              repository {
+                name
+                nameWithOwner
+                url
+                isPrivate
+                primaryLanguage {
+                  name
+                  color
+                }
+              }
+              contributions {
+                totalCount
+              }
+            }
+          }
+          contributionYears: contributionsCollection {
+            contributionYears
+          }
+        }
+      }
+    `;
+    // EXECUTE GRAPHQL QUERY
+    const response: any = await octokit.graphql(query, {
+      from: fromDate,
+      to: toDate,
+    });
+    // MAP CONTRIBUTION DATA
+    const contrib = response.viewer.contributionsCollection;
+    // MAP CALENDAR DATA
+    const calendar = contrib.contributionCalendar;
+    // GET ALL DAYS IN CALENDAR
+    const allDays = calendar.weeks.flatMap((w: any) => w.contributionDays);
+    // CALCULATE STREAKS
+    let currentStreak = 0;
+    // SET LONGEST STREAK
+    let longestStreak = 0;
+    // SET TEMP STREAK
+    let tempStreak = 0;
+    // SET CURRENT STREAK START
+    let currentStreakStart: string | null = null;
+    // SET CURRENT STREAK END
+    let currentStreakEnd: string | null = null;
+    // SET LONGEST STREAK START
+    let longestStreakStart: string | null = null;
+    // SET LONGEST STREAK END
+    let longestStreakEnd: string | null = null;
+    // CALCULATE STREAKS FROM MOST RECENT DATE
+    const sortedDays = [...allDays].sort(
+      (a: any, b: any) =>
+        new Date(b.date).getTime() - new Date(a.date).getTime()
+    );
+    // CURRENT STREAK (FROM TODAY BACKWARDS)
+    const today = new Date().toISOString().split("T")[0];
+    // SET FOUND TODAY
+    let foundToday = false;
+    // ITERATE DAYS FROM MOST RECENT TO OLDEST
+    for (const day of sortedDays) {
+      // IF DAY IS TODAY OR FOUND TODAY IS FALSE AND DAY HAS CONTRIBUTIONS
+      if (day.date === today || (!foundToday && day.contributionCount > 0)) {
+        // SET FOUND TODAY TO TRUE
+        foundToday = true;
+      }
+      // IF FOUND TODAY IS TRUE
+      if (foundToday) {
+        // IF DAY HAS CONTRIBUTIONS
+        if (day.contributionCount > 0) {
+          // INCREMENT CURRENT STREAK
+          currentStreak++;
+          // IF CURRENT STREAK END IS NOT SET, SET IT TO DAY DATE
+          if (!currentStreakEnd) currentStreakEnd = day.date;
+          // SET CURRENT STREAK START TO DAY DATE
+          currentStreakStart = day.date;
+        } else {
+          // BREAK OUT OF LOOP
+          break;
+        }
+      }
+    }
+    // LONGEST STREAK (ITERATE ALL DAYS IN ORDER)
+    const orderedDays = [...allDays].sort(
+      (a: any, b: any) =>
+        new Date(a.date).getTime() - new Date(b.date).getTime()
+    );
+    // SET TEMP STREAK START
+    let tempStreakStart: string | null = null;
+    // ITERATE DAYS FROM OLDEST TO MOST RECENT
+    for (const day of orderedDays) {
+      // IF DAY HAS CONTRIBUTIONS
+      if (day.contributionCount > 0) {
+        // IF TEMP STREAK IS 0, SET TEMP STREAK START TO DAY DATE
+        if (tempStreak === 0) tempStreakStart = day.date;
+        // INCREMENT TEMP STREAK
+        tempStreak++;
+        // IF TEMP STREAK IS LONGER THAN LONGEST STREAK
+        if (tempStreak > longestStreak) {
+          // SET LONGEST STREAK TO TEMP STREAK
+          longestStreak = tempStreak;
+          // SET LONGEST STREAK START TO TEMP STREAK START
+          longestStreakStart = tempStreakStart;
+          // SET LONGEST STREAK END TO DAY DATE
+          longestStreakEnd = day.date;
+        }
+      } else {
+        // SET TEMP STREAK TO 0
+        tempStreak = 0;
+        // SET TEMP STREAK START TO NULL
+        tempStreakStart = null;
+      }
+    }
+    // BUILD RESPONSE
+    const contributionStats = {
+      totalContributions: calendar.totalContributions,
+      commits: contrib.totalCommitContributions,
+      issues: contrib.totalIssueContributions,
+      pullRequests: contrib.totalPullRequestContributions,
+      pullRequestReviews: contrib.totalPullRequestReviewContributions,
+      repositoriesContributedTo: {
+        commits: contrib.totalRepositoriesWithContributedCommits,
+        issues: contrib.totalRepositoriesWithContributedIssues,
+        pullRequests: contrib.totalRepositoriesWithContributedPullRequests,
+        reviews: contrib.totalRepositoriesWithContributedPullRequestReviews,
+      },
+      privateContributions: contrib.restrictedContributionsCount,
+      streaks: {
+        current: {
+          count: currentStreak,
+          start: currentStreakStart,
+          end: currentStreakEnd,
+        },
+        longest: {
+          count: longestStreak,
+          start: longestStreakStart,
+          end: longestStreakEnd,
+        },
+      },
+      calendar: {
+        totalContributions: calendar.totalContributions,
+        weeks: calendar.weeks.map((w: any) => ({
+          firstDay: w.firstDay,
+          days: w.contributionDays.map((d: any) => ({
+            count: d.contributionCount,
+            level: d.contributionLevel,
+            date: d.date,
+            weekday: d.weekday,
+          })),
+        })),
+        months: calendar.months.map((m: any) => ({
+          name: m.name,
+          year: m.year,
+          firstDay: m.firstDay,
+          totalWeeks: m.totalWeeks,
+        })),
+      },
+      topRepositories: contrib.commitContributionsByRepository.map(
+        (r: any) => ({
+          name: r.repository.name,
+          fullName: r.repository.nameWithOwner,
+          url: r.repository.url,
+          isPrivate: r.repository.isPrivate,
+          language: r.repository.primaryLanguage
+            ? {
+                name: r.repository.primaryLanguage.name,
+                color: r.repository.primaryLanguage.color,
+              }
+            : null,
+          commits: r.contributions.totalCount,
+        })
+      ),
+      availableYears: response.viewer.contributionYears.contributionYears,
+      dateRange: {
+        from: fromDate,
+        to: toDate,
+      },
+    };
+    // RETURN SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Contribution stats fetched successfully!",
+      success: true,
+      data: contributionStats,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURN ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURN FROM FUNCTION
+      return;
+    }
+    // GRAPHQL ERRORS
+    if (error.errors) {
+      // LOG ERRORS
+      console.error("GraphQL errors:", error.errors);
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching contribution stats. Please try again later.",
+      success: false,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * GET PROFILE README
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET PROFILE README ==>
+export const getProfileReadme = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  }
+  try {
+    // GET AUTHENTICATED USER'S LOGIN
+    const { data: user } = await octokit.rest.users.getAuthenticated();
+    // GET USERNAME
+    const username = user.login;
+    // TRY TO GET README FROM USERNAME/USERNAME REPO
+    try {
+      // GET README FROM USERNAME/USERNAME REPO
+      const { data: readme } = await octokit.rest.repos.getReadme({
+        owner: username,
+        repo: username,
+      });
+      // DECODE CONTENT
+      const content = Buffer.from(readme.content, "base64").toString("utf-8");
+      // RETURN SUCCESS RESPONSE
+      res.status(200).json({
+        message: "Profile README fetched successfully!",
+        success: true,
+        data: {
+          content,
+          htmlUrl: readme.html_url,
+          path: readme.path,
+          sha: readme.sha,
+          size: readme.size,
+        },
+      });
+      // RETURN FROM FUNCTION
+      return;
+    } catch (readmeError: any) {
+      // README NOT FOUND
+      if (readmeError.status === 404) {
+        // RETURN SUCCESS RESPONSE
+        res.status(200).json({
+          message: "No profile README found.",
+          success: true,
+          data: null,
+        });
+        // RETURN FROM FUNCTION
+        return;
+      }
+      // THROW ERROR
+      throw readmeError;
+    }
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURN ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURN FROM FUNCTION
+      return;
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching profile README. Please try again later.",
+      success: false,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * GET CONTRIBUTION ACTIVITY
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET CONTRIBUTION ACTIVITY ==>
+export const getContributionActivity = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  }
+  // GET QUERY PARAMS
+  const { year, month } = req.query;
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  }
+  try {
+    // SET FROM DATE
+    let fromDate: string;
+    // SET TO DATE
+    let toDate: string;
+    // IF YEAR AND MONTH ARE PROVIDED
+    if (year && month) {
+      // SET FROM DATE TO START OF MONTH
+      const y = parseInt(year as string);
+      // SET MONTH
+      const m = parseInt(month as string);
+      // SET FROM DATE TO START OF MONTH
+      fromDate = new Date(y, m - 1, 1).toISOString();
+      // SET TO DATE TO END OF MONTH
+      toDate = new Date(y, m, 0, 23, 59, 59).toISOString();
+    } else if (year) {
+      // SET FROM DATE TO START OF YEAR
+      fromDate = `${year}-01-01T00:00:00Z`;
+      // SET TO DATE TO END OF YEAR
+      toDate = `${year}-12-31T23:59:59Z`;
+    } else {
+      // SET FROM DATE TO START OF CURRENT MONTH
+      const now = new Date();
+      // SET FROM DATE TO START OF CURRENT MONTH
+      fromDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+      // SET TO DATE TO CURRENT DATE
+      toDate = now.toISOString();
+    }
+    // BUILD GRAPHQL QUERY FOR CONTRIBUTION ACTIVITY
+    const query = `
+      query($from: DateTime!, $to: DateTime!) {
+        viewer {
+          login
+          contributionsCollection(from: $from, to: $to) {
+            commitContributionsByRepository(maxRepositories: 20) {
+              repository {
+                name
+                nameWithOwner
+                url
+                isPrivate
+                owner {
+                  login
+                  avatarUrl
+                }
+              }
+              contributions {
+                totalCount
+              }
+            }
+            issueContributionsByRepository(maxRepositories: 10) {
+              repository {
+                name
+                nameWithOwner
+                url
+                isPrivate
+              }
+              contributions {
+                totalCount
+              }
+            }
+            pullRequestContributionsByRepository(maxRepositories: 10) {
+              repository {
+                name
+                nameWithOwner
+                url
+                isPrivate
+              }
+              contributions {
+                totalCount
+              }
+            }
+            pullRequestReviewContributionsByRepository(maxRepositories: 10) {
+              repository {
+                name
+                nameWithOwner
+                url
+                isPrivate
+              }
+              contributions {
+                totalCount
+              }
+            }
+            repositoryContributions(first: 10) {
+              nodes {
+                repository {
+                  name
+                  nameWithOwner
+                  url
+                  isPrivate
+                  createdAt
+                  primaryLanguage {
+                    name
+                    color
+                  }
+                }
+                occurredAt
+              }
+            }
+            firstIssueContribution {
+              ... on CreatedIssueContribution {
+                issue {
+                  title
+                  number
+                  url
+                  repository {
+                    nameWithOwner
+                  }
+                }
+                occurredAt
+              }
+            }
+            firstPullRequestContribution {
+              ... on CreatedPullRequestContribution {
+                pullRequest {
+                  title
+                  number
+                  url
+                  repository {
+                    nameWithOwner
+                  }
+                }
+                occurredAt
+              }
+            }
+          }
+        }
+      }
+    `;
+    // EXECUTE GRAPHQL QUERY
+    const response: any = await octokit.graphql(query, {
+      from: fromDate,
+      to: toDate,
+    });
+    // MAP ACTIVITY DATA
+    const contrib = response.viewer.contributionsCollection;
+    // BUILD ACTIVITY DATA
+    const activity = {
+      commits: {
+        total: contrib.commitContributionsByRepository.reduce(
+          (acc: number, r: any) => acc + r.contributions.totalCount,
+          0
+        ),
+        repositories: contrib.commitContributionsByRepository.map((r: any) => ({
+          name: r.repository.name,
+          fullName: r.repository.nameWithOwner,
+          url: r.repository.url,
+          isPrivate: r.repository.isPrivate,
+          owner: {
+            login: r.repository.owner.login,
+            avatarUrl: r.repository.owner.avatarUrl,
+          },
+          count: r.contributions.totalCount,
+        })),
+      },
+      issues: {
+        total: contrib.issueContributionsByRepository.reduce(
+          (acc: number, r: any) => acc + r.contributions.totalCount,
+          0
+        ),
+        repositories: contrib.issueContributionsByRepository.map((r: any) => ({
+          name: r.repository.name,
+          fullName: r.repository.nameWithOwner,
+          url: r.repository.url,
+          isPrivate: r.repository.isPrivate,
+          count: r.contributions.totalCount,
+        })),
+      },
+      pullRequests: {
+        total: contrib.pullRequestContributionsByRepository.reduce(
+          (acc: number, r: any) => acc + r.contributions.totalCount,
+          0
+        ),
+        repositories: contrib.pullRequestContributionsByRepository.map(
+          (r: any) => ({
+            name: r.repository.name,
+            fullName: r.repository.nameWithOwner,
+            url: r.repository.url,
+            isPrivate: r.repository.isPrivate,
+            count: r.contributions.totalCount,
+          })
+        ),
+      },
+      reviews: {
+        total: contrib.pullRequestReviewContributionsByRepository.reduce(
+          (acc: number, r: any) => acc + r.contributions.totalCount,
+          0
+        ),
+        repositories: contrib.pullRequestReviewContributionsByRepository.map(
+          (r: any) => ({
+            name: r.repository.name,
+            fullName: r.repository.nameWithOwner,
+            url: r.repository.url,
+            isPrivate: r.repository.isPrivate,
+            count: r.contributions.totalCount,
+          })
+        ),
+      },
+      repositoriesCreated: contrib.repositoryContributions.nodes.map(
+        (r: any) => ({
+          name: r.repository.name,
+          fullName: r.repository.nameWithOwner,
+          url: r.repository.url,
+          isPrivate: r.repository.isPrivate,
+          createdAt: r.occurredAt,
+          language: r.repository.primaryLanguage
+            ? {
+                name: r.repository.primaryLanguage.name,
+                color: r.repository.primaryLanguage.color,
+              }
+            : null,
+        })
+      ),
+      milestones: {
+        firstIssue: contrib.firstIssueContribution
+          ? {
+              title: contrib.firstIssueContribution.issue.title,
+              number: contrib.firstIssueContribution.issue.number,
+              url: contrib.firstIssueContribution.issue.url,
+              repository:
+                contrib.firstIssueContribution.issue.repository.nameWithOwner,
+              occurredAt: contrib.firstIssueContribution.occurredAt,
+            }
+          : null,
+        firstPullRequest: contrib.firstPullRequestContribution
+          ? {
+              title: contrib.firstPullRequestContribution.pullRequest.title,
+              number: contrib.firstPullRequestContribution.pullRequest.number,
+              url: contrib.firstPullRequestContribution.pullRequest.url,
+              repository:
+                contrib.firstPullRequestContribution.pullRequest.repository
+                  .nameWithOwner,
+              occurredAt: contrib.firstPullRequestContribution.occurredAt,
+            }
+          : null,
+      },
+      dateRange: {
+        from: fromDate,
+        to: toDate,
+      },
+    };
+    // RETURN SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Contribution activity fetched successfully!",
+      success: true,
+      data: activity,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      // RETURN ERROR RESPONSE
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURN FROM FUNCTION
+      return;
+    }
+    // GRAPHQL ERRORS
+    if (error.errors) {
+      // LOG ERRORS
+      console.error("GraphQL errors:", error.errors);
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching contribution activity. Please try again later.",
+      success: false,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  }
+});
