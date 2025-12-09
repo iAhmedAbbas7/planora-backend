@@ -118,6 +118,10 @@ import {
   getContributionStats,
   getProfileReadme,
   getContributionActivity,
+  updateProfile,
+  updateUserStatus,
+  clearUserStatus,
+  getUserEmails,
 } from "../controllers/github.controller.js";
 import express from "express";
 import isAuthenticated from "../middleware/isAuthenticated.js";
@@ -142,6 +146,14 @@ router.get("/profile/readme", getProfileReadme);
 router.get("/profile/contributions", getContributionStats);
 // GET CONTRIBUTION ACTIVITY
 router.get("/profile/activity", getContributionActivity);
+// UPDATE USER PROFILE
+router.patch("/profile", updateProfile);
+// GET USER EMAILS
+router.get("/profile/emails", getUserEmails);
+// UPDATE USER STATUS
+router.put("/profile/status", updateUserStatus);
+// CLEAR USER STATUS
+router.delete("/profile/status", clearUserStatus);
 // GET DASHBOARD STATS (AGGREGATED ACROSS ALL REPOS)
 router.get("/dashboard/stats", getDashboardStats);
 // GET DASHBOARD ACTIVITY (RECENT EVENTS)
