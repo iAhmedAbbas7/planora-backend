@@ -12792,14 +12792,13 @@ export const getPinnedRepositories = expressAsyncHandler(async (req, res) => {
   }
 });
 
-// <=== GITHUB NOTIFICATIONS ===>
-
 /**
  * GET GITHUB NOTIFICATIONS
  * @param req - Request Object
  * @param res - Response Object
  * @returns Response Object
  */
+// <== GET GITHUB NOTIFICATIONS FUNCTION ==>
 export const getGitHubNotifications = expressAsyncHandler(async (req, res) => {
   // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
   const userId = (req as AuthenticatedRequest).id;
@@ -12914,6 +12913,7 @@ export const getGitHubNotifications = expressAsyncHandler(async (req, res) => {
  * @param res - Response Object
  * @returns Response Object
  */
+// <== MARK GITHUB NOTIFICATION AS READ FUNCTION ==>
 export const markGitHubNotificationAsRead = expressAsyncHandler(
   async (req, res) => {
     // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
@@ -12990,6 +12990,7 @@ export const markGitHubNotificationAsRead = expressAsyncHandler(
  * @param res - Response Object
  * @returns Response Object
  */
+// <== MARK ALL GITHUB NOTIFICATIONS AS READ FUNCTION ==>
 export const markAllGitHubNotificationsAsRead = expressAsyncHandler(
   async (req, res) => {
     // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
@@ -13049,6 +13050,7 @@ export const markAllGitHubNotificationsAsRead = expressAsyncHandler(
  * @param res - Response Object
  * @returns Response Object
  */
+// <== MARK REPOSITORY GITHUB NOTIFICATIONS AS READ FUNCTION ==>
 export const markRepoGitHubNotificationsAsRead = expressAsyncHandler(
   async (req, res) => {
     // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
@@ -13128,6 +13130,7 @@ export const markRepoGitHubNotificationsAsRead = expressAsyncHandler(
  * @param res - Response Object
  * @returns Response Object
  */
+// <== GET GITHUB NOTIFICATION THREAD FUNCTION ==>
 export const getGitHubNotificationThread = expressAsyncHandler(
   async (req, res) => {
     // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
@@ -13232,6 +13235,7 @@ export const getGitHubNotificationThread = expressAsyncHandler(
  * @param res - Response Object
  * @returns Response Object
  */
+// <== UNSUBSCRIBE GITHUB NOTIFICATION FUNCTION ==>
 export const unsubscribeGitHubNotification = expressAsyncHandler(
   async (req, res) => {
     // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
@@ -13298,6 +13302,1225 @@ export const unsubscribeGitHubNotification = expressAsyncHandler(
           "Error unsubscribing from notification. Please try again later.",
         success: false,
       });
+      return;
+    }
+  }
+);
+
+/**
+ * GET REPOSITORY DISCUSSIONS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET REPOSITORY DISCUSSIONS FUNCTION ==>
+export const getRepositoryDiscussions = expressAsyncHandler(
+  async (req, res) => {
+    // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+    const userId = (req as AuthenticatedRequest).id;
+    // IF USER ID NOT FOUND, RETURN ERROR
+    if (!userId) {
+      res.status(401).json({
+        message: "Unauthorized!",
+        success: false,
+      });
+      return;
+    }
+    // GET OWNER AND REPO FROM PARAMS
+    const { owner, repo } = req.params;
+    // GET QUERY PARAMETERS
+    const {
+      first = "10",
+      after,
+      categoryId,
+      orderBy = "UPDATED_AT",
+      answered,
+    } = req.query;
+    // GET OCTOKIT INSTANCE
+    const { octokit, error } = await getOctokitForUser(userId);
+    // IF ERROR, RETURN ERROR RESPONSE
+    if (error || !octokit) {
+      res.status(error?.status || 500).json({
+        message: error?.message || "Error connecting to GitHub.",
+        success: false,
+      });
+      return;
+    }
+    try {
+      // BUILD FILTER QUERY
+      let filterBy = "";
+      // CHECK IF CATEGORY ID IS PROVIDED
+      if (categoryId) {
+        // ADD CATEGORY ID TO FILTER
+        filterBy = `categoryId: "${categoryId}"`;
+      }
+      // CHECK IF ANSWERED IS TRUE
+      if (answered === "true") {
+        // ADD ANSWERED TO FILTER
+        filterBy += filterBy ? ", answered: true" : "answered: true";
+      } else if (answered === "false") {
+        // ADD ANSWERED TO FILTER
+        filterBy += filterBy ? ", answered: false" : "answered: false";
+      }
+      // BUILD GRAPHQL QUERY
+      const query = `
+      query($owner: String!, $repo: String!, $first: Int!, $after: String, $orderBy: DiscussionOrderField!) {
+        repository(owner: $owner, name: $repo) {
+          discussions(first: $first, after: $after, orderBy: {field: $orderBy, direction: DESC}${
+            filterBy ? `, filterBy: {${filterBy}}` : ""
+          }) {
+            totalCount
+            pageInfo {
+              hasNextPage
+              hasPreviousPage
+              startCursor
+              endCursor
+            }
+            nodes {
+              id
+              number
+              title
+              body
+              bodyHTML
+              createdAt
+              updatedAt
+              url
+              locked
+              activeLockReason
+              answerChosenAt
+              answerChosenBy {
+                login
+                avatarUrl
+              }
+              author {
+                login
+                avatarUrl
+                ... on User {
+                  id
+                }
+              }
+              category {
+                id
+                name
+                emoji
+                emojiHTML
+                description
+                isAnswerable
+                slug
+              }
+              answer {
+                id
+                body
+                createdAt
+                author {
+                  login
+                  avatarUrl
+                }
+              }
+              comments(first: 1) {
+                totalCount
+              }
+              reactions {
+                totalCount
+              }
+              upvoteCount
+            }
+          }
+          discussionCategories(first: 20) {
+            nodes {
+              id
+              name
+              emoji
+              emojiHTML
+              description
+              isAnswerable
+              slug
+            }
+          }
+        }
+      }
+    `;
+      // EXECUTE GRAPHQL QUERY
+      const response: any = await octokit.graphql(query, {
+        owner,
+        repo,
+        first: parseInt(first as string),
+        after: after as string | undefined,
+        orderBy: orderBy as string,
+      });
+      // MAP DISCUSSIONS TO CLEANER FORMAT
+      const discussions = response.repository.discussions.nodes.map(
+        (d: any) => ({
+          id: d.id,
+          number: d.number,
+          title: d.title,
+          body: d.body,
+          bodyHTML: d.bodyHTML,
+          createdAt: d.createdAt,
+          updatedAt: d.updatedAt,
+          url: d.url,
+          locked: d.locked,
+          activeLockReason: d.activeLockReason,
+          answerChosenAt: d.answerChosenAt,
+          answerChosenBy: d.answerChosenBy
+            ? {
+                login: d.answerChosenBy.login,
+                avatarUrl: d.answerChosenBy.avatarUrl,
+              }
+            : null,
+          author: d.author
+            ? {
+                login: d.author.login,
+                avatarUrl: d.author.avatarUrl,
+              }
+            : null,
+          category: d.category
+            ? {
+                id: d.category.id,
+                name: d.category.name,
+                emoji: d.category.emoji,
+                emojiHTML: d.category.emojiHTML,
+                description: d.category.description,
+                isAnswerable: d.category.isAnswerable,
+                slug: d.category.slug,
+              }
+            : null,
+          answer: d.answer
+            ? {
+                id: d.answer.id,
+                body: d.answer.body,
+                createdAt: d.answer.createdAt,
+                author: d.answer.author
+                  ? {
+                      login: d.answer.author.login,
+                      avatarUrl: d.answer.author.avatarUrl,
+                    }
+                  : null,
+              }
+            : null,
+          commentsCount: d.comments.totalCount,
+          reactionsCount: d.reactions.totalCount,
+          upvoteCount: d.upvoteCount,
+        })
+      );
+      // MAP CATEGORIES
+      const categories = response.repository.discussionCategories.nodes.map(
+        (c: any) => ({
+          id: c.id,
+          name: c.name,
+          emoji: c.emoji,
+          emojiHTML: c.emojiHTML,
+          description: c.description,
+          isAnswerable: c.isAnswerable,
+          slug: c.slug,
+        })
+      );
+      // RETURN SUCCESS RESPONSE
+      res.status(200).json({
+        message: "Repository discussions fetched successfully!",
+        success: true,
+        data: {
+          discussions,
+          categories,
+          totalCount: response.repository.discussions.totalCount,
+          pageInfo: response.repository.discussions.pageInfo,
+        },
+      });
+      return;
+    } catch (error: any) {
+      // TOKEN IS INVALID OR EXPIRED
+      if (error.status === 401) {
+        res.status(401).json({
+          message: "GitHub token has expired. Please reconnect your account.",
+          success: false,
+        });
+        return;
+      }
+      // GRAPHQL ERRORS
+      if (error.errors) {
+        console.error("GraphQL errors:", error.errors);
+        // CHECK IF DISCUSSIONS ARE DISABLED
+        if (
+          error.errors.some(
+            (e: any) =>
+              e.message?.includes("discussions") || e.type === "NOT_FOUND"
+          )
+        ) {
+          // RETURN ERROR RESPONSE
+          res.status(404).json({
+            message: "Discussions are not enabled for this repository.",
+            success: false,
+          });
+          return;
+        }
+      }
+      // OTHER ERROR
+      res.status(500).json({
+        message: "Error fetching discussions. Please try again later.",
+        success: false,
+      });
+      // RETURN FROM FUNCTION
+      return;
+    }
+  }
+);
+
+/**
+ * GET DISCUSSION DETAILS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET DISCUSSION DETAILS FUNCTION ==>
+export const getDiscussionDetails = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    return;
+  }
+  // GET OWNER, REPO, AND DISCUSSION NUMBER FROM PARAMS
+  const { owner, repo, discussion_number } = req.params;
+  // GET QUERY PARAMETERS
+  const { commentsFirst = "20", commentsAfter } = req.query;
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    return;
+  }
+  try {
+    // GRAPHQL QUERY FOR DISCUSSION DETAILS
+    const query = `
+      query($owner: String!, $repo: String!, $number: Int!, $commentsFirst: Int!, $commentsAfter: String) {
+        repository(owner: $owner, name: $repo) {
+          discussion(number: $number) {
+            id
+            number
+            title
+            body
+            bodyHTML
+            createdAt
+            updatedAt
+            url
+            locked
+            activeLockReason
+            answerChosenAt
+            answerChosenBy {
+              login
+              avatarUrl
+            }
+            author {
+              login
+              avatarUrl
+              ... on User {
+                id
+              }
+            }
+            category {
+              id
+              name
+              emoji
+              emojiHTML
+              description
+              isAnswerable
+              slug
+            }
+            answer {
+              id
+              body
+              bodyHTML
+              createdAt
+              updatedAt
+              isAnswer
+              author {
+                login
+                avatarUrl
+              }
+              reactions {
+                totalCount
+              }
+              replies(first: 10) {
+                totalCount
+                nodes {
+                  id
+                  body
+                  bodyHTML
+                  createdAt
+                  author {
+                    login
+                    avatarUrl
+                  }
+                  reactions {
+                    totalCount
+                  }
+                }
+              }
+            }
+            comments(first: $commentsFirst, after: $commentsAfter) {
+              totalCount
+              pageInfo {
+                hasNextPage
+                hasPreviousPage
+                startCursor
+                endCursor
+              }
+              nodes {
+                id
+                body
+                bodyHTML
+                createdAt
+                updatedAt
+                isAnswer
+                author {
+                  login
+                  avatarUrl
+                }
+                reactions {
+                  totalCount
+                }
+                replies(first: 10) {
+                  totalCount
+                  nodes {
+                    id
+                    body
+                    bodyHTML
+                    createdAt
+                    author {
+                      login
+                      avatarUrl
+                    }
+                    reactions {
+                      totalCount
+                    }
+                  }
+                }
+              }
+            }
+            reactions {
+              totalCount
+            }
+            upvoteCount
+          }
+        }
+      }
+    `;
+    // EXECUTE GRAPHQL QUERY
+    const response: any = await octokit.graphql(query, {
+      owner,
+      repo,
+      number: parseInt(discussion_number ?? "0"),
+      commentsFirst: parseInt(commentsFirst as string),
+      commentsAfter: commentsAfter as string | undefined,
+    });
+    // GET DISCUSSION
+    const d = response.repository.discussion;
+    // IF NO DISCUSSION, RETURN ERROR
+    if (!d) {
+      // RETURN ERROR RESPONSE
+      res.status(404).json({
+        message: "Discussion not found.",
+        success: false,
+      });
+      // RETURN FROM FUNCTION
+      return;
+    }
+    // MAP DISCUSSION TO CLEANER FORMAT
+    const discussion = {
+      id: d.id,
+      number: d.number,
+      title: d.title,
+      body: d.body,
+      bodyHTML: d.bodyHTML,
+      createdAt: d.createdAt,
+      updatedAt: d.updatedAt,
+      url: d.url,
+      locked: d.locked,
+      activeLockReason: d.activeLockReason,
+      answerChosenAt: d.answerChosenAt,
+      answerChosenBy: d.answerChosenBy
+        ? {
+            login: d.answerChosenBy.login,
+            avatarUrl: d.answerChosenBy.avatarUrl,
+          }
+        : null,
+      author: d.author
+        ? {
+            login: d.author.login,
+            avatarUrl: d.author.avatarUrl,
+          }
+        : null,
+      category: d.category
+        ? {
+            id: d.category.id,
+            name: d.category.name,
+            emoji: d.category.emoji,
+            emojiHTML: d.category.emojiHTML,
+            description: d.category.description,
+            isAnswerable: d.category.isAnswerable,
+            slug: d.category.slug,
+          }
+        : null,
+      answer: d.answer
+        ? {
+            id: d.answer.id,
+            body: d.answer.body,
+            bodyHTML: d.answer.bodyHTML,
+            createdAt: d.answer.createdAt,
+            updatedAt: d.answer.updatedAt,
+            isAnswer: d.answer.isAnswer,
+            author: d.answer.author
+              ? {
+                  login: d.answer.author.login,
+                  avatarUrl: d.answer.author.avatarUrl,
+                }
+              : null,
+            reactionsCount: d.answer.reactions.totalCount,
+            repliesCount: d.answer.replies.totalCount,
+            replies: d.answer.replies.nodes.map((r: any) => ({
+              id: r.id,
+              body: r.body,
+              bodyHTML: r.bodyHTML,
+              createdAt: r.createdAt,
+              author: r.author
+                ? {
+                    login: r.author.login,
+                    avatarUrl: r.author.avatarUrl,
+                  }
+                : null,
+              reactionsCount: r.reactions.totalCount,
+            })),
+          }
+        : null,
+      comments: d.comments.nodes.map((c: any) => ({
+        id: c.id,
+        body: c.body,
+        bodyHTML: c.bodyHTML,
+        createdAt: c.createdAt,
+        updatedAt: c.updatedAt,
+        isAnswer: c.isAnswer,
+        author: c.author
+          ? {
+              login: c.author.login,
+              avatarUrl: c.author.avatarUrl,
+            }
+          : null,
+        reactionsCount: c.reactions.totalCount,
+        repliesCount: c.replies.totalCount,
+        replies: c.replies.nodes.map((r: any) => ({
+          id: r.id,
+          body: r.body,
+          bodyHTML: r.bodyHTML,
+          createdAt: r.createdAt,
+          author: r.author
+            ? {
+                login: r.author.login,
+                avatarUrl: r.author.avatarUrl,
+              }
+            : null,
+          reactionsCount: r.reactions.totalCount,
+        })),
+      })),
+      commentsCount: d.comments.totalCount,
+      commentsPageInfo: d.comments.pageInfo,
+      reactionsCount: d.reactions.totalCount,
+      upvoteCount: d.upvoteCount,
+    };
+    // RETURN SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Discussion details fetched successfully!",
+      success: true,
+      data: discussion,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURN FROM FUNCTION
+      return;
+    }
+    // GRAPHQL ERRORS
+    if (error.errors) {
+      console.error("GraphQL errors:", error.errors);
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching discussion details. Please try again later.",
+      success: false,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * GET DISCUSSION CATEGORIES
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET DISCUSSION CATEGORIES FUNCTION ==>
+export const getDiscussionCategories = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  }
+  // GET OWNER AND REPO FROM PARAMS
+  const { owner, repo } = req.params;
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  }
+  try {
+    // GRAPHQL QUERY FOR DISCUSSION CATEGORIES
+    const query = `
+      query($owner: String!, $repo: String!) {
+        repository(owner: $owner, name: $repo) {
+          discussionCategories(first: 50) {
+            nodes {
+              id
+              name
+              emoji
+              emojiHTML
+              description
+              isAnswerable
+              slug
+            }
+          }
+        }
+      }
+    `;
+    // EXECUTE GRAPHQL QUERY
+    const response: any = await octokit.graphql(query, {
+      owner,
+      repo,
+    });
+    // MAP CATEGORIES
+    const categories = response.repository.discussionCategories.nodes.map(
+      (c: any) => ({
+        id: c.id,
+        name: c.name,
+        emoji: c.emoji,
+        emojiHTML: c.emojiHTML,
+        description: c.description,
+        isAnswerable: c.isAnswerable,
+        slug: c.slug,
+      })
+    );
+    // RETURN SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Discussion categories fetched successfully!",
+      success: true,
+      data: {
+        categories,
+        count: categories.length,
+      },
+    });
+    // RETURN FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURN FROM FUNCTION
+      return;
+    }
+    // GRAPHQL ERRORS
+    if (error.errors) {
+      console.error("GraphQL errors:", error.errors);
+      // CHECK IF DISCUSSIONS ARE DISABLED
+      if (
+        error.errors.some(
+          (e: any) =>
+            e.message?.includes("discussions") || e.type === "NOT_FOUND"
+        )
+      ) {
+        res.status(404).json({
+          message: "Discussions are not enabled for this repository.",
+          success: false,
+        });
+        // RETURN FROM FUNCTION
+        return;
+      }
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error fetching discussion categories. Please try again later.",
+      success: false,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * CREATE DISCUSSION
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== CREATE DISCUSSION FUNCTION ==>
+export const createDiscussion = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  }
+  // GET OWNER AND REPO FROM PARAMS
+  const { owner, repo } = req.params;
+  // GET BODY
+  const { title, body, categoryId } = req.body;
+  // VALIDATE REQUIRED FIELDS
+  if (!title || !categoryId) {
+    res.status(400).json({
+      message: "Title and category are required!",
+      success: false,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  }
+  try {
+    // FIRST, GET REPOSITORY ID
+    const repoQuery = `
+      query($owner: String!, $repo: String!) {
+        repository(owner: $owner, name: $repo) {
+          id
+        }
+      }
+    `;
+    // EXECUTE GRAPHQL QUERY
+    const repoResponse: any = await octokit.graphql(repoQuery, {
+      owner,
+      repo,
+    });
+    const repositoryId = repoResponse.repository.id;
+    // GRAPHQL MUTATION TO CREATE DISCUSSION
+    const mutation = `
+      mutation($repositoryId: ID!, $categoryId: ID!, $title: String!, $body: String!) {
+        createDiscussion(input: {repositoryId: $repositoryId, categoryId: $categoryId, title: $title, body: $body}) {
+          discussion {
+            id
+            number
+            title
+            body
+            createdAt
+            url
+            author {
+              login
+              avatarUrl
+            }
+            category {
+              id
+              name
+              emoji
+            }
+          }
+        }
+      }
+    `;
+    // EXECUTE GRAPHQL MUTATION
+    const response: any = await octokit.graphql(mutation, {
+      repositoryId,
+      categoryId,
+      title,
+      body: body || "",
+    });
+    // GET DISCUSSION
+    const d = response.createDiscussion.discussion;
+    // MAP DISCUSSION TO CLEANER FORMAT
+    const discussion = {
+      id: d.id,
+      number: d.number,
+      title: d.title,
+      body: d.body,
+      createdAt: d.createdAt,
+      url: d.url,
+      author: d.author
+        ? {
+            login: d.author.login,
+            avatarUrl: d.author.avatarUrl,
+          }
+        : null,
+      category: d.category
+        ? {
+            id: d.category.id,
+            name: d.category.name,
+            emoji: d.category.emoji,
+          }
+        : null,
+    };
+    // RETURN SUCCESS RESPONSE
+    res.status(201).json({
+      message: "Discussion created successfully!",
+      success: true,
+      data: discussion,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURN FROM FUNCTION
+      return;
+    }
+    // GRAPHQL ERRORS
+    if (error.errors) {
+      // LOG ERRORS
+      console.error("GraphQL errors:", error.errors);
+      // CHECK FOR SPECIFIC ERROR MESSAGES
+      const errorMessage = error.errors[0]?.message || "";
+      // CHECK IF ERROR MESSAGE INCLUDES CATEGORY
+      if (errorMessage.includes("category")) {
+        // RETURN ERROR RESPONSE
+        res.status(400).json({
+          message: "Invalid discussion category.",
+          success: false,
+        });
+        // RETURN FROM FUNCTION
+        return;
+      }
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error creating discussion. Please try again later.",
+      success: false,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * ADD DISCUSSION COMMENT
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== ADD DISCUSSION COMMENT FUNCTION ==>
+export const addDiscussionComment = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  }
+  // GET OWNER, REPO, AND DISCUSSION NUMBER FROM PARAMS
+  const { owner, repo, discussion_number } = req.params;
+  // GET BODY
+  const { body, replyToId } = req.body;
+  // VALIDATE REQUIRED FIELDS
+  if (!body) {
+    res.status(400).json({
+      message: "Comment body is required!",
+      success: false,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  }
+  // GET OCTOKIT INSTANCE
+  const { octokit, error } = await getOctokitForUser(userId);
+  // IF ERROR, RETURN ERROR RESPONSE
+  if (error || !octokit) {
+    res.status(error?.status || 500).json({
+      message: error?.message || "Error connecting to GitHub.",
+      success: false,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  }
+  try {
+    // FIRST, GET DISCUSSION ID
+    const discussionQuery = `
+      query($owner: String!, $repo: String!, $number: Int!) {
+        repository(owner: $owner, name: $repo) {
+          discussion(number: $number) {
+            id
+          }
+        }
+      }
+    `;
+    // EXECUTE GRAPHQL QUERY
+    const discussionResponse: any = await octokit.graphql(discussionQuery, {
+      owner,
+      repo,
+      number: parseInt(discussion_number ?? "0"),
+    });
+    // GET DISCUSSION ID
+    const discussionId = discussionResponse.repository.discussion?.id;
+    // IF NO DISCUSSION, RETURN ERROR
+    if (!discussionId) {
+      // RETURN ERROR RESPONSE
+      res.status(404).json({
+        message: "Discussion not found.",
+        success: false,
+      });
+      // RETURN FROM FUNCTION
+      return;
+    }
+    // BUILD GRAPHQL MUTATION
+    let mutation = "";
+    // VARIABLES
+    let variables = {};
+    // CHECK IF REPLY TO ID IS PROVIDED
+    if (replyToId) {
+      // BUILD GRAPHQL MUTATION FOR REPLY TO A COMMENT
+      mutation = `
+        mutation($discussionId: ID!, $replyToId: ID!, $body: String!) {
+          addDiscussionComment(input: {discussionId: $discussionId, replyToId: $replyToId, body: $body}) {
+            comment {
+              id
+              body
+              bodyHTML
+              createdAt
+              author {
+                login
+                avatarUrl
+              }
+            }
+          }
+        }
+      `;
+      variables = {
+        discussionId,
+        replyToId,
+        body,
+      };
+    } else {
+      // TOP-LEVEL COMMENT
+      mutation = `
+        mutation($discussionId: ID!, $body: String!) {
+          addDiscussionComment(input: {discussionId: $discussionId, body: $body}) {
+            comment {
+              id
+              body
+              bodyHTML
+              createdAt
+              author {
+                login
+                avatarUrl
+              }
+            }
+          }
+        }
+      `;
+      variables = {
+        discussionId,
+        body,
+      };
+    }
+    // EXECUTE GRAPHQL MUTATION
+    const response: any = await octokit.graphql(mutation, variables);
+    // GET COMMENT
+    const c = response.addDiscussionComment.comment;
+    // MAP COMMENT TO CLEANER FORMAT
+    const comment = {
+      id: c.id,
+      body: c.body,
+      bodyHTML: c.bodyHTML,
+      createdAt: c.createdAt,
+      author: c.author
+        ? {
+            login: c.author.login,
+            avatarUrl: c.author.avatarUrl,
+          }
+        : null,
+    };
+    // RETURN SUCCESS RESPONSE
+    res.status(201).json({
+      message: "Comment added successfully!",
+      success: true,
+      data: comment,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // TOKEN IS INVALID OR EXPIRED
+    if (error.status === 401) {
+      res.status(401).json({
+        message: "GitHub token has expired. Please reconnect your account.",
+        success: false,
+      });
+      // RETURN FROM FUNCTION
+      return;
+    }
+    // GRAPHQL ERRORS
+    if (error.errors) {
+      // LOG ERRORS
+      console.error("GraphQL errors:", error.errors);
+    }
+    // OTHER ERROR
+    res.status(500).json({
+      message: "Error adding comment. Please try again later.",
+      success: false,
+    });
+    // RETURN FROM FUNCTION
+    return;
+  }
+});
+
+/**
+ * MARK DISCUSSION COMMENT AS ANSWER
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== MARK DISCUSSION COMMENT AS ANSWER FUNCTION ==>
+export const markDiscussionCommentAsAnswer = expressAsyncHandler(
+  async (req, res) => {
+    // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+    const userId = (req as AuthenticatedRequest).id;
+    // IF USER ID NOT FOUND, RETURN ERROR
+    if (!userId) {
+      res.status(401).json({
+        message: "Unauthorized!",
+        success: false,
+      });
+      // RETURN FROM FUNCTION
+      return;
+    }
+    // GET COMMENT ID FROM PARAMS
+    const { commentId } = req.params;
+    // VALIDATE REQUIRED FIELDS
+    if (!commentId) {
+      res.status(400).json({
+        message: "Comment ID is required!",
+        success: false,
+      });
+      // RETURN FROM FUNCTION
+      return;
+    }
+    // GET OCTOKIT INSTANCE
+    const { octokit, error } = await getOctokitForUser(userId);
+    // IF ERROR, RETURN ERROR RESPONSE
+    if (error || !octokit) {
+      res.status(error?.status || 500).json({
+        message: error?.message || "Error connecting to GitHub.",
+        success: false,
+      });
+      // RETURN FROM FUNCTION
+      return;
+    }
+    try {
+      // GRAPHQL MUTATION TO MARK AS ANSWER
+      const mutation = `
+      mutation($commentId: ID!) {
+        markDiscussionCommentAsAnswer(input: {id: $commentId}) {
+          discussion {
+            id
+            number
+            answerChosenAt
+          }
+        }
+      }
+    `;
+      // EXECUTE GRAPHQL MUTATION
+      const response: any = await octokit.graphql(mutation, {
+        commentId,
+      });
+      // RETURN SUCCESS RESPONSE
+      res.status(200).json({
+        message: "Comment marked as answer!",
+        success: true,
+        data: {
+          discussionId: response.markDiscussionCommentAsAnswer.discussion.id,
+          discussionNumber:
+            response.markDiscussionCommentAsAnswer.discussion.number,
+          answerChosenAt:
+            response.markDiscussionCommentAsAnswer.discussion.answerChosenAt,
+        },
+      });
+      // RETURN FROM FUNCTION
+      return;
+    } catch (error: any) {
+      // TOKEN IS INVALID OR EXPIRED
+      if (error.status === 401) {
+        // RETURN ERROR RESPONSE
+        res.status(401).json({
+          message: "GitHub token has expired. Please reconnect your account.",
+          success: false,
+        });
+        // RETURN FROM FUNCTION
+        return;
+      }
+      // GRAPHQL ERRORS
+      if (error.errors) {
+        // LOG ERRORS
+        console.error("GraphQL errors:", error.errors);
+        // CHECK FOR PERMISSION ERROR
+        const errorMessage = error.errors[0]?.message || "";
+        // CHECK IF ERROR MESSAGE INCLUDES PERMISSION OR AUTHORIZED
+        if (
+          errorMessage.includes("permission") ||
+          errorMessage.includes("authorized")
+        ) {
+          // RETURN ERROR RESPONSE
+          res.status(403).json({
+            message:
+              "You don't have permission to mark this comment as answer.",
+            success: false,
+          });
+          // RETURN FROM FUNCTION
+          return;
+        }
+      }
+      // OTHER ERROR
+      res.status(500).json({
+        message: "Error marking comment as answer. Please try again later.",
+        success: false,
+      });
+      // RETURN FROM FUNCTION
+      return;
+    }
+  }
+);
+
+/**
+ * UNMARK DISCUSSION COMMENT AS ANSWER
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== UNMARK DISCUSSION COMMENT AS ANSWER FUNCTION ==>
+export const unmarkDiscussionCommentAsAnswer = expressAsyncHandler(
+  async (req, res) => {
+    // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+    const userId = (req as AuthenticatedRequest).id;
+    // IF USER ID NOT FOUND, RETURN ERROR
+    if (!userId) {
+      res.status(401).json({
+        message: "Unauthorized!",
+        success: false,
+      });
+      // RETURN FROM FUNCTION
+      return;
+    }
+    // GET COMMENT ID FROM PARAMS
+    const { commentId } = req.params;
+    // VALIDATE REQUIRED FIELDS
+    if (!commentId) {
+      res.status(400).json({
+        message: "Comment ID is required!",
+        success: false,
+      });
+      // RETURN FROM FUNCTION
+      return;
+    }
+    // GET OCTOKIT INSTANCE
+    const { octokit, error } = await getOctokitForUser(userId);
+    // IF ERROR, RETURN ERROR RESPONSE
+    if (error || !octokit) {
+      res.status(error?.status || 500).json({
+        message: error?.message || "Error connecting to GitHub.",
+        success: false,
+      });
+      // RETURN FROM FUNCTION
+      return;
+    }
+    try {
+      // GRAPHQL MUTATION TO UNMARK AS ANSWER
+      const mutation = `
+      mutation($commentId: ID!) {
+        unmarkDiscussionCommentAsAnswer(input: {id: $commentId}) {
+          discussion {
+            id
+            number
+          }
+        }
+      }
+    `;
+      // EXECUTE GRAPHQL MUTATION
+      const response: any = await octokit.graphql(mutation, {
+        commentId,
+      });
+      // RETURN SUCCESS RESPONSE
+      res.status(200).json({
+        message: "Answer status removed from comment!",
+        success: true,
+        data: {
+          discussionId: response.unmarkDiscussionCommentAsAnswer.discussion.id,
+          discussionNumber:
+            response.unmarkDiscussionCommentAsAnswer.discussion.number,
+        },
+      });
+      // RETURN FROM FUNCTION
+      return;
+    } catch (error: any) {
+      // TOKEN IS INVALID OR EXPIRED
+      if (error.status === 401) {
+        res.status(401).json({
+          message: "GitHub token has expired. Please reconnect your account.",
+          success: false,
+        });
+        // RETURN FROM FUNCTION
+        return;
+      }
+      // GRAPHQL ERRORS
+      if (error.errors) {
+        // LOG ERRORS
+        console.error("GraphQL errors:", error.errors);
+      }
+      // OTHER ERROR
+      res.status(500).json({
+        message: "Error removing answer status. Please try again later.",
+        success: false,
+      });
+      // RETURN FROM FUNCTION
       return;
     }
   }
