@@ -107,6 +107,13 @@ import {
   markRepoGitHubNotificationsAsRead,
   getGitHubNotificationThread,
   unsubscribeGitHubNotification,
+  getRepositoryDiscussions,
+  getDiscussionDetails,
+  getDiscussionCategories,
+  createDiscussion,
+  addDiscussionComment,
+  markDiscussionCommentAsAnswer,
+  unmarkDiscussionCommentAsAnswer,
 } from "../controllers/github.controller.js";
 import express from "express";
 import isAuthenticated from "../middleware/isAuthenticated.js";
@@ -447,6 +454,35 @@ router.get(
 router.post(
   "/repositories/:owner/:repo/deployments/:deployment_id/statuses",
   createDeploymentStatus
+);
+// GET REPOSITORY DISCUSSIONS (GRAPHQL)
+router.get("/repositories/:owner/:repo/discussions", getRepositoryDiscussions);
+// GET DISCUSSION CATEGORIES
+router.get(
+  "/repositories/:owner/:repo/discussions/categories",
+  getDiscussionCategories
+);
+// CREATE DISCUSSION
+router.post("/repositories/:owner/:repo/discussions", createDiscussion);
+// GET DISCUSSION DETAILS
+router.get(
+  "/repositories/:owner/:repo/discussions/:discussion_number",
+  getDiscussionDetails
+);
+// ADD DISCUSSION COMMENT
+router.post(
+  "/repositories/:owner/:repo/discussions/:discussion_number/comments",
+  addDiscussionComment
+);
+// MARK DISCUSSION COMMENT AS ANSWER
+router.put(
+  "/repositories/:owner/:repo/discussions/comments/:commentId/answer",
+  markDiscussionCommentAsAnswer
+);
+// UNMARK DISCUSSION COMMENT AS ANSWER
+router.delete(
+  "/repositories/:owner/:repo/discussions/comments/:commentId/answer",
+  unmarkDiscussionCommentAsAnswer
 );
 // GET REPOSITORY DETAILS (DYNAMIC ROUTE AFTER SPECIFIC ROUTES)
 router.get("/repositories/:owner/:repo", getRepositoryDetails);
