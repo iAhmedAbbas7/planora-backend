@@ -25,6 +25,7 @@ import securityRoute from "./routes/security.route.js";
 import { initializeCronJobs } from "./jobs/cronJobs.js";
 import workspaceRoute from "./routes/workspace.route.js";
 import { errorHandler } from "./middleware/errorHandler.js";
+import workspaceAIRoute from "./routes/workspaceAI.route.js";
 import notificationRoute from "./routes/notification.route.js";
 import helmetMiddleware from "./middleware/helmetMiddleware.js";
 import { connectDB, disconnectDB } from "./config/dbConnection.js";
@@ -106,6 +107,8 @@ app.use("/api/v1/security", securityRoute);
 app.use("/api/v1/settings", settingsRoute);
 // <== WORKSPACE ROUTE ==>
 app.use("/api/v1/workspaces", workspaceRoute);
+// <== WORKSPACE AI ROUTE ==>
+app.use("/api/v1/workspaces/ai", workspaceAIRoute);
 // <== NOTIFICATION ROUTE ==>
 app.use("/api/v1/notifications", notificationRoute);
 // <== WORKSPACE ANALYTICS ROUTE ==>
