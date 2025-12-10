@@ -24,6 +24,7 @@ import settingsRoute from "./routes/settings.route.js";
 import securityRoute from "./routes/security.route.js";
 import { initializeCronJobs } from "./jobs/cronJobs.js";
 import workspaceRoute from "./routes/workspace.route.js";
+import dxScoringRoute from "./routes/dxScoring.route.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import workspaceAIRoute from "./routes/workspaceAI.route.js";
 import codeLinkingRoute from "./routes/codeLinking.route.js";
@@ -94,6 +95,8 @@ app.use("/api/v1/auth", authRoute);
 app.use("/api/v1/tasks", taskRoute);
 // <== TRASH ROUTE ==>
 app.use("/api/v1/trash", trashRoute);
+// <== DX SCORING ROUTE ==>
+app.use("/api/v1/dx", dxScoringRoute);
 // <== GITHUB INTEGRATION ROUTE ==>
 app.use("/api/v1/github", githubRoute);
 // <== PROFILE ROUTE ==>
