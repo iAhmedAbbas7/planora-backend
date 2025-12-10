@@ -28,6 +28,7 @@ import { errorHandler } from "./middleware/errorHandler.js";
 import notificationRoute from "./routes/notification.route.js";
 import helmetMiddleware from "./middleware/helmetMiddleware.js";
 import { connectDB, disconnectDB } from "./config/dbConnection.js";
+import workspaceAnalyticsRoute from "./routes/workspaceAnalytics.route.js";
 import notificationSettingsRoute from "./routes/notificationSettings.route.js";
 import { updateSessionActivityMiddleware } from "./middleware/sessionActivity.js";
 
@@ -107,6 +108,8 @@ app.use("/api/v1/settings", settingsRoute);
 app.use("/api/v1/workspaces", workspaceRoute);
 // <== NOTIFICATION ROUTE ==>
 app.use("/api/v1/notifications", notificationRoute);
+// <== WORKSPACE ANALYTICS ROUTE ==>
+app.use("/api/v1/workspaces/analytics", workspaceAnalyticsRoute);
 // <== NOTIFICATION SETTINGS ROUTE ==>
 app.use("/api/v1/notifications/preferences", notificationSettingsRoute);
 
