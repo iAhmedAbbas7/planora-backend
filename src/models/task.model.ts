@@ -1,6 +1,159 @@
 // <== IMPORTS ==>
 import mongoose from "mongoose";
 
+// <== LINKED COMMIT SCHEMA ==>
+const linkedCommitSchema = new mongoose.Schema(
+  {
+    // COMMIT SHA
+    sha: {
+      type: String,
+      required: true,
+    },
+    // COMMIT MESSAGE
+    message: {
+      type: String,
+      required: true,
+    },
+    // COMMIT URL
+    url: {
+      type: String,
+      required: true,
+    },
+    // AUTHOR
+    author: {
+      name: { type: String },
+      email: { type: String },
+      username: { type: String },
+      avatarUrl: { type: String },
+    },
+    // REPOSITORY
+    repository: {
+      owner: { type: String, required: true },
+      name: { type: String, required: true },
+      fullName: { type: String, required: true },
+    },
+    // COMMITTED AT
+    committedAt: {
+      type: Date,
+      required: true,
+    },
+    // LINKED AT
+    linkedAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  { _id: false }
+);
+
+// <== LINKED PULL REQUEST SCHEMA ==>
+const linkedPullRequestSchema = new mongoose.Schema(
+  {
+    // PR NUMBER
+    number: {
+      type: Number,
+      required: true,
+    },
+    // PR TITLE
+    title: {
+      type: String,
+      required: true,
+    },
+    // PR URL
+    url: {
+      type: String,
+      required: true,
+    },
+    // PR STATE
+    state: {
+      type: String,
+      enum: ["open", "closed", "merged"],
+      required: true,
+    },
+    // AUTHOR
+    author: {
+      username: { type: String },
+      avatarUrl: { type: String },
+    },
+    // REPOSITORY
+    repository: {
+      owner: { type: String, required: true },
+      name: { type: String, required: true },
+      fullName: { type: String, required: true },
+    },
+    // CREATED AT
+    createdAt: {
+      type: Date,
+      required: true,
+    },
+    // MERGED AT
+    mergedAt: {
+      type: Date,
+      default: null,
+    },
+    // LINKED AT
+    linkedAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  { _id: false }
+);
+
+// <== LINKED FILE SCHEMA ==>
+const linkedFileSchema = new mongoose.Schema(
+  {
+    // FILE PATH
+    path: {
+      type: String,
+      required: true,
+    },
+    // REPOSITORY
+    repository: {
+      owner: { type: String, required: true },
+      name: { type: String, required: true },
+      fullName: { type: String, required: true },
+    },
+    // FILE URL
+    url: {
+      type: String,
+    },
+    // LINKED AT
+    linkedAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  { _id: false }
+);
+
+// <== LINKED BRANCH SCHEMA ==>
+const linkedBranchSchema = new mongoose.Schema(
+  {
+    // BRANCH NAME
+    name: {
+      type: String,
+      required: true,
+    },
+    // REPOSITORY
+    repository: {
+      owner: { type: String, required: true },
+      name: { type: String, required: true },
+      fullName: { type: String, required: true },
+    },
+    // BRANCH URL
+    url: {
+      type: String,
+    },
+    // LINKED AT
+    linkedAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  { _id: false }
+);
+
 // <== TASK SCHEMA ==>
 const taskSchema = new mongoose.Schema(
   {
@@ -18,6 +171,13 @@ const taskSchema = new mongoose.Schema(
       default: "",
       maxlength: 2000,
     },
+    // TASK KEY (UNIQUE IDENTIFIER FOR COMMIT LINKING e.g., "TASK-123")
+    taskKey: {
+      type: String,
+      unique: true,
+      sparse: true,
+      index: true,
+    },
     // COMPLETED AT FIELD
     completedAt: {
       type: Date,
@@ -28,6 +188,20 @@ const taskSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Project",
       required: true,
+      index: true,
+    },
+    // WORKSPACE ID FIELD (OPTIONAL - FOR WORKSPACE TASKS)
+    workspaceId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Workspace",
+      default: null,
+      index: true,
+    },
+    // ASSIGNEE ID FIELD (OPTIONAL - WHO IS ASSIGNED TO THIS TASK)
+    assigneeId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
       index: true,
     },
     // STATUS FIELD
@@ -54,7 +228,7 @@ const taskSchema = new mongoose.Schema(
       type: Date,
       index: true,
     },
-    // USER ID FIELD
+    // USER ID FIELD (CREATOR)
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -76,6 +250,29 @@ const taskSchema = new mongoose.Schema(
     originalStatus: {
       type: String,
       default: null,
+    },
+    // LINKED CODE FIELD
+    linkedCode: {
+      // LINKED COMMITS
+      commits: {
+        type: [linkedCommitSchema],
+        default: [],
+      },
+      // LINKED PULL REQUESTS
+      pullRequests: {
+        type: [linkedPullRequestSchema],
+        default: [],
+      },
+      // LINKED FILES
+      files: {
+        type: [linkedFileSchema],
+        default: [],
+      },
+      // LINKED BRANCHES
+      branches: {
+        type: [linkedBranchSchema],
+        default: [],
+      },
     },
   },
   { timestamps: true }
@@ -112,6 +309,64 @@ taskSchema.index({ userId: 1, dueDate: 1 });
  */
 //<== TEXT INDEX FOR SEARCH FUNCTIONALITY ==>
 taskSchema.index({ title: "text", description: "text" });
+/**
+ * INDEX FOR WORKSPACE QUERIES
+ */
+//<== INDEX FOR WORKSPACE QUERIES ==>
+taskSchema.index({ workspaceId: 1, status: 1 });
+/**
+ * INDEX FOR ASSIGNEE QUERIES
+ */
+//<== INDEX FOR ASSIGNEE QUERIES ==>
+taskSchema.index({ assigneeId: 1, status: 1 });
+/**
+ * COMPOUND INDEX FOR WORKSPACE AND ASSIGNEE QUERIES
+ */
+//<== COMPOUND INDEX FOR WORKSPACE AND ASSIGNEE QUERIES ==>
+taskSchema.index({ workspaceId: 1, assigneeId: 1 });
+/**
+ * INDEX FOR LINKED CODE COMMIT SHA QUERIES
+ */
+//<== INDEX FOR LINKED CODE COMMIT SHA QUERIES ==>
+taskSchema.index({ "linkedCode.commits.sha": 1 }, { sparse: true });
+/**
+ * INDEX FOR LINKED CODE PR NUMBER QUERIES
+ */
+//<== INDEX FOR LINKED CODE PR NUMBER QUERIES ==>
+taskSchema.index({ "linkedCode.pullRequests.number": 1 }, { sparse: true });
+
+// <== PRE-SAVE HOOK TO GENERATE TASK KEY ==>
+taskSchema.pre("save", async function (next) {
+  // IF TASK KEY IS NOT SET AND THIS IS A NEW DOCUMENT
+  if (!this.taskKey && this.isNew) {
+    // GET THE LAST TASK WITH A TASK KEY
+    const TaskModel = mongoose.model("Task");
+    // GET THE LAST TASK WITH A TASK KEY AND SORT BY CREATED AT IN DESCENDING ORDER
+    const lastTask = (await TaskModel.findOne({
+      taskKey: { $exists: true, $ne: null },
+    })
+      .sort({ createdAt: -1 })
+      .select("taskKey")
+      .lean()
+      .exec()) as { taskKey?: string } | null;
+    // GENERATE NEW TASK KEY NUMBER
+    let nextNumber = 1;
+    // IF THE LAST TASK HAS A TASK KEY, GET THE LAST TASK KEY NUMBER
+    if (lastTask?.taskKey) {
+      // GET THE LAST TASK KEY NUMBER
+      const match = lastTask.taskKey.match(/TASK-(\d+)/);
+      // IF THE LAST TASK KEY NUMBER IS A NUMBER, INCREASE THE NUMBER BY 1
+      if (match && match[1]) {
+        // INCREASE THE NUMBER BY 1
+        nextNumber = parseInt(match[1], 10) + 1;
+      }
+    }
+    // SET TASK KEY WITH THE NEW TASK KEY NUMBER AND THE TASK KEY PREFIX
+    this.taskKey = `TASK-${nextNumber}`;
+  }
+  // CONTINUE
+  next();
+});
 
 // <== EXPORTING THE TASK MODEL ==>
 export const Task = mongoose.model("Task", taskSchema);
