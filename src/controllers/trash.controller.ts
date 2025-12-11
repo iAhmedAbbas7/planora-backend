@@ -15,10 +15,12 @@ export const getAllTrashedItems = expressAsyncHandler(async (req, res) => {
   const userId = (req as any).id;
   // IF USER ID NOT PROVIDED, RETURN 401 ERROR
   if (!userId) {
+    // RETURNING ERROR RESPONSE
     res.status(401).json({
       message: "Unauthorized!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // GETTING QUERY PARAMETERS
@@ -29,8 +31,11 @@ export const getAllTrashedItems = expressAsyncHandler(async (req, res) => {
   let taskQuery: any = { userId, isTrashed: true };
   // IF SEARCH PROVIDED
   if (search) {
+    // CREATING SEARCH REGEX
     const searchRegex = new RegExp(search as string, "i");
+    // ADDING SEARCH QUERY TO PROJECT QUERY
     projectQuery.$or = [{ title: searchRegex }, { description: searchRegex }];
+    // ADDING SEARCH QUERY TO TASK QUERY
     taskQuery.$or = [{ title: searchRegex }, { description: searchRegex }];
   }
   // GETTING TRASHED ITEMS IN PARALLEL
@@ -38,7 +43,7 @@ export const getAllTrashedItems = expressAsyncHandler(async (req, res) => {
     type === "tasks"
       ? Promise.resolve([])
       : Project.find(projectQuery).sort({ deletedOn: -1 }).lean().exec();
-
+  // CREATING TASKS PROMISE
   const tasksPromise: Promise<any[]> =
     type === "projects"
       ? Promise.resolve([])
@@ -47,7 +52,7 @@ export const getAllTrashedItems = expressAsyncHandler(async (req, res) => {
           .sort({ deletedOn: -1 })
           .lean()
           .exec();
-
+  // GETTING TRASHED ITEMS IN PARALLEL
   const [trashedProjects, trashedTasks] = await Promise.all([
     projectsPromise,
     tasksPromise,
@@ -60,6 +65,7 @@ export const getAllTrashedItems = expressAsyncHandler(async (req, res) => {
       tasks: trashedTasks || [],
     },
   });
+  // RETURNING FROM FUNCTION
   return;
 });
 
@@ -75,10 +81,12 @@ export const bulkRestore = expressAsyncHandler(async (req, res) => {
   const userId = (req as any).id;
   // IF USER ID NOT PROVIDED, RETURN 401 ERROR
   if (!userId) {
+    // RETURNING ERROR RESPONSE
     res.status(401).json({
       message: "Unauthorized!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // GETTING ITEM IDS FROM REQUEST BODY
@@ -94,8 +102,11 @@ export const bulkRestore = expressAsyncHandler(async (req, res) => {
     errors: [],
   };
   // RESTORING PROJECTS
+  // IF PROJECT IDS PROVIDED
   if (projectIds && Array.isArray(projectIds) && projectIds.length > 0) {
+    // ITERATING OVER PROJECT IDS
     for (const projectId of projectIds) {
+      // TRYING TO RESTORE PROJECT
       try {
         // FINDING AND UPDATING PROJECT
         const project = await Project.findOneAndUpdate(
@@ -107,6 +118,7 @@ export const bulkRestore = expressAsyncHandler(async (req, res) => {
           .exec();
         // IF PROJECT FOUND, ADD TO RESULTS
         if (project) {
+          // ADDING PROJECT TO RESULTS
           results.restoredProjects.push(project);
         }
       } catch (error: any) {
@@ -118,8 +130,11 @@ export const bulkRestore = expressAsyncHandler(async (req, res) => {
     }
   }
   // RESTORING TASKS
+  // IF TASK IDS PROVIDED
   if (taskIds && Array.isArray(taskIds) && taskIds.length > 0) {
+    // ITERATING OVER TASK IDS
     for (const taskId of taskIds) {
+      // TRYING TO RESTORE TASK
       try {
         // FINDING TASK TO GET ORIGINAL STATUS
         const existingTask = await Task.findById(taskId).lean().exec();
@@ -137,6 +152,7 @@ export const bulkRestore = expressAsyncHandler(async (req, res) => {
           .exec();
         // IF TASK FOUND, ADD TO RESULTS
         if (task) {
+          // ADDING TASK TO RESULTS
           results.restoredTasks.push(task);
         }
       } catch (error: any) {
@@ -153,6 +169,7 @@ export const bulkRestore = expressAsyncHandler(async (req, res) => {
     success: true,
     data: results,
   });
+  // RETURNING FROM FUNCTION
   return;
 });
 
@@ -168,10 +185,12 @@ export const bulkPermanentDelete = expressAsyncHandler(async (req, res) => {
   const userId = (req as any).id;
   // IF USER ID NOT PROVIDED, RETURN 401 ERROR
   if (!userId) {
+    // RETURNING ERROR RESPONSE
     res.status(401).json({
       message: "Unauthorized!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // GETTING ITEM IDS FROM REQUEST BODY
@@ -188,7 +207,9 @@ export const bulkPermanentDelete = expressAsyncHandler(async (req, res) => {
   };
   // PERMANENTLY DELETING PROJECTS
   if (projectIds && Array.isArray(projectIds) && projectIds.length > 0) {
+    // ITERATING OVER PROJECT IDS
     for (const projectId of projectIds) {
+      // TRYING TO DELETE PROJECT
       try {
         // FINDING AND DELETING PROJECT
         const project = await Project.findOneAndDelete({
@@ -200,6 +221,7 @@ export const bulkPermanentDelete = expressAsyncHandler(async (req, res) => {
           .exec();
         // IF PROJECT FOUND, ADD TO RESULTS
         if (project) {
+          // ADDING PROJECT TO RESULTS
           results.deletedProjects.push(project);
           // DELETING ALL TASKS ASSOCIATED WITH PROJECT
           await Task.deleteMany({ projectId }).exec();
@@ -214,7 +236,9 @@ export const bulkPermanentDelete = expressAsyncHandler(async (req, res) => {
   }
   // PERMANENTLY DELETING TASKS
   if (taskIds && Array.isArray(taskIds) && taskIds.length > 0) {
+    // ITERATING OVER TASK IDS
     for (const taskId of taskIds) {
+      // TRYING TO DELETE TASK
       try {
         // FINDING AND DELETING TASK
         const task = await Task.findOneAndDelete({
@@ -226,6 +250,7 @@ export const bulkPermanentDelete = expressAsyncHandler(async (req, res) => {
           .exec();
         // IF TASK FOUND, ADD TO RESULTS
         if (task) {
+          // ADDING TASK TO RESULTS
           results.deletedTasks.push(task);
         }
       } catch (error: any) {
@@ -242,6 +267,7 @@ export const bulkPermanentDelete = expressAsyncHandler(async (req, res) => {
     success: true,
     data: results,
   });
+  // RETURNING FROM FUNCTION
   return;
 });
 
@@ -257,15 +283,19 @@ export const emptyTrash = expressAsyncHandler(async (req, res) => {
   const userId = (req as any).id;
   // IF USER ID NOT PROVIDED, RETURN 401 ERROR
   if (!userId) {
+    // RETURNING ERROR RESPONSE
     res.status(401).json({
       message: "Unauthorized!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // DELETING ALL TRASHED ITEMS IN PARALLEL
   const [deletedProjects, deletedTasks] = await Promise.all([
+    // DELETING ALL TRASHED PROJECTS
     Project.deleteMany({ userId, isTrashed: true }).exec(),
+    // DELETING ALL TRASHED TASKS
     Task.deleteMany({ userId, isTrashed: true }).exec(),
   ]);
   // RETURNING RESPONSE
@@ -277,5 +307,6 @@ export const emptyTrash = expressAsyncHandler(async (req, res) => {
       deletedTasks: deletedTasks.deletedCount,
     },
   });
+  // RETURNING FROM FUNCTION
   return;
 });
