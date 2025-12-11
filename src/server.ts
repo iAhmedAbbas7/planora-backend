@@ -30,6 +30,7 @@ import { errorHandler } from "./middleware/errorHandler.js";
 import workspaceAIRoute from "./routes/workspaceAI.route.js";
 import codeLinkingRoute from "./routes/codeLinking.route.js";
 import notificationRoute from "./routes/notification.route.js";
+import timeTrackingRoute from "./routes/timeTracking.route.js";
 import helmetMiddleware from "./middleware/helmetMiddleware.js";
 import { connectDB, disconnectDB } from "./config/dbConnection.js";
 import workspaceAnalyticsRoute from "./routes/workspaceAnalytics.route.js";
@@ -120,6 +121,8 @@ app.use("/api/v1/code-linking", codeLinkingRoute);
 app.use("/api/v1/workspaces/ai", workspaceAIRoute);
 // <== NOTIFICATION ROUTE ==>
 app.use("/api/v1/notifications", notificationRoute);
+// <== TIME TRACKING ROUTE ==>
+app.use("/api/v1/time-tracking", timeTrackingRoute);
 // <== WORKSPACE ANALYTICS ROUTE ==>
 app.use("/api/v1/workspaces/analytics", workspaceAnalyticsRoute);
 // <== NOTIFICATION SETTINGS ROUTE ==>
