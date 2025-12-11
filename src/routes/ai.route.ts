@@ -23,6 +23,7 @@ import {
   aiSecurityScan,
   aiGenerateReadme,
   aiActivityInsights,
+  getDailyBriefing,
 } from "../controllers/ai.controller.js";
 import express from "express";
 import isAuthenticated from "../middleware/isAuthenticated.js";
@@ -79,5 +80,7 @@ router.post("/security-scan", aiSecurityScan);
 router.post("/generate-readme", aiGenerateReadme);
 // AI ACTIVITY INSIGHTS
 router.post("/activity-insights", aiActivityInsights);
+// AI DAILY BRIEFING
+router.get("/daily-briefing", getDailyBriefing);
 
 export default router;
