@@ -154,6 +154,34 @@ const linkedBranchSchema = new mongoose.Schema(
   { _id: false }
 );
 
+// <== TIME SESSION SCHEMA ==>
+const timeSessionSchema = new mongoose.Schema(
+  {
+    // STARTED AT
+    startedAt: {
+      type: Date,
+      required: true,
+    },
+    // ENDED AT
+    endedAt: {
+      type: Date,
+      default: null,
+    },
+    // DURATION IN MINUTES
+    duration: {
+      type: Number,
+      default: 0,
+    },
+    // NOTE
+    note: {
+      type: String,
+      default: "",
+      maxlength: 500,
+    },
+  },
+  { _id: true }
+);
+
 // <== TASK SCHEMA ==>
 const taskSchema = new mongoose.Schema(
   {
@@ -274,6 +302,35 @@ const taskSchema = new mongoose.Schema(
         default: [],
       },
     },
+    // TIME TRACKING FIELD
+    timeTracking: {
+      // ESTIMATED TIME IN MINUTES
+      estimated: {
+        type: Number,
+        default: null,
+      },
+      // TOTAL LOGGED TIME IN MINUTES
+      logged: {
+        type: Number,
+        default: 0,
+      },
+      // TIME SESSIONS
+      sessions: {
+        type: [timeSessionSchema],
+        default: [],
+      },
+      // ACTIVE SESSION (IF TIMER IS RUNNING)
+      activeSession: {
+        startedAt: {
+          type: Date,
+          default: null,
+        },
+        note: {
+          type: String,
+          default: "",
+        },
+      },
+    },
   },
   { timestamps: true }
 );
@@ -334,6 +391,14 @@ taskSchema.index({ "linkedCode.commits.sha": 1 }, { sparse: true });
  */
 //<== INDEX FOR LINKED CODE PR NUMBER QUERIES ==>
 taskSchema.index({ "linkedCode.pullRequests.number": 1 }, { sparse: true });
+/**
+ * INDEX FOR ACTIVE TIME TRACKING SESSIONS
+ */
+//<== INDEX FOR ACTIVE TIME TRACKING SESSIONS ==>
+taskSchema.index(
+  { userId: 1, "timeTracking.activeSession.startedAt": 1 },
+  { sparse: true }
+);
 
 // <== PRE-SAVE HOOK TO GENERATE TASK KEY ==>
 taskSchema.pre("save", async function (next) {
