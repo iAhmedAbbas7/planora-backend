@@ -12,6 +12,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 const getGeminiClient = (): GoogleGenerativeAI | null => {
   // CHECK IF GEMINI API KEY IS SET
   if (!process.env.GEMINI_API_KEY) {
+    // RETURN NULL
     return null;
   }
   // CREATE AND RETURN GEMINI CLIENT
@@ -26,6 +27,21 @@ const getGeminiModel = () => {
   if (!genAI) return null;
   // RETURN GEMINI 2.0 FLASH MODEL (FREE TIER)
   return genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+};
+
+/**
+ * HELPER FUNCTION TO GET TIME OF DAY
+ * @returns Time of Day String
+ */
+const getTimeOfDay = (): string => {
+  // GET CURRENT HOUR
+  const hour = new Date().getHours();
+  // RETURN TIME OF DAY
+  if (hour < 12) return "morning";
+  // RETURN TIME OF DAY
+  if (hour < 17) return "afternoon";
+  // RETURN TIME OF DAY
+  return "evening";
 };
 
 // <== GENERATED TASK TYPE ==>
@@ -3218,13 +3234,11 @@ export const aiRepositoryAnalysis = expressAsyncHandler(async (req, res) => {
   ${
     recentCommits
       ? `Recent Commits (last 10): ${JSON.stringify(
-          recentCommits
-            .slice(0, 10)
-            .map((c: any) => ({
-              message: c.message,
-              date: c.date,
-              author: c.author,
-            }))
+          recentCommits.slice(0, 10).map((c: any) => ({
+            message: c.message,
+            date: c.date,
+            author: c.author,
+          }))
         )}`
       : ""
   }
@@ -3848,6 +3862,454 @@ export const aiActivityInsights = expressAsyncHandler(async (req, res) => {
       message: "Error generating activity insights. Please try again later.",
       success: false,
     });
+    return;
+  }
+});
+
+/**
+ * GET DAILY BRIEFING - AI-POWERED PERSONALIZED DAILY SUMMARY
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET DAILY BRIEFING ==>
+export const getDailyBriefing = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM REQUEST (SET BY `isAuthenticated` MIDDLEWARE)
+  const userId = (req as any).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET GEMINI MODEL
+  const model = getGeminiModel();
+  // IF NOT CONFIGURED, RETURN ERROR
+  if (!model) {
+    // RETURNING ERROR RESPONSE
+    res.status(503).json({
+      message: "AI service is not configured.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  try {
+    // GET USER DATA
+    const user = await User.findById(userId)
+      .select("+githubAccessToken githubUsername name email")
+      .lean()
+      .exec();
+    // IF USER NOT FOUND, RETURN ERROR
+    if (!user) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "User not found!",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // GET TODAY'S DATE RANGE
+    const today = new Date();
+    // SET HOURS TO 0
+    today.setHours(0, 0, 0, 0);
+    // GET TOMORROW'S DATE
+    const tomorrow = new Date(today);
+    // SET DATE TO TOMORROW
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    // GET YESTERDAY'S DATE
+    const yesterday = new Date(today);
+    // SET DATE TO YESTERDAY
+    yesterday.setDate(yesterday.getDate() - 1);
+    // GET LAST WEEK'S DATE
+    const lastWeek = new Date(today);
+    // SET DATE TO LAST WEEK
+    lastWeek.setDate(lastWeek.getDate() - 7);
+    // FETCH TASKS DUE TODAY
+    const tasksDueToday = await Task.find({
+      userId: new mongoose.Types.ObjectId(userId),
+      dueDate: { $gte: today, $lt: tomorrow },
+      isTrashed: { $ne: true },
+    })
+      .select("title description priority status dueDate")
+      .lean()
+      .exec();
+    // FETCH OVERDUE TASKS
+    const overdueTasks = await Task.find({
+      userId: new mongoose.Types.ObjectId(userId),
+      dueDate: { $lt: today },
+      status: { $ne: "completed" },
+      isTrashed: { $ne: true },
+    })
+      .select("title description priority status dueDate")
+      .lean()
+      .exec();
+    // FETCH IN PROGRESS TASKS
+    const inProgressTasks = await Task.find({
+      userId: new mongoose.Types.ObjectId(userId),
+      status: "in progress",
+      isTrashed: { $ne: true },
+    })
+      .select("title description priority status dueDate")
+      .lean()
+      .exec();
+    // FETCH TASKS COMPLETED YESTERDAY (FOR HIGHLIGHTS)
+    const completedYesterday = await Task.find({
+      userId: new mongoose.Types.ObjectId(userId),
+      status: "completed",
+      updatedAt: { $gte: yesterday, $lt: today },
+      isTrashed: { $ne: true },
+    })
+      .select("title description priority")
+      .lean()
+      .exec();
+    // FETCH TASKS COMPLETED THIS WEEK (FOR VELOCITY)
+    const completedThisWeek = await Task.countDocuments({
+      userId: new mongoose.Types.ObjectId(userId),
+      status: "completed",
+      updatedAt: { $gte: lastWeek },
+      isTrashed: { $ne: true },
+    });
+    // FETCH TOTAL PENDING TASKS
+    const pendingTasksCount = await Task.countDocuments({
+      userId: new mongoose.Types.ObjectId(userId),
+      status: { $ne: "completed" },
+      isTrashed: { $ne: true },
+    });
+    // FETCH PROJECTS WITH UPCOMING DEADLINES
+    const upcomingDeadlineProjects = await Project.find({
+      userId: new mongoose.Types.ObjectId(userId),
+      dueDate: { $gte: today, $lte: tomorrow },
+      isTrashed: { $ne: true },
+    })
+      .select("title description dueDate")
+      .lean()
+      .exec();
+    // TRY TO GET GITHUB ACTIVITY IF CONNECTED
+    let githubActivity: {
+      recentCommits: number;
+      openPRs: number;
+      pendingReviews: number;
+      failedWorkflows: string[];
+    } | null = null;
+    // CAST USER TO GET GITHUB DATA
+    const githubUser = user as unknown as GitHubUserData;
+    // CHECK IF GITHUB IS CONNECTED
+    if (githubUser.githubAccessToken && githubUser.githubUsername) {
+      // TRY TO GET GITHUB ACTIVITY
+      try {
+        // DECRYPT ACCESS TOKEN
+        const decryptedToken = decryptSecret(githubUser.githubAccessToken);
+        // CREATE OCTOKIT INSTANCE
+        const octokit = new Octokit({ auth: decryptedToken });
+        // GET AUTHENTICATED USER
+        const userResponse = await octokit.users.getAuthenticated();
+        // GET USERNAME
+        const username = userResponse.data.login;
+        // GET RECENT EVENTS (LAST 24 HOURS)
+        const eventsResponse = await octokit.activity.listPublicEventsForUser({
+          username,
+          per_page: 50,
+        });
+        // COUNT RECENT COMMITS (PUSH EVENTS)
+        const recentCommits = eventsResponse.data.filter(
+          (e) =>
+            e.type === "PushEvent" &&
+            new Date(e.created_at || "").getTime() > yesterday.getTime()
+        ).length;
+        // GET OPEN PRS
+        let openPRs = 0;
+        // GET PENDING REVIEWS
+        let pendingReviews = 0;
+        // TRY TO GET OPEN PRS AND PENDING REVIEWS
+        try {
+          // GET OPEN PRS
+          const prsResponse = await octokit.search.issuesAndPullRequests({
+            q: `is:pr is:open author:${username}`,
+            per_page: 10,
+          });
+          // GET OPEN PRS COUNT
+          openPRs = prsResponse.data.total_count;
+          // GET PENDING REVIEWS
+          const reviewsResponse = await octokit.search.issuesAndPullRequests({
+            q: `is:pr is:open review-requested:${username}`,
+            per_page: 10,
+          });
+          // GET PENDING REVIEWS COUNT
+          pendingReviews = reviewsResponse.data.total_count;
+        } catch {
+          // IGNORE RATE LIMIT ERRORS
+        }
+        // GET FAILED WORKFLOWS (CHECK RECENT REPOS)
+        const failedWorkflows: string[] = [];
+        // TRY TO GET FAILED WORKFLOWS
+        try {
+          // GET REPOSITORIES
+          const reposResponse = await octokit.repos.listForAuthenticatedUser({
+            per_page: 5,
+            sort: "pushed",
+          });
+          // CHECK EACH REPO FOR FAILED WORKFLOWS
+          for (const repo of reposResponse.data.slice(0, 3)) {
+            // TRY TO GET FAILED WORKFLOWS FOR REPO
+            try {
+              // GET FAILED WORKFLOWS FOR REPO
+              const runsResponse =
+                await octokit.actions.listWorkflowRunsForRepo({
+                  owner: repo.owner.login,
+                  repo: repo.name,
+                  per_page: 5,
+                  status: "failure",
+                });
+              // ADD FAILED WORKFLOWS
+              if (runsResponse.data.total_count > 0) {
+                // ADD FAILED WORKFLOW TO LIST
+                failedWorkflows.push(
+                  `${repo.name}: ${
+                    runsResponse.data.workflow_runs[0]?.name || "Workflow"
+                  } failed`
+                );
+              }
+            } catch {
+              // IGNORE ERRORS
+            }
+          }
+        } catch {
+          // IGNORE ERRORS
+        }
+        // SET GITHUB ACTIVITY
+        githubActivity = {
+          recentCommits,
+          openPRs,
+          pendingReviews,
+          failedWorkflows: failedWorkflows.slice(0, 3),
+        };
+      } catch {
+        // IGNORE GITHUB ERRORS - CONTINUE WITHOUT GITHUB DATA
+      }
+    }
+    // BUILD MAPPED ARRAYS FOR CONTEXT
+    const tasksDueTodayContext = tasksDueToday.map((t: any) => ({
+      title: String(t.title),
+      priority: String(t.priority),
+      status: String(t.status || ""),
+    }));
+    // BUILD OVERDUE TASKS CONTEXT
+    const overdueTasksContext = overdueTasks.map((t: any) => ({
+      title: String(t.title),
+      priority: String(t.priority),
+      daysOverdue: t.dueDate
+        ? Math.ceil(
+            (today.getTime() - new Date(String(t.dueDate)).getTime()) /
+              (1000 * 60 * 60 * 24)
+          )
+        : 0,
+    }));
+    // BUILD IN PROGRESS TASKS CONTEXT
+    const inProgressTasksContext = inProgressTasks.map((t: any) => ({
+      title: String(t.title),
+      priority: String(t.priority),
+    }));
+    // BUILD COMPLETED YESTERDAY CONTEXT
+    const completedYesterdayContext = completedYesterday.map((t: any) => ({
+      title: String(t.title),
+      priority: String(t.priority),
+    }));
+    // BUILD UPCOMING DEADLINE PROJECTS CONTEXT
+    const upcomingDeadlineProjectsContext = upcomingDeadlineProjects.map(
+      (p: any) => ({
+        title: String(p.title),
+      })
+    );
+    // GET USER NAME
+    const userName = String((user as { name?: string }).name || "Developer");
+    // FORMAT DATE
+    const formattedDate = today.toLocaleDateString("en-US", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+    // BUILD CONTEXT FOR AI
+    const context = {
+      userName,
+      date: formattedDate,
+      tasksDueToday: tasksDueTodayContext,
+      overdueTasks: overdueTasksContext,
+      inProgressTasks: inProgressTasksContext,
+      completedYesterday: completedYesterdayContext,
+      velocity: {
+        completedThisWeek,
+        averagePerDay: Math.round((completedThisWeek / 7) * 10) / 10,
+      },
+      pendingTasksCount,
+      upcomingDeadlineProjects: upcomingDeadlineProjectsContext,
+      githubActivity,
+    };
+    // BUILD PROMPT
+    const prompt = `You are a productivity assistant for developers. Generate a personalized daily briefing.
+    Context:
+    - User: ${context.userName}
+    - Date: ${context.date}
+    - Tasks Due Today: ${JSON.stringify(context.tasksDueToday)}
+    - Overdue Tasks: ${JSON.stringify(context.overdueTasks)}
+    - In Progress Tasks: ${JSON.stringify(context.inProgressTasks)}
+    - Completed Yesterday: ${JSON.stringify(context.completedYesterday)}
+    - Weekly Velocity: ${context.velocity.completedThisWeek} tasks completed (${
+      context.velocity.averagePerDay
+    }/day average)
+    - Total Pending Tasks: ${context.pendingTasksCount}
+    - Projects with Upcoming Deadlines: ${JSON.stringify(
+      context.upcomingDeadlineProjects
+    )}
+    ${
+      context.githubActivity
+        ? `- GitHub Activity: ${context.githubActivity.recentCommits} commits, ${context.githubActivity.openPRs} open PRs, ${context.githubActivity.pendingReviews} pending reviews`
+        : "- GitHub: Not connected"
+    }
+    ${
+      context.githubActivity?.failedWorkflows?.length
+        ? `- Failed Workflows: ${context.githubActivity.failedWorkflows.join(
+            ", "
+          )}`
+        : ""
+    }
+    Generate a helpful, encouraging daily briefing with:
+    1. A personalized greeting and summary (2-3 sentences)
+    2. Top 3 focus suggestions (prioritized tasks to work on, with brief reasoning)
+    3. Highlights from yesterday (achievements to celebrate)
+    4. Attention needed items (overdue tasks, failed CI, upcoming deadlines)
+    5. A motivational tip or productivity suggestion
+    Respond in JSON format:
+    {
+      "greeting": "Good morning, [name]! Here's your briefing for [day].",
+      "summary": "Brief overview of the day ahead",
+      "focusSuggestions": [
+        {
+          "task": "Task title",
+          "reason": "Why to focus on this",
+          "priority": "high/medium/low"
+        }
+      ],
+      "highlights": [
+        {
+          "achievement": "What was accomplished",
+          "impact": "Why it matters"
+        }
+      ],
+      "attentionNeeded": [
+        {
+          "item": "What needs attention",
+          "urgency": "high/medium/low",
+          "action": "Suggested action"
+        }
+      ],
+      "productivityTip": "A helpful tip for the day",
+      "stats": {
+        "tasksDueToday": number,
+        "overdueTasks": number,
+        "inProgress": number,
+        "weeklyVelocity": number
+      }
+    }
+
+    Return ONLY valid JSON, no additional text.`;
+    // GENERATE RESPONSE
+    const result = await model.generateContent(prompt);
+    // GET RESPONSE
+    const response = result.response;
+    // GET RESPONSE TEXT
+    const text = response.text();
+    // PARSE RESPONSE
+    let briefing;
+    // TRY TO PARSE RESPONSE
+    try {
+      // CLEAN UP RESPONSE (REMOVE MARKDOWN CODE BLOCKS IF PRESENT)
+      const cleanedText = text
+        .replace(/```json\n?/g, "")
+        .replace(/```\n?/g, "")
+        .trim();
+      // PARSE AS JSON
+      briefing = JSON.parse(cleanedText);
+    } catch {
+      // IF NOT VALID JSON, CREATE FALLBACK RESPONSE
+      // DEFINE TASK TYPE FOR FALLBACK
+      type FallbackTask = { title: string; priority: string };
+      // BUILD FOCUS SUGGESTIONS
+      const focusSuggestions = tasksDueToday
+        .slice(0, 3)
+        .map((t: FallbackTask) => ({
+          task: t.title,
+          reason: `Due today with ${t.priority} priority`,
+          priority: t.priority,
+        }));
+      // BUILD HIGHLIGHTS
+      const highlights =
+        completedYesterday.length > 0
+          ? completedYesterday.slice(0, 3).map((t: FallbackTask) => ({
+              achievement: `Completed: ${t.title}`,
+              impact: "Progress made on your goals",
+            }))
+          : [
+              {
+                achievement: "New day, new opportunities!",
+                impact: "Start fresh",
+              },
+            ];
+      // BUILD ATTENTION NEEDED
+      const attentionNeeded = overdueTasks
+        .slice(0, 3)
+        .map((t: FallbackTask) => ({
+          item: t.title,
+          urgency: "high" as const,
+          action: "Review and update due date or complete",
+        }));
+      // BUILD FALLBACK BRIEFING
+      briefing = {
+        greeting: `Good ${getTimeOfDay()}, ${context.userName}!`,
+        summary: `You have ${tasksDueToday.length} tasks due today and ${overdueTasks.length} overdue tasks. ${inProgressTasks.length} tasks are in progress.`,
+        focusSuggestions,
+        highlights,
+        attentionNeeded,
+        productivityTip: "Focus on one task at a time for better results.",
+        stats: {
+          tasksDueToday: tasksDueToday.length,
+          overdueTasks: overdueTasks.length,
+          inProgress: inProgressTasks.length,
+          weeklyVelocity: completedThisWeek,
+        },
+      };
+    }
+    // ADD RAW DATA TO RESPONSE
+    briefing.rawData = {
+      tasksDueToday: tasksDueToday.slice(0, 5),
+      overdueTasks: overdueTasks.slice(0, 5),
+      inProgressTasks: inProgressTasks.slice(0, 5),
+      completedYesterday: completedYesterday.slice(0, 5),
+      githubActivity,
+    };
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Daily briefing generated successfully!",
+      success: true,
+      data: briefing,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // LOG ERROR
+    console.error("Error generating daily briefing:", error);
+    // RETURNING ERROR RESPONSE
+    res.status(500).json({
+      message: "Error generating daily briefing. Please try again later.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
     return;
   }
 });
