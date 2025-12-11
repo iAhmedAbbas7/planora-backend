@@ -17,6 +17,7 @@ import { logEvents } from "./middleware/logger.js";
 import { getDirName } from "./utils/getDirName.js";
 import { app, server } from "./services/socket.js";
 import githubRoute from "./routes/github.route.js";
+import searchRoute from "./routes/search.route.js";
 import profileRoute from "./routes/profile.route.js";
 import projectRoute from "./routes/project.route.js";
 import accountRoute from "./routes/account.route.js";
@@ -97,6 +98,8 @@ app.use("/api/v1/tasks", taskRoute);
 app.use("/api/v1/trash", trashRoute);
 // <== DX SCORING ROUTE ==>
 app.use("/api/v1/dx", dxScoringRoute);
+// <== SEARCH ROUTE ==>
+app.use("/api/v1/search", searchRoute);
 // <== GITHUB INTEGRATION ROUTE ==>
 app.use("/api/v1/github", githubRoute);
 // <== PROFILE ROUTE ==>
