@@ -45,8 +45,15 @@ const workspaceSchema = new mongoose.Schema(
     // VISIBILITY FIELD
     visibility: {
       type: String,
-      enum: ["public", "private"],
+      enum: ["public", "private", "system"],
       default: "private",
+      index: true,
+    },
+    // WORKSPACE TYPE FIELD
+    type: {
+      type: String,
+      enum: ["regular", "personal"],
+      default: "regular",
       index: true,
     },
     // OWNER ID FIELD (REF TO USER)
