@@ -20,6 +20,7 @@ import passport from "../config/passport.js";
 import { User } from "../models/user.model.js";
 import { Session } from "../models/session.model.js";
 import expressAsyncHandler from "express-async-handler";
+import { Workspace } from "../models/workspace.model.js";
 import { verifyBackupCode } from "../utils/encryption.js";
 import { Request, Response, NextFunction } from "express";
 import { createSession } from "../utils/sessionManager.js";
@@ -1425,6 +1426,18 @@ export const verifyEmail = expressAsyncHandler(async (req, res) => {
     password: pendingUser.password,
     phoneNumber: pendingUser.phoneNumber || null,
     phoneNumberVerified: pendingUser.phoneNumber ? false : false,
+  });
+  // CREATE PERSONAL WORKSPACE FOR THE USER
+  const personalWorkspace = await Workspace.create({
+    name: `${pendingUser.name}'s Space`,
+    description: "Your personal workspace for individual tasks and projects",
+    visibility: "system",
+    type: "personal",
+    ownerId: newUser._id,
+  });
+  // UPDATE USER WITH PERSONAL WORKSPACE ID
+  await User.findByIdAndUpdate(newUser._id, {
+    personalWorkspaceId: personalWorkspace._id,
   });
   // EXTRACT DEVICE INFO FROM REQUEST
   const deviceInfo = extractDeviceInfo(req);
