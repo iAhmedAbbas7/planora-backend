@@ -176,6 +176,12 @@ const userSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+    // PERSONAL WORKSPACE ID (AUTO-CREATED FOR EACH USER)
+    personalWorkspaceId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Workspace",
+      default: null,
+    },
   },
   { timestamps: true }
 );
