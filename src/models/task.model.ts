@@ -154,6 +154,30 @@ const linkedBranchSchema = new mongoose.Schema(
   { _id: false }
 );
 
+// <== TASK DEPENDENCY SCHEMA ==>
+const taskDependencySchema = new mongoose.Schema(
+  {
+    // TASK ID REFERENCE
+    taskId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Task",
+      required: true,
+    },
+    // DEPENDENCY TYPE: BLOCKS (THIS TASK BLOCKS ANOTHER), BLOCKED_BY (THIS TASK IS BLOCKED BY ANOTHER), RELATES_TO (RELATED TASKS)
+    type: {
+      type: String,
+      enum: ["blocks", "blocked_by", "relates_to"],
+      required: true,
+    },
+    // LINKED AT DATE
+    linkedAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  { _id: true }
+);
+
 // <== TIME SESSION SCHEMA ==>
 const timeSessionSchema = new mongoose.Schema(
   {
@@ -331,6 +355,25 @@ const taskSchema = new mongoose.Schema(
         },
       },
     },
+    // TASK DEPENDENCIES FIELD
+    dependencies: {
+      type: [taskDependencySchema],
+      default: [],
+    },
+    // SUBTASKS FIELD (CHILD TASKS)
+    subtasks: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Task",
+      },
+    ],
+    // PARENT TASK FIELD (IF THIS IS A SUBTASK)
+    parentTask: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Task",
+      default: null,
+      index: true,
+    },
   },
   { timestamps: true }
 );
@@ -399,6 +442,31 @@ taskSchema.index(
   { userId: 1, "timeTracking.activeSession.startedAt": 1 },
   { sparse: true }
 );
+/**
+ * INDEX FOR DEPENDENCIES
+ */
+//<== INDEX FOR DEPENDENCIES ==>
+taskSchema.index({ "dependencies.taskId": 1 }, { sparse: true });
+/**
+ * INDEX FOR SUBTASKS
+ */
+//<== INDEX FOR SUBTASKS ==>
+taskSchema.index({ subtasks: 1 }, { sparse: true });
+
+// <== VIRTUAL FIELD FOR IS BLOCKED ==>
+taskSchema.virtual("isBlocked").get(function () {
+  // TASK IS BLOCKED IF IT HAS ANY "blocked_by" DEPENDENCIES
+  return (
+    this.dependencies &&
+    this.dependencies.some((dep: { type: string }) => dep.type === "blocked_by")
+  );
+});
+
+// <== ENSURE VIRTUALS ARE INCLUDED IN JSON OUTPUT ==>
+taskSchema.set("toJSON", { virtuals: true });
+
+// <== ENSURE VIRTUALS ARE INCLUDED IN OBJECT OUTPUT ==>
+taskSchema.set("toObject", { virtuals: true });
 
 // <== PRE-SAVE HOOK TO GENERATE TASK KEY ==>
 taskSchema.pre("save", async function (next) {
