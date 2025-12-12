@@ -17,15 +17,17 @@ export const getMonthlySummary = expressAsyncHandler(async (req, res) => {
   const userId = (req as any).id;
   // IF USER ID NOT PROVIDED, RETURN 401 ERROR
   if (!userId) {
+    // RETURNING ERROR RESPONSE
     res.status(401).json({
       message: "Unauthorized!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // GETTING MONTHLY SUMMARY USING AGGREGATION
   const summary = await Task.aggregate([
-    // MATCHING COMPLETED TASKS
+    // MATCHING COMPLETED TASKS WITHIN THE USER'S TASKS
     {
       $match: {
         userId: new mongoose.Types.ObjectId(String(userId)),
@@ -90,6 +92,7 @@ export const getMonthlySummary = expressAsyncHandler(async (req, res) => {
     success: true,
     data: summary,
   });
+  // RETURNING FROM FUNCTION
   return;
 });
 
@@ -105,10 +108,12 @@ export const getTaskStats = expressAsyncHandler(async (req, res) => {
   const userId = (req as any).id;
   // IF USER ID NOT PROVIDED, RETURN 401 ERROR
   if (!userId) {
+    // RETURNING ERROR RESPONSE
     res.status(401).json({
       message: "Unauthorized!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // GETTING CURRENT DATE
@@ -162,6 +167,7 @@ export const getTaskStats = expressAsyncHandler(async (req, res) => {
       dueTodayCount,
     },
   });
+  // RETURNING FROM FUNCTION
   return;
 });
 
@@ -177,31 +183,39 @@ export const getAllTasks = expressAsyncHandler(async (req, res) => {
   const userId = (req as any).id;
   // IF USER ID NOT PROVIDED, RETURN 401 ERROR
   if (!userId) {
+    // RETURNING ERROR RESPONSE
     res.status(401).json({
       message: "Unauthorized!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // GETTING QUERY PARAMETERS
   const { projectId, status, search, page, limit } = req.query;
-  // PAGINATION PARAMETERS
+  // PAGINATION PARAMETERS (PAGE NUMBER AND PAGE SIZE)
   const pageNumber = parseInt(page as string) || 1;
+  // PAGE SIZE (NUMBER OF TASKS PER PAGE)
   const pageSize = parseInt(limit as string) || 50;
+  // SKIP NUMBER OF TASKS
   const skip = (pageNumber - 1) * pageSize;
   // BUILDING QUERY OBJECT
   let query: any = { userId, isTrashed: false };
   // IF PROJECT ID PROVIDED
   if (projectId) {
+    // ADDING PROJECT ID TO QUERY
     query.projectId = projectId;
   }
   // IF STATUS PROVIDED
   if (status) {
+    // ADDING STATUS TO QUERY
     query.status = (status as string).toLowerCase();
   }
   // IF SEARCH PROVIDED
   if (search) {
+    // CREATING SEARCH REGEX
     const searchRegex = new RegExp(search as string, "i");
+    // ADDING SEARCH QUERY TO QUERY
     query.$or = [{ title: searchRegex }, { description: searchRegex }];
   }
   // GETTING TOTAL COUNT
@@ -225,6 +239,7 @@ export const getAllTasks = expressAsyncHandler(async (req, res) => {
     totalPages,
     data: tasks,
   });
+  // RETURNING FROM FUNCTION
   return;
 });
 
@@ -240,20 +255,24 @@ export const createTask = expressAsyncHandler(async (req, res) => {
   const userId = (req as any).id;
   // IF USER ID NOT PROVIDED, RETURN 401 ERROR
   if (!userId) {
+    // RETURNING ERROR RESPONSE
     res.status(401).json({
       message: "Unauthorized!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // GETTING TASK DATA FROM REQUEST BODY
   const { title, description, status, priority, dueDate, projectId } = req.body;
   // VALIDATING REQUIRED FIELDS
   if (!title || !projectId) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Title and Project ID are Required!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // CHECKING IF PROJECT EXISTS AND BELONGS TO USER
@@ -265,10 +284,12 @@ export const createTask = expressAsyncHandler(async (req, res) => {
     .exec();
   // IF PROJECT NOT FOUND, RETURN 404 ERROR
   if (!project) {
+    // RETURNING ERROR RESPONSE
     res.status(404).json({
       message: "Project not found or unauthorized!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // SETTING COMPLETED AT IF STATUS IS COMPLETED
@@ -283,6 +304,7 @@ export const createTask = expressAsyncHandler(async (req, res) => {
   };
   // IF STATUS IS COMPLETED, SET COMPLETED AT
   if (taskData.status === "completed") {
+    // SETTING COMPLETED AT IF STATUS IS COMPLETED
     taskData.completedAt = new Date();
   }
   // CREATING NEW TASK
@@ -300,6 +322,7 @@ export const createTask = expressAsyncHandler(async (req, res) => {
   const io = (req.app as any).get("io");
   // IF SOCKET IO AVAILABLE, EMIT TASK CREATED EVENT
   if (io) {
+    // EMIT TASK CREATED EVENT IF SOCKET IO AVAILABLE
     io.emit("task_created", newTask);
   }
   // RETURNING RESPONSE
@@ -308,6 +331,7 @@ export const createTask = expressAsyncHandler(async (req, res) => {
     success: true,
     data: newTask,
   });
+  // RETURNING FROM FUNCTION
   return;
 });
 
@@ -323,28 +347,34 @@ export const getTasksByProjectId = expressAsyncHandler(async (req, res) => {
   const userId = (req as any).id;
   // IF USER ID NOT PROVIDED, RETURN 401 ERROR
   if (!userId) {
+    // RETURNING ERROR RESPONSE
     res.status(401).json({
       message: "Unauthorized!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // GETTING PROJECT ID FROM REQUEST PARAMS
   const { projectId } = req.params;
   // IF PROJECT ID NOT PROVIDED, RETURN 400 ERROR
   if (!projectId) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Project ID is Required!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // VALIDATING PROJECT ID FORMAT
   if (!mongoose.Types.ObjectId.isValid(projectId)) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Invalid Project ID format!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // FINDING TASKS BY PROJECT ID
@@ -358,6 +388,7 @@ export const getTasksByProjectId = expressAsyncHandler(async (req, res) => {
     count: tasks.length,
     data: tasks,
   });
+  // RETURNING FROM FUNCTION
   return;
 });
 
@@ -373,10 +404,12 @@ export const getOneTask = expressAsyncHandler(async (req, res) => {
   const taskId = req.params.id;
   // IF TASK ID NOT PROVIDED, RETURN 400 ERROR
   if (!taskId) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Task ID is Required!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // FINDING TASK
@@ -386,10 +419,12 @@ export const getOneTask = expressAsyncHandler(async (req, res) => {
     .exec();
   // IF TASK NOT FOUND, RETURN 404 ERROR
   if (!task) {
+    // RETURNING ERROR RESPONSE
     res.status(404).json({
       message: "Task not found!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // RETURNING RESPONSE
@@ -397,6 +432,7 @@ export const getOneTask = expressAsyncHandler(async (req, res) => {
     success: true,
     data: task,
   });
+  // RETURNING FROM FUNCTION
   return;
 });
 
@@ -412,16 +448,19 @@ export const updateTask = expressAsyncHandler(async (req, res) => {
   const taskId = req.params.id;
   // IF TASK ID NOT PROVIDED, RETURN 400 ERROR
   if (!taskId) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Task ID is Required!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // GETTING STATUS FROM REQUEST BODY
   const { status } = req.body;
   // IF STATUS IS COMPLETED, SET COMPLETED AT
   if (status && status.toLowerCase() === "completed") {
+    // SETTING COMPLETED AT IF STATUS IS COMPLETED
     req.body.completedAt = new Date();
   } else if (status && status.toLowerCase() !== "completed") {
     // IF STATUS IS NOT COMPLETED, CLEAR COMPLETED AT
@@ -436,10 +475,12 @@ export const updateTask = expressAsyncHandler(async (req, res) => {
     .exec();
   // IF TASK NOT FOUND, RETURN 404 ERROR
   if (!task) {
+    // RETURNING ERROR RESPONSE
     res.status(404).json({
       message: "Task not found!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // CREATING NOTIFICATION FOR TASK UPDATE
@@ -455,6 +496,7 @@ export const updateTask = expressAsyncHandler(async (req, res) => {
   const io = (req.app as any).get("io");
   // IF SOCKET IO AVAILABLE, EMIT TASK UPDATED EVENT
   if (io) {
+    // EMIT TASK UPDATED EVENT IF SOCKET IO AVAILABLE
     io.emit("task_updated", task);
   }
   // RETURNING RESPONSE
@@ -463,6 +505,7 @@ export const updateTask = expressAsyncHandler(async (req, res) => {
     success: true,
     data: task,
   });
+  // RETURNING FROM FUNCTION
   return;
 });
 
@@ -478,20 +521,24 @@ export const deleteTask = expressAsyncHandler(async (req, res) => {
   const taskId = req.params.id;
   // IF TASK ID NOT PROVIDED, RETURN 400 ERROR
   if (!taskId) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Task ID is Required!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // FINDING TASK BEFORE DELETION
   const task = await Task.findById(taskId).lean().exec();
   // IF TASK NOT FOUND, RETURN 404 ERROR
   if (!task) {
+    // RETURNING ERROR RESPONSE
     res.status(404).json({
       message: "Task not found!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // DELETING TASK
@@ -509,6 +556,7 @@ export const deleteTask = expressAsyncHandler(async (req, res) => {
   const io = (req.app as any).get("io");
   // IF SOCKET IO AVAILABLE, EMIT TASK DELETED EVENT
   if (io) {
+    // EMIT TASK DELETED EVENT IF SOCKET IO AVAILABLE
     io.emit("task_deleted", taskId);
   }
   // RETURNING RESPONSE
@@ -516,6 +564,7 @@ export const deleteTask = expressAsyncHandler(async (req, res) => {
     message: "Task deleted successfully!",
     success: true,
   });
+  // RETURNING FROM FUNCTION
   return;
 });
 
@@ -531,10 +580,12 @@ export const moveTaskToTrash = expressAsyncHandler(async (req, res) => {
   const taskId = req.params.id;
   // IF TASK ID NOT PROVIDED, RETURN 400 ERROR
   if (!taskId) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Task ID is Required!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // GETTING CURRENT STATUS FROM REQUEST BODY
@@ -543,10 +594,12 @@ export const moveTaskToTrash = expressAsyncHandler(async (req, res) => {
   const existingTask = await Task.findById(taskId).lean().exec();
   // IF TASK NOT FOUND, RETURN 404 ERROR
   if (!existingTask) {
+    // RETURNING ERROR RESPONSE
     res.status(404).json({
       message: "Task not found!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // FINDING AND UPDATING TASK
@@ -567,6 +620,7 @@ export const moveTaskToTrash = expressAsyncHandler(async (req, res) => {
     success: true,
     data: task,
   });
+  // RETURNING FROM FUNCTION
   return;
 });
 
@@ -582,10 +636,12 @@ export const restoreTask = expressAsyncHandler(async (req, res) => {
   const taskId = req.params.id;
   // IF TASK ID NOT PROVIDED, RETURN 400 ERROR
   if (!taskId) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Task ID is Required!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // GETTING ORIGINAL STATUS FROM REQUEST BODY
@@ -604,10 +660,12 @@ export const restoreTask = expressAsyncHandler(async (req, res) => {
     .exec();
   // IF TASK NOT FOUND, RETURN 404 ERROR
   if (!task) {
+    // RETURNING ERROR RESPONSE
     res.status(404).json({
       message: "Task not found!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // RETURNING RESPONSE
@@ -616,6 +674,7 @@ export const restoreTask = expressAsyncHandler(async (req, res) => {
     success: true,
     data: task,
   });
+  // RETURNING FROM FUNCTION
   return;
 });
 
@@ -631,20 +690,24 @@ export const permanentlyDeleteTask = expressAsyncHandler(async (req, res) => {
   const taskId = req.params.id;
   // IF TASK ID NOT PROVIDED, RETURN 400 ERROR
   if (!taskId) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Task ID is Required!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // FINDING TASK BEFORE DELETION
   const task = await Task.findById(taskId).lean().exec();
   // IF TASK NOT FOUND, RETURN 404 ERROR
   if (!task) {
+    // RETURNING ERROR RESPONSE
     res.status(404).json({
       message: "Task not found!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // DELETING TASK PERMANENTLY
@@ -654,6 +717,7 @@ export const permanentlyDeleteTask = expressAsyncHandler(async (req, res) => {
     message: "Task permanently deleted successfully!",
     success: true,
   });
+  // RETURNING FROM FUNCTION
   return;
 });
 
@@ -669,10 +733,12 @@ export const getTrashedTasks = expressAsyncHandler(async (req, res) => {
   const userId = (req as any).id;
   // IF USER ID NOT PROVIDED, RETURN 401 ERROR
   if (!userId) {
+    // RETURNING ERROR RESPONSE
     res.status(401).json({
       message: "Unauthorized!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // FINDING TRASHED TASKS
@@ -686,10 +752,12 @@ export const getTrashedTasks = expressAsyncHandler(async (req, res) => {
     .exec();
   // IF NO TRASHED TASKS FOUND, RETURN 404 ERROR
   if (!trashedTasks || trashedTasks.length === 0) {
+    // RETURNING ERROR RESPONSE
     res.status(404).json({
       message: "No trashed tasks found!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // RETURNING RESPONSE
@@ -698,6 +766,7 @@ export const getTrashedTasks = expressAsyncHandler(async (req, res) => {
     count: trashedTasks.length,
     data: trashedTasks,
   });
+  // RETURNING FROM FUNCTION
   return;
 });
 
@@ -713,10 +782,12 @@ export const getRecentTasks = expressAsyncHandler(async (req, res) => {
   const userId = (req as any).id;
   // IF USER ID NOT PROVIDED, RETURN 401 ERROR
   if (!userId) {
+    // RETURNING ERROR RESPONSE
     res.status(401).json({
       message: "Unauthorized!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // GETTING LIMIT FROM QUERY PARAMETERS
@@ -734,6 +805,7 @@ export const getRecentTasks = expressAsyncHandler(async (req, res) => {
     count: recentTasks.length,
     data: recentTasks,
   });
+  // RETURNING FROM FUNCTION
   return;
 });
 
@@ -749,20 +821,24 @@ export const updateTaskStatus = expressAsyncHandler(async (req, res) => {
   const taskId = req.params.id;
   // IF TASK ID NOT PROVIDED, RETURN 400 ERROR
   if (!taskId) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Task ID is Required!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // GETTING STATUS FROM REQUEST BODY
   const { status } = req.body;
   // IF STATUS NOT PROVIDED, RETURN 400 ERROR
   if (!status) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Status is Required!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // PREPARING UPDATE DATA
@@ -783,10 +859,12 @@ export const updateTaskStatus = expressAsyncHandler(async (req, res) => {
     .exec();
   // IF TASK NOT FOUND, RETURN 404 ERROR
   if (!updatedTask) {
+    // RETURNING ERROR RESPONSE
     res.status(404).json({
       message: "Task not found!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // RETURNING RESPONSE
@@ -795,5 +873,842 @@ export const updateTaskStatus = expressAsyncHandler(async (req, res) => {
     success: true,
     data: updatedTask,
   });
+  // RETURNING FROM FUNCTION
+  return;
+});
+
+/**
+ * ADD DEPENDENCY TO TASK
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== ADD DEPENDENCY ==>
+export const addDependency = expressAsyncHandler(async (req, res) => {
+  // GETTING USER ID FROM REQUEST
+  const userId = (req as any).id;
+  // IF USER ID NOT PROVIDED, RETURN 401 ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GETTING TASK ID FROM REQUEST PARAMS
+  const taskId = req.params.id;
+  // GETTING DEPENDENCY DATA FROM REQUEST BODY
+  const { dependencyTaskId, type } = req.body;
+  // VALIDATE REQUIRED FIELDS
+  if (!taskId || !dependencyTaskId || !type) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Task ID, Dependency Task ID, and Type are Required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // VALIDATE DEPENDENCY TYPE
+  if (!["blocks", "blocked_by", "relates_to"].includes(type)) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message:
+        "Invalid dependency type! Must be: blocks, blocked_by, or relates_to",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // PREVENT SELF-DEPENDENCY
+  if (taskId === dependencyTaskId) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "A task cannot depend on itself!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // CHECK IF TASK EXISTS AND BELONGS TO USER
+  const task = await Task.findOne({ _id: taskId, userId }).exec();
+  // IF TASK NOT FOUND, RETURN 404 ERROR
+  if (!task) {
+    // RETURNING ERROR RESPONSE
+    res.status(404).json({
+      message: "Task not found or unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // CHECK IF DEPENDENCY TASK EXISTS
+  const dependencyTask = await Task.findById(dependencyTaskId).lean().exec();
+  // IF DEPENDENCY TASK NOT FOUND, RETURN 404 ERROR
+  if (!dependencyTask) {
+    // RETURNING ERROR RESPONSE
+    res.status(404).json({
+      message: "Dependency task not found!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // CHECK IF DEPENDENCY ALREADY EXISTS
+  const existingDependency = task.dependencies?.find(
+    (dep: any) =>
+      dep.taskId.toString() === dependencyTaskId && dep.type === type
+  );
+  // IF DEPENDENCY ALREADY EXISTS, RETURN 400 ERROR
+  if (existingDependency) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "This dependency already exists!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // ADD DEPENDENCY TO TASK
+  task.dependencies = task.dependencies || [];
+  // ADD DEPENDENCY TO TASK
+  task.dependencies.push({
+    taskId: new mongoose.Types.ObjectId(dependencyTaskId),
+    type,
+    linkedAt: new Date(),
+  });
+  // SAVE TASK
+  await task.save();
+  // IF TYPE IS "blocks" OR "blocked_by", CREATE REVERSE DEPENDENCY
+  if (type === "blocks" || type === "blocked_by") {
+    // GET REVERSE TYPE
+    const reverseType = type === "blocks" ? "blocked_by" : "blocks";
+    // FIND REVERSE TASK
+    const reverseTask = await Task.findById(dependencyTaskId).exec();
+    // IF REVERSE TASK FOUND, CHECK IF REVERSE DEPENDENCY DOESN'T EXIST
+    if (reverseTask) {
+      // CHECK IF REVERSE DEPENDENCY DOESN'T EXIST
+      const existingReverse = reverseTask.dependencies?.find(
+        (dep: any) =>
+          dep.taskId.toString() === taskId && dep.type === reverseType
+      );
+      // IF REVERSE DEPENDENCY DOESN'T EXIST, ADD REVERSE DEPENDENCY
+      if (!existingReverse) {
+        // ADD REVERSE DEPENDENCY TO REVERSE TASK
+        reverseTask.dependencies = reverseTask.dependencies || [];
+        // ADD REVERSE DEPENDENCY TO REVERSE TASK
+        reverseTask.dependencies.push({
+          taskId: new mongoose.Types.ObjectId(taskId),
+          type: reverseType,
+          linkedAt: new Date(),
+        });
+        // SAVE REVERSE TASK
+        await reverseTask.save();
+      }
+    }
+  }
+  // GET UPDATED TASK WITH POPULATED DEPENDENCIES
+  const updatedTask = await Task.findById(taskId)
+    .populate("dependencies.taskId", "title status priority taskKey")
+    .lean()
+    .exec();
+  // RETURNING RESPONSE
+  res.status(200).json({
+    message: "Dependency added successfully!",
+    success: true,
+    data: updatedTask,
+  });
+  // RETURNING FROM FUNCTION
+  return;
+});
+
+/**
+ * REMOVE DEPENDENCY FROM TASK
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== REMOVE DEPENDENCY ==>
+export const removeDependency = expressAsyncHandler(async (req, res) => {
+  // GETTING USER ID FROM REQUEST
+  const userId = (req as any).id;
+  // IF USER ID NOT PROVIDED, RETURN 401 ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GETTING TASK ID AND DEPENDENCY ID FROM REQUEST PARAMS
+  const { id: taskId, dependencyId } = req.params;
+  // VALIDATE REQUIRED FIELDS
+  if (!taskId || !dependencyId) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Task ID and Dependency ID are Required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // CHECK IF TASK EXISTS AND BELONGS TO USER
+  const task = await Task.findOne({ _id: taskId, userId }).exec();
+  // IF TASK NOT FOUND, RETURN 404 ERROR
+  if (!task) {
+    // RETURNING ERROR RESPONSE
+    res.status(404).json({
+      message: "Task not found or unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FIND THE DEPENDENCY TO REMOVE
+  const dependencyIndex = task.dependencies?.findIndex(
+    (dep: any) => dep._id.toString() === dependencyId
+  );
+  if (dependencyIndex === undefined || dependencyIndex === -1) {
+    // RETURNING ERROR RESPONSE
+    res.status(404).json({
+      message: "Dependency not found!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET DEPENDENCY DETAILS BEFORE REMOVING
+  const dependency = task.dependencies![dependencyIndex];
+  // GET DEPENDENCY TASK ID
+  const dependencyTaskId = dependency!.taskId.toString();
+  // GET DEPENDENCY TYPE
+  const dependencyType = dependency!.type;
+  // REMOVE DEPENDENCY FROM TASK
+  task.dependencies!.splice(dependencyIndex, 1);
+  // SAVE TASK
+  await task.save();
+  // IF TYPE IS "blocks" OR "blocked_by", REMOVE REVERSE DEPENDENCY
+  if (dependencyType === "blocks" || dependencyType === "blocked_by") {
+    // GET REVERSE TYPE
+    const reverseType = dependencyType === "blocks" ? "blocked_by" : "blocks";
+    // FIND REVERSE TASK
+    const reverseTask = await Task.findById(dependencyTaskId).exec();
+    // IF REVERSE TASK FOUND, CHECK IF REVERSE DEPENDENCY DOESN'T EXIST
+    if (reverseTask && reverseTask.dependencies) {
+      // FILTER REVERSE DEPENDENCIES
+      const filteredDeps = reverseTask.dependencies.filter(
+        (dep: any) =>
+          !(dep.taskId.toString() === taskId && dep.type === reverseType)
+      );
+      // REMOVE ALL REVERSE DEPENDENCIES
+      reverseTask.dependencies.splice(0, reverseTask.dependencies.length);
+      // ADD FILTERED DEPENDENCIES TO REVERSE TASK
+      filteredDeps.forEach((dep: any) => reverseTask.dependencies!.push(dep));
+      // SAVE REVERSE TASK
+      await reverseTask.save();
+    }
+  }
+  // GET UPDATED TASK WITH POPULATED DEPENDENCIES
+  const updatedTask = await Task.findById(taskId)
+    .populate("dependencies.taskId", "title status priority taskKey")
+    .lean()
+    .exec();
+  // RETURNING RESPONSE
+  res.status(200).json({
+    message: "Dependency removed successfully!",
+    success: true,
+    data: updatedTask,
+  });
+  // RETURNING FROM FUNCTION
+  return;
+});
+
+/**
+ * GET BLOCKERS FOR TASK (TASKS BLOCKING THIS TASK)
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET BLOCKERS ==>
+export const getBlockers = expressAsyncHandler(async (req, res) => {
+  // GETTING USER ID FROM REQUEST
+  const userId = (req as any).id;
+  // IF USER ID NOT PROVIDED, RETURN 401 ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GETTING TASK ID FROM REQUEST PARAMS
+  const taskId = req.params.id;
+  // VALIDATE TASK ID
+  if (!taskId) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Task ID is Required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FIND TASK AND GET BLOCKERS (TASKS WITH blocked_by DEPENDENCY)
+  const taskResult = await Task.findOne({ _id: taskId, userId })
+    .populate({
+      path: "dependencies.taskId",
+      select: "title status priority taskKey dueDate",
+      match: { isTrashed: false },
+    })
+    .lean()
+    .exec();
+  if (!taskResult) {
+    // RETURNING ERROR RESPONSE
+    res.status(404).json({
+      message: "Task not found or unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  const task = taskResult as any;
+  // FILTER BLOCKERS (blocked_by DEPENDENCIES)
+  const blockers: any[] = [];
+  // IF TASK HAS DEPENDENCIES, FILTER BLOCKERS (blocked_by DEPENDENCIES)
+  if (task.dependencies) {
+    // LOOP THROUGH DEPENDENCIES
+    task.dependencies.forEach((dep: any) => {
+      // IF DEPENDENCY TYPE IS "blocked_by" AND TASK ID IS PROVIDED, ADD DEPENDENCY TO BLOCKERS
+      if (dep.type === "blocked_by" && dep.taskId) {
+        // ADD DEPENDENCY TO BLOCKERS
+        blockers.push({
+          ...dep.taskId,
+          linkedAt: dep.linkedAt,
+          dependencyId: dep._id,
+        });
+      }
+    });
+  }
+  // RETURNING RESPONSE
+  res.status(200).json({
+    success: true,
+    count: blockers.length,
+    data: blockers,
+  });
+  // RETURNING FROM FUNCTION
+  return;
+});
+
+/**
+ * GET BLOCKED TASKS (TASKS THAT THIS TASK BLOCKS)
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET BLOCKED TASKS ==>
+export const getBlockedTasks = expressAsyncHandler(async (req, res) => {
+  // GETTING USER ID FROM REQUEST
+  const userId = (req as any).id;
+  // IF USER ID NOT PROVIDED, RETURN 401 ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GETTING TASK ID FROM REQUEST PARAMS
+  const taskId = req.params.id;
+  // VALIDATE TASK ID
+  if (!taskId) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Task ID is Required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FIND TASK AND GET BLOCKED TASKS (TASKS WITH blocks DEPENDENCY)
+  const taskResult = await Task.findOne({ _id: taskId, userId })
+    .populate({
+      path: "dependencies.taskId",
+      select: "title status priority taskKey dueDate",
+      match: { isTrashed: false },
+    })
+    .lean()
+    .exec();
+  // IF TASK NOT FOUND, RETURN 404 ERROR
+  if (!taskResult) {
+    // RETURNING ERROR RESPONSE
+    res.status(404).json({
+      message: "Task not found or unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  const task = taskResult as any;
+  // FILTER BLOCKED TASKS (blocks DEPENDENCIES)
+  const blockedTasks: any[] = [];
+  // IF TASK HAS DEPENDENCIES, FILTER BLOCKED TASKS (blocks DEPENDENCIES)
+  if (task.dependencies) {
+    // LOOP THROUGH DEPENDENCIES
+    task.dependencies.forEach((dep: any) => {
+      // IF DEPENDENCY TYPE IS "blocks" AND TASK ID IS PROVIDED, ADD DEPENDENCY TO BLOCKED TASKS
+      if (dep.type === "blocks" && dep.taskId) {
+        // ADD DEPENDENCY TO BLOCKED TASKS
+        blockedTasks.push({
+          ...dep.taskId,
+          linkedAt: dep.linkedAt,
+          dependencyId: dep._id,
+        });
+      }
+    });
+  }
+  // RETURNING RESPONSE
+  res.status(200).json({
+    success: true,
+    count: blockedTasks.length,
+    data: blockedTasks,
+  });
+  // RETURNING FROM FUNCTION
+  return;
+});
+
+/**
+ * GET ALL DEPENDENCIES FOR TASK
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET TASK DEPENDENCIES ==>
+export const getTaskDependencies = expressAsyncHandler(async (req, res) => {
+  // GETTING USER ID FROM REQUEST
+  const userId = (req as any).id;
+  // IF USER ID NOT PROVIDED, RETURN 401 ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GETTING TASK ID FROM REQUEST PARAMS
+  const taskId = req.params.id;
+  // VALIDATE TASK ID
+  if (!taskId) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Task ID is Required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FIND TASK WITH POPULATED DEPENDENCIES
+  const taskResult = await Task.findOne({ _id: taskId, userId })
+    .populate({
+      path: "dependencies.taskId",
+      select: "title status priority taskKey dueDate",
+      match: { isTrashed: false },
+    })
+    .lean()
+    .exec();
+  // IF TASK NOT FOUND, RETURN 404 ERROR
+  if (!taskResult) {
+    // RETURNING ERROR RESPONSE
+    res.status(404).json({
+      message: "Task not found or unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // TYPE CAST TASK
+  const task = taskResult as any;
+  // FORMAT DEPENDENCIES BY TYPE
+  const blockersList: any[] = [];
+  // FORMAT DEPENDENCIES BY TYPE
+  const blockingList: any[] = [];
+  // FORMAT DEPENDENCIES BY TYPE
+  const relatedList: any[] = [];
+  // IF TASK HAS DEPENDENCIES, FORMAT DEPENDENCIES BY TYPE
+  if (task.dependencies) {
+    // LOOP THROUGH DEPENDENCIES
+    task.dependencies.forEach((dep: any) => {
+      // IF DEPENDENCY TASK ID IS PROVIDED, ADD DEPENDENCY TO LIST
+      if (dep.taskId) {
+        // ADD DEPENDENCY TO LIST
+        const item = {
+          ...dep.taskId,
+          linkedAt: dep.linkedAt,
+          dependencyId: dep._id,
+        };
+        // IF DEPENDENCY TYPE IS "blocked_by", ADD DEPENDENCY TO BLOCKERS LIST
+        if (dep.type === "blocked_by") {
+          // ADD DEPENDENCY TO BLOCKERS LIST
+          blockersList.push(item);
+        } else if (dep.type === "blocks") {
+          // ADD DEPENDENCY TO BLOCKING LIST
+          blockingList.push(item);
+        } else if (dep.type === "relates_to") {
+          // ADD DEPENDENCY TO RELATED LIST
+          relatedList.push(item);
+        }
+      }
+    });
+  }
+  // CREATE DEPENDENCIES OBJECT
+  const dependencies = {
+    blockers: blockersList,
+    blocking: blockingList,
+    related: relatedList,
+  };
+  // RETURNING RESPONSE
+  res.status(200).json({
+    success: true,
+    data: dependencies,
+  });
+  // RETURNING FROM FUNCTION
+  return;
+});
+
+/**
+ * ADD SUBTASK TO TASK
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== ADD SUBTASK ==>
+export const addSubtask = expressAsyncHandler(async (req, res) => {
+  // GETTING USER ID FROM REQUEST
+  const userId = (req as any).id;
+  // IF USER ID NOT PROVIDED, RETURN 401 ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GETTING PARENT TASK ID FROM REQUEST PARAMS
+  const parentTaskId = req.params.id;
+  // GETTING SUBTASK DATA FROM REQUEST BODY
+  const { title, description, priority, dueDate, projectId } = req.body;
+  // VALIDATE REQUIRED FIELDS
+  if (!parentTaskId || !title) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Parent Task ID and Title are Required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // CHECK IF PARENT TASK EXISTS AND BELONGS TO USER
+  const parentTask = await Task.findOne({ _id: parentTaskId, userId }).exec();
+  // IF PARENT TASK NOT FOUND, RETURN 404 ERROR
+  if (!parentTask) {
+    // RETURNING ERROR RESPONSE
+    res.status(404).json({
+      message: "Parent task not found or unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // CHECK IF PARENT TASK IS ALREADY A SUBTASK (PREVENT DEEP NESTING)
+  if (parentTask.parentTask) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message:
+        "Cannot add subtask to a subtask! Only one level of nesting is allowed.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // CREATE SUBTASK
+  const subtask = await Task.create({
+    title,
+    description: description || "",
+    priority: priority || "medium",
+    dueDate: dueDate || null,
+    projectId: projectId || parentTask.projectId,
+    userId,
+    parentTask: parentTaskId,
+    status: "to do",
+  });
+  // ADD SUBTASK TO PARENT TASK
+  parentTask.subtasks = parentTask.subtasks || [];
+  // ADD SUBTASK TO PARENT TASK
+  parentTask.subtasks.push(subtask._id);
+  // SAVE PARENT TASK
+  await parentTask.save();
+  // RETURNING RESPONSE
+  res.status(201).json({
+    message: "Subtask created successfully!",
+    success: true,
+    data: subtask,
+  });
+  // RETURNING FROM FUNCTION
+  return;
+});
+
+/**
+ * REMOVE SUBTASK FROM TASK
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== REMOVE SUBTASK ==>
+export const removeSubtask = expressAsyncHandler(async (req, res) => {
+  // GETTING USER ID FROM REQUEST
+  const userId = (req as any).id;
+  // IF USER ID NOT PROVIDED, RETURN 401 ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GETTING PARENT TASK ID AND SUBTASK ID FROM REQUEST PARAMS
+  const { id: parentTaskId, subtaskId } = req.params;
+  // VALIDATE REQUIRED FIELDS
+  if (!parentTaskId || !subtaskId) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Parent Task ID and Subtask ID are Required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // CHECK IF PARENT TASK EXISTS AND BELONGS TO USER
+  const parentTask = await Task.findOne({ _id: parentTaskId, userId }).exec();
+  // IF PARENT TASK NOT FOUND, RETURN 404 ERROR
+  if (!parentTask) {
+    // RETURNING ERROR RESPONSE
+    res.status(404).json({
+      message: "Parent task not found or unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // CHECK IF SUBTASK EXISTS IN PARENT
+  const subtaskIndex = parentTask.subtasks?.findIndex(
+    (id: any) => id.toString() === subtaskId
+  );
+  // IF SUBTASK NOT FOUND, RETURN 404 ERROR
+  if (subtaskIndex === undefined || subtaskIndex === -1) {
+    // RETURNING ERROR RESPONSE
+    res.status(404).json({
+      message: "Subtask not found in parent task!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // REMOVE SUBTASK FROM PARENT
+  parentTask.subtasks.splice(subtaskIndex, 1);
+  // SAVE PARENT TASK
+  await parentTask.save();
+  // UPDATE SUBTASK TO REMOVE PARENT REFERENCE (CONVERT TO STANDALONE TASK)
+  await Task.findByIdAndUpdate(subtaskId, { parentTask: null }).exec();
+  // RETURNING RESPONSE
+  res.status(200).json({
+    message: "Subtask removed successfully!",
+    success: true,
+  });
+  // RETURNING FROM FUNCTION
+  return;
+});
+
+/**
+ * GET SUBTASKS FOR TASK
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET SUBTASKS ==>
+export const getSubtasks = expressAsyncHandler(async (req, res) => {
+  // GETTING USER ID FROM REQUEST
+  const userId = (req as any).id;
+  // IF USER ID NOT PROVIDED, RETURN 401 ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GETTING TASK ID FROM REQUEST PARAMS
+  const taskId = req.params.id;
+  // VALIDATE TASK ID
+  if (!taskId) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Task ID is Required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FIND TASK WITH POPULATED SUBTASKS
+  const task = await Task.findOne({ _id: taskId, userId })
+    .populate({
+      path: "subtasks",
+      select: "title status priority taskKey dueDate createdAt",
+      match: { isTrashed: false },
+    })
+    .lean()
+    .exec();
+  // IF TASK NOT FOUND, RETURN 404 ERROR
+  if (!task) {
+    // RETURNING ERROR RESPONSE
+    res.status(404).json({
+      message: "Task not found or unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // RETURNING RESPONSE
+  res.status(200).json({
+    success: true,
+    count: task.subtasks?.length || 0,
+    data: task.subtasks || [],
+  });
+  // RETURNING FROM FUNCTION
+  return;
+});
+
+/**
+ * GET DEPENDENCY GRAPH FOR VISUALIZATION
+ * Returns nodes and edges for react-flow visualization
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET DEPENDENCY GRAPH ==>
+export const getDependencyGraph = expressAsyncHandler(async (req, res) => {
+  // GETTING USER ID FROM REQUEST
+  const userId = (req as any).id;
+  // IF USER ID NOT PROVIDED, RETURN 401 ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GETTING PROJECT ID FROM QUERY (OPTIONAL)
+  const { projectId } = req.query;
+  // BUILD QUERY
+  const query: any = { userId, isTrashed: false };
+  // IF PROJECT ID IS PROVIDED, ADD PROJECT ID TO QUERY
+  if (projectId) {
+    // ADD PROJECT ID TO QUERY
+    query.projectId = projectId;
+  }
+  // FIND ALL TASKS WITH DEPENDENCIES
+  const tasks = await Task.find(query)
+    .select("title status priority taskKey dependencies subtasks parentTask")
+    .lean()
+    .exec();
+  // BUILD NODES AND EDGES FOR GRAPH
+  const nodes = tasks.map((task: any, index: number) => ({
+    id: task._id.toString(),
+    type: "taskNode",
+    position: { x: (index % 5) * 200, y: Math.floor(index / 5) * 100 },
+    data: {
+      label: task.title,
+      taskKey: task.taskKey,
+      status: task.status,
+      priority: task.priority,
+      isBlocked:
+        task.dependencies?.some((dep: any) => dep.type === "blocked_by") ||
+        false,
+      hasSubtasks: task.subtasks?.length > 0,
+      isSubtask: !!task.parentTask,
+    },
+  }));
+  // BUILD EDGES FROM DEPENDENCIES
+  const edges: any[] = [];
+  // LOOP THROUGH TASKS
+  tasks.forEach((task: any) => {
+    // IF TASK HAS DEPENDENCIES, ADD DEPENDENCY EDGES
+    task.dependencies?.forEach((dep: any) => {
+      // IF DEPENDENCY TYPE IS "blocks", ADD BLOCKS EDGE
+      if (dep.type === "blocks") {
+        // ADD BLOCKS EDGE
+        edges.push({
+          id: `${task._id}-${dep.taskId}-blocks`,
+          source: task._id.toString(),
+          target: dep.taskId.toString(),
+          type: "smoothstep",
+          animated: true,
+          style: { stroke: "#ef4444" },
+          label: "blocks",
+          data: { type: "blocks" },
+        });
+      } else if (dep.type === "relates_to") {
+        // ADD RELATES TO EDGE
+        edges.push({
+          id: `${task._id}-${dep.taskId}-relates`,
+          source: task._id.toString(),
+          target: dep.taskId.toString(),
+          type: "smoothstep",
+          style: { stroke: "#6b7280", strokeDasharray: "5 5" },
+          label: "relates to",
+          data: { type: "relates_to" },
+        });
+      }
+    });
+    // ADD SUBTASK EDGES
+    task.subtasks?.forEach((subtaskId: any) => {
+      // ADD SUBTASK EDGE
+      edges.push({
+        id: `${task._id}-${subtaskId}-subtask`,
+        source: task._id.toString(),
+        target: subtaskId.toString(),
+        type: "smoothstep",
+        style: { stroke: "#3b82f6" },
+        label: "subtask",
+        data: { type: "subtask" },
+      });
+    });
+  });
+  // RETURNING RESPONSE
+  res.status(200).json({
+    success: true,
+    data: {
+      nodes,
+      edges,
+      taskCount: tasks.length,
+    },
+  });
+  // RETURNING FROM FUNCTION
   return;
 });
