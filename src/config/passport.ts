@@ -11,6 +11,7 @@ import passport from "passport";
 import { User } from "../models/user.model.js";
 import { VerifyCallback } from "passport-oauth2";
 import { encryptSecret } from "../utils/encryption.js";
+import { Workspace } from "../models/workspace.model.js";
 
 // <== USER TYPE FOR PASSPORT ==>
 interface PassportUser {
@@ -109,9 +110,13 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
             }
             // RETURN USER (CONVERT _ID TO STRING IF NEEDED)
             const passportUser: PassportUser = {
-              ...user,
               _id:
                 typeof user._id === "string" ? user._id : user._id.toString(),
+              email: user.email,
+              name: user.name,
+              provider: user.provider,
+              providerId: user.providerId,
+              providerEmail: user.providerEmail,
             };
             return done(null, passportUser);
           }
@@ -131,13 +136,28 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
             );
           }
           // CREATE NEW USER
+          const userName =
+            profile.displayName || profile.name?.givenName || "User";
           const newUser = await User.create({
-            name: profile.displayName || profile.name?.givenName || "User",
+            name: userName,
             email: profile.emails[0].value,
             provider: "google",
             providerId: profile.id,
             providerEmail: profile.emails[0].value,
             profilePic: profile.photos?.[0]?.value || "",
+          });
+          // CREATE PERSONAL WORKSPACE FOR THE NEW USER
+          const personalWorkspace = await Workspace.create({
+            name: `${userName}'s Space`,
+            description:
+              "Your personal workspace for individual tasks and projects",
+            visibility: "system",
+            type: "personal",
+            ownerId: newUser._id,
+          });
+          // UPDATE USER WITH PERSONAL WORKSPACE ID
+          await User.findByIdAndUpdate(newUser._id, {
+            personalWorkspaceId: personalWorkspace._id,
           });
           // RETURN NEW USER (CONVERT TO PLAIN OBJECT AND ENSURE _ID IS STRING)
           const userObject = newUser.toObject();
@@ -278,11 +298,16 @@ if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
               return done(new Error("User not found"), undefined);
             }
             const passportUser: PassportUser = {
-              ...user,
               _id:
                 typeof user._id === "string" ? user._id : user._id.toString(),
               email: user.email || email,
               name: user.name || displayName,
+              provider: user.provider,
+              providerId: user.providerId,
+              providerEmail: user.providerEmail,
+              githubUsername: user.githubUsername,
+              githubConnectedAt: user.githubConnectedAt,
+              githubScopes: user.githubScopes,
             };
             // RETURNING PASSPORT USER
             return done(null, passportUser);
@@ -316,6 +341,19 @@ if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
             githubUsername: profile.username,
             githubConnectedAt: new Date(),
             githubScopes: githubScopes,
+          });
+          // CREATE PERSONAL WORKSPACE FOR THE NEW USER
+          const personalWorkspace = await Workspace.create({
+            name: `${displayName}'s Space`,
+            description:
+              "Your personal workspace for individual tasks and projects",
+            visibility: "system",
+            type: "personal",
+            ownerId: newUser._id,
+          });
+          // UPDATE USER WITH PERSONAL WORKSPACE ID
+          await User.findByIdAndUpdate(newUser._id, {
+            personalWorkspaceId: personalWorkspace._id,
           });
           // RETURN NEW USER (CONVERT TO PLAIN OBJECT AND ENSURE _ID IS STRING)
           const userObject = newUser.toObject();
@@ -368,8 +406,15 @@ passport.deserializeUser(async (id: string, done) => {
     }
     // CONVERT _ID TO STRING FOR PASSPORT USER
     const passportUser: PassportUser = {
-      ...user,
       _id: typeof user._id === "string" ? user._id : user._id.toString(),
+      email: user.email,
+      name: user.name,
+      provider: user.provider,
+      providerId: user.providerId,
+      providerEmail: user.providerEmail,
+      githubUsername: user.githubUsername,
+      githubConnectedAt: user.githubConnectedAt,
+      githubScopes: user.githubScopes,
     };
     // RETURN PASSPORT USER
     done(null, passportUser);
