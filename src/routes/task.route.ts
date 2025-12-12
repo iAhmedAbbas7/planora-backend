@@ -14,6 +14,15 @@ import {
   permanentlyDeleteTask,
   getTrashedTasks,
   getTasksByProjectId,
+  addDependency,
+  removeDependency,
+  getBlockers,
+  getBlockedTasks,
+  getTaskDependencies,
+  addSubtask,
+  removeSubtask,
+  getSubtasks,
+  getDependencyGraph,
 } from "../controllers/task.controller.js";
 import express from "express";
 import isAuthenticated from "../middleware/isAuthenticated.js";
@@ -39,6 +48,9 @@ router.get("/trashed", getTrashedTasks);
 router.get("/monthly-summary", getMonthlySummary);
 // GET TASKS BY PROJECT ID
 router.get("/project/:projectId", getTasksByProjectId);
+// <== DEPENDENCY GRAPH ROUTE (BEFORE PARAMETERIZED ROUTES) ==>
+// GET DEPENDENCY GRAPH
+router.get("/dependency-graph", getDependencyGraph);
 // <== PARAMETERIZED ROUTES MUST BE AFTER SPECIFIC ROUTES ==>
 // GET SINGLE TASK
 router.get("/:id", getOneTask);
@@ -54,5 +66,23 @@ router.put("/:id/restore", restoreTask);
 router.put("/:id/trash", moveTaskToTrash);
 // PERMANENTLY DELETE TASK
 router.delete("/:id/permanent", permanentlyDeleteTask);
+// <== DEPENDENCY ROUTES ==>
+// GET TASK DEPENDENCIES
+router.get("/:id/dependencies", getTaskDependencies);
+// ADD DEPENDENCY TO TASK
+router.post("/:id/dependencies", addDependency);
+// REMOVE DEPENDENCY FROM TASK
+router.delete("/:id/dependencies/:dependencyId", removeDependency);
+// GET BLOCKERS (TASKS BLOCKING THIS TASK)
+router.get("/:id/blockers", getBlockers);
+// GET BLOCKED TASKS (TASKS THIS TASK BLOCKS)
+router.get("/:id/blocked", getBlockedTasks);
+// <== SUBTASK ROUTES ==>
+// GET SUBTASKS
+router.get("/:id/subtasks", getSubtasks);
+// ADD SUBTASK
+router.post("/:id/subtasks", addSubtask);
+// REMOVE SUBTASK
+router.delete("/:id/subtasks/:subtaskId", removeSubtask);
 
 export default router;
