@@ -1,9 +1,13 @@
 // <== IMPORTS ==>
 import mongoose from "mongoose";
 import { Task } from "../models/task.model.js";
+import { User } from "../models/user.model.js";
 import { Project } from "../models/project.model.js";
 import expressAsyncHandler from "express-async-handler";
+import { Workspace } from "../models/workspace.model.js";
 import { FocusSession } from "../models/focusSession.model.js";
+import { MemberActivity } from "../models/memberActivity.model.js";
+import { WorkspaceMember } from "../models/workspaceMember.model.js";
 
 // <== AUTHENTICATED REQUEST TYPE ==>
 interface AuthenticatedRequest {
@@ -896,6 +900,387 @@ export const getReportsOverview = expressAsyncHandler(async (req, res) => {
       overdueTasks: stats.overdueTasks,
       activeProjects: activeProjectsCount,
       focusTimeThisWeek: focusTimeThisWeek[0]?.totalMinutes || 0,
+    },
+  });
+  // RETURNING FROM FUNCTION
+  return;
+});
+
+/**
+ * GET WORKSPACE REPORT
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET WORKSPACE REPORT ==>
+export const getWorkspaceReport = expressAsyncHandler(async (req, res) => {
+  // GETTING USER ID FROM REQUEST
+  const userId = (req as unknown as AuthenticatedRequest).id;
+  // IF USER ID NOT PROVIDED, RETURN 401 ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GETTING WORKSPACE ID FROM REQUEST PARAMS
+  const { workspaceId } = req.params;
+  // GETTING PERIOD FROM REQUEST QUERY
+  const period = (req.query.period as ReportPeriod) || "month";
+  // GET DATE RANGE
+  const { startDate, endDate } = getDateRange(period);
+  // WORKSPACE OBJECT ID
+  const workspaceObjectId = new mongoose.Types.ObjectId(String(workspaceId));
+  // USER OBJECT ID
+  const userObjectId = new mongoose.Types.ObjectId(String(userId));
+  // VERIFY USER IS A MEMBER OF THE WORKSPACE
+  const membership = await WorkspaceMember.findOne({
+    workspaceId: workspaceObjectId,
+    userId: userObjectId,
+    status: "active",
+  })
+    .lean()
+    .exec();
+  // IF NOT A MEMBER, RETURN 403 ERROR
+  if (!membership) {
+    // RETURNING ERROR RESPONSE
+    res.status(403).json({
+      message: "You are not a member of this workspace!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET WORKSPACE DETAILS
+  const workspace = await Workspace.findById(workspaceObjectId)
+    .select("name description avatar visibility")
+    .lean()
+    .exec();
+  // IF WORKSPACE NOT FOUND, RETURN 404 ERROR
+  if (!workspace) {
+    // RETURNING ERROR RESPONSE
+    res.status(404).json({
+      message: "Workspace not found!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET ALL WORKSPACE MEMBERS
+  const members = await WorkspaceMember.find({
+    workspaceId: workspaceObjectId,
+    status: "active",
+  })
+    .populate("userId", "username fullName avatar")
+    .lean()
+    .exec();
+  // GET MEMBER USER IDS AS OBJECT IDS
+  const memberUserIds: mongoose.Types.ObjectId[] = [];
+  // LOOP THROUGH MEMBERS AND GET USER IDS
+  for (const member of members) {
+    // IF USER ID IS PROVIDED AND IS AN OBJECT
+    if (member.userId && typeof member.userId === "object") {
+      // CAST TO UNKNOWN FIRST TO AVOID TYPE INCOMPATIBILITY
+      const populatedUser = member.userId as unknown as {
+        _id: mongoose.Types.ObjectId;
+      };
+      // IF USER ID IS PROVIDED AND IS AN OBJECT ID
+      if (populatedUser._id) {
+        // PUSH USER ID TO ARRAY
+        memberUserIds.push(
+          new mongoose.Types.ObjectId(String(populatedUser._id))
+        );
+      }
+    }
+  }
+  // WORKSPACE TASK STATS (FROM WORKSPACE PROJECTS)
+  const workspaceProjectDocs = await Project.find({
+    workspaceId: workspaceObjectId,
+    isTrashed: false,
+  })
+    .select("_id")
+    .lean<{ _id: mongoose.Types.ObjectId }[]>()
+    .exec();
+  // GET PROJECT IDS
+  const projectIds = workspaceProjectDocs.map((p) => p._id);
+  // TASK STATISTICS FOR WORKSPACE
+  const taskStats = await Task.aggregate([
+    // MATCH WORKSPACE TASKS
+    {
+      $match: {
+        projectId: { $in: projectIds },
+        isTrashed: false,
+      },
+    },
+    // GROUP TO GET COUNTS
+    {
+      $group: {
+        _id: null,
+        totalTasks: { $sum: 1 },
+        completedTasks: {
+          $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] },
+        },
+        inProgressTasks: {
+          $sum: { $cond: [{ $eq: ["$status", "in progress"] }, 1, 0] },
+        },
+        pendingTasks: {
+          $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] },
+        },
+        overdueTasks: {
+          $sum: {
+            $cond: [
+              {
+                $and: [
+                  { $ne: ["$status", "completed"] },
+                  { $lt: ["$dueDate", new Date()] },
+                  { $ne: ["$dueDate", null] },
+                ],
+              },
+              1,
+              0,
+            ],
+          },
+        },
+        completedInPeriod: {
+          $sum: {
+            $cond: [
+              {
+                $and: [
+                  { $eq: ["$status", "completed"] },
+                  { $gte: ["$completedAt", startDate] },
+                  { $lte: ["$completedAt", endDate] },
+                ],
+              },
+              1,
+              0,
+            ],
+          },
+        },
+      },
+    },
+  ]).exec();
+  // MEMBER CONTRIBUTION BREAKDOWN
+  const memberContributions = await Task.aggregate([
+    // MATCH WORKSPACE TASKS COMPLETED IN PERIOD
+    {
+      $match: {
+        projectId: { $in: projectIds },
+        isTrashed: false,
+        status: "completed",
+        completedAt: { $gte: startDate, $lte: endDate },
+        assigneeId: { $in: memberUserIds },
+      },
+    },
+    // LOOKUP USER INFO
+    {
+      $lookup: {
+        from: "users",
+        localField: "assigneeId",
+        foreignField: "_id",
+        as: "assignee",
+      },
+    },
+    // UNWIND ASSIGNEE
+    {
+      $unwind: {
+        path: "$assignee",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+    // GROUP BY ASSIGNEE
+    {
+      $group: {
+        _id: "$assigneeId",
+        username: { $first: "$assignee.username" },
+        fullName: { $first: "$assignee.fullName" },
+        avatar: { $first: "$assignee.avatar" },
+        tasksCompleted: { $sum: 1 },
+        highPriority: {
+          $sum: { $cond: [{ $eq: ["$priority", "high"] }, 1, 0] },
+        },
+      },
+    },
+    // SORT BY TASKS COMPLETED
+    {
+      $sort: { tasksCompleted: -1 },
+    },
+    // PROJECT FINAL SHAPE
+    {
+      $project: {
+        _id: 0,
+        memberId: "$_id",
+        username: 1,
+        fullName: 1,
+        avatar: 1,
+        tasksCompleted: 1,
+        highPriority: 1,
+      },
+    },
+  ]).exec();
+  // WEEKLY TEAM VELOCITY
+  const weeklyVelocity = await Task.aggregate([
+    // MATCH WORKSPACE TASKS COMPLETED IN LAST 12 WEEKS
+    {
+      $match: {
+        projectId: { $in: projectIds },
+        isTrashed: false,
+        status: "completed",
+        completedAt: {
+          $gte: new Date(Date.now() - 12 * 7 * 24 * 60 * 60 * 1000),
+        },
+      },
+    },
+    // GROUP BY WEEK
+    {
+      $group: {
+        _id: {
+          year: { $isoWeekYear: "$completedAt" },
+          week: { $isoWeek: "$completedAt" },
+        },
+        count: { $sum: 1 },
+      },
+    },
+    // SORT BY YEAR AND WEEK
+    {
+      $sort: { "_id.year": 1, "_id.week": 1 },
+    },
+    // PROJECT FINAL SHAPE
+    {
+      $project: {
+        _id: 0,
+        week: {
+          $concat: ["W", { $toString: "$_id.week" }],
+        },
+        completed: "$count",
+      },
+    },
+    // LIMIT TO LAST 8 WEEKS
+    {
+      $limit: 8,
+    },
+  ]).exec();
+  // PROJECT STATUS BREAKDOWN
+  const projectStatus = await Project.aggregate([
+    // MATCH WORKSPACE PROJECTS
+    {
+      $match: {
+        workspaceId: workspaceObjectId,
+        isTrashed: false,
+      },
+    },
+    // GROUP BY STATUS
+    {
+      $group: {
+        _id: "$status",
+        count: { $sum: 1 },
+      },
+    },
+    // PROJECT FINAL SHAPE
+    {
+      $project: {
+        _id: 0,
+        status: "$_id",
+        count: 1,
+      },
+    },
+  ]).exec();
+  // MEMBER ACTIVITY OVER TIME (FROM MEMBER ACTIVITY MODEL)
+  const memberActivityTrend = await MemberActivity.aggregate([
+    // MATCH WORKSPACE MEMBER ACTIVITY IN DATE RANGE
+    {
+      $match: {
+        workspaceId: workspaceObjectId,
+        date: { $gte: startDate, $lte: endDate },
+      },
+    },
+    // GROUP BY DATE
+    {
+      $group: {
+        _id: { $dateToString: { format: "%Y-%m-%d", date: "$date" } },
+        totalCommits: { $sum: "$stats.commits" },
+        totalTasks: { $sum: "$stats.tasksCompleted" },
+        totalPRs: { $sum: "$stats.prsOpened" },
+      },
+    },
+    // SORT BY DATE
+    {
+      $sort: { _id: 1 },
+    },
+    // PROJECT FINAL SHAPE
+    {
+      $project: {
+        _id: 0,
+        date: "$_id",
+        commits: "$totalCommits",
+        tasks: "$totalTasks",
+        pullRequests: "$totalPRs",
+      },
+    },
+  ]).exec();
+  // CALCULATE METRICS
+  const stats = taskStats[0] || {
+    totalTasks: 0,
+    completedTasks: 0,
+    inProgressTasks: 0,
+    pendingTasks: 0,
+    overdueTasks: 0,
+    completedInPeriod: 0,
+  };
+  // CALCULATE COMPLETION RATE
+  const completionRate =
+    stats.totalTasks > 0
+      ? Math.round((stats.completedTasks / stats.totalTasks) * 100)
+      : 0;
+  // CALCULATE TEAM VELOCITY (TASKS PER WEEK)
+  const weeksInPeriod =
+    period === "week"
+      ? 1
+      : period === "month"
+      ? 4
+      : period === "quarter"
+      ? 13
+      : 52;
+  // CALCULATE VELOCITY
+  const teamVelocity =
+    weeksInPeriod > 0
+      ? Math.round((stats.completedInPeriod / weeksInPeriod) * 10) / 10
+      : 0;
+  // BUILD RESPONSE
+  res.status(200).json({
+    success: true,
+    data: {
+      workspace: {
+        id: workspace._id,
+        name: workspace.name,
+        description: workspace.description,
+        visibility: workspace.visibility,
+        memberCount: members.length,
+        projectCount: projectIds.length,
+      },
+      summary: {
+        totalTasks: stats.totalTasks,
+        completedTasks: stats.completedTasks,
+        inProgressTasks: stats.inProgressTasks,
+        pendingTasks: stats.pendingTasks,
+        overdueTasks: stats.overdueTasks,
+        completedInPeriod: stats.completedInPeriod,
+        completionRate,
+        teamVelocity,
+      },
+      members: memberContributions,
+      charts: {
+        weeklyVelocity,
+        projectStatus,
+        memberActivityTrend,
+      },
+      period,
+      dateRange: {
+        start: startDate.toISOString(),
+        end: endDate.toISOString(),
+      },
     },
   });
   // RETURNING FROM FUNCTION
