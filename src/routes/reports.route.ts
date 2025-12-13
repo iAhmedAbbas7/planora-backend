@@ -3,6 +3,7 @@ import {
   getPersonalReport,
   getProjectReport,
   getReportsOverview,
+  getWorkspaceReport,
 } from "../controllers/reports.controller.js";
 import express from "express";
 import isAuthenticated from "../middleware/isAuthenticated.js";
@@ -17,5 +18,7 @@ router.get("/overview", getReportsOverview);
 router.get("/personal", getPersonalReport);
 // GET PROJECT REPORT
 router.get("/project/:projectId", getProjectReport);
+// GET WORKSPACE REPORT
+router.get("/workspace/:workspaceId", getWorkspaceReport);
 
 export default router;
