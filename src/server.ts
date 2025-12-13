@@ -21,6 +21,7 @@ import searchRoute from "./routes/search.route.js";
 import profileRoute from "./routes/profile.route.js";
 import projectRoute from "./routes/project.route.js";
 import accountRoute from "./routes/account.route.js";
+import reportsRoute from "./routes/reports.route.js";
 import settingsRoute from "./routes/settings.route.js";
 import securityRoute from "./routes/security.route.js";
 import { initializeCronJobs } from "./jobs/cronJobs.js";
@@ -108,6 +109,8 @@ app.use("/api/v1/github", githubRoute);
 app.use("/api/v1/profile", profileRoute);
 // <== ACCOUNT ROUTE ==>
 app.use("/api/v1/account", accountRoute);
+// <== REPORTS ROUTE ==>
+app.use("/api/v1/reports", reportsRoute);
 // <== PROJECT ROUTE ==>
 app.use("/api/v1/projects", projectRoute);
 // <== SECURITY ROUTE ==>
