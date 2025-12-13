@@ -31,6 +31,7 @@ import workspaceAIRoute from "./routes/workspaceAI.route.js";
 import codeLinkingRoute from "./routes/codeLinking.route.js";
 import notificationRoute from "./routes/notification.route.js";
 import timeTrackingRoute from "./routes/timeTracking.route.js";
+import focusSessionRoute from "./routes/focusSession.route.js";
 import helmetMiddleware from "./middleware/helmetMiddleware.js";
 import { connectDB, disconnectDB } from "./config/dbConnection.js";
 import workspaceAnalyticsRoute from "./routes/workspaceAnalytics.route.js";
@@ -113,6 +114,8 @@ app.use("/api/v1/projects", projectRoute);
 app.use("/api/v1/security", securityRoute);
 // <== SETTINGS ROUTE ==>
 app.use("/api/v1/settings", settingsRoute);
+// <== FOCUS SESSION ROUTE ==>
+app.use("/api/v1/focus", focusSessionRoute);
 // <== WORKSPACE ROUTE ==>
 app.use("/api/v1/workspaces", workspaceRoute);
 // <== CODE LINKING ROUTE ==>
