@@ -10,6 +10,7 @@ export type NotificationType =
   | "task_updated"
   | "task_deleted"
   | "task_due_soon"
+  | "recurring_task"
   | "workspace_created"
   | "workspace_updated"
   | "workspace_deleted"
