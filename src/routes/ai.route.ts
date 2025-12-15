@@ -24,6 +24,7 @@ import {
   aiGenerateReadme,
   aiActivityInsights,
   getDailyBriefing,
+  suggestDueDate,
 } from "../controllers/ai.controller.js";
 import express from "express";
 import isAuthenticated from "../middleware/isAuthenticated.js";
@@ -82,5 +83,7 @@ router.post("/generate-readme", aiGenerateReadme);
 router.post("/activity-insights", aiActivityInsights);
 // AI DAILY BRIEFING
 router.get("/daily-briefing", getDailyBriefing);
+// AI SUGGEST DUE DATE
+router.post("/suggest-due-date", suggestDueDate);
 
 export default router;
