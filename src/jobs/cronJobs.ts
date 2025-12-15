@@ -147,6 +147,224 @@ export const initializeCronJobs = (app: Express): void => {
       console.error("Error in Session Cleanup Cron Job:", error);
     }
   });
+
+  // <== CRON JOB TO GENERATE RECURRING TASK OCCURRENCES ==>
+  // RUNS EVERY DAY AT 1 AM
+  cron.schedule("0 1 * * *", async () => {
+    try {
+      // GETTING CURRENT DATE
+      const now = new Date();
+      // GETTING END OF TODAY
+      const endOfToday = new Date(now);
+      // SETTING END OF TODAY TO 11:59:59 PM
+      endOfToday.setHours(23, 59, 59, 999);
+      // FINDING RECURRING TASKS THAT NEED NEXT OCCURRENCE GENERATED
+      const recurringTasks = await Task.find({
+        "recurrence.isRecurring": true,
+        "recurrence.nextOccurrence": { $lte: endOfToday },
+        isTrashed: false,
+        $or: [{ status: "completed" }, { dueDate: { $lt: now } }],
+      })
+        .lean()
+        .exec();
+      // COUNTER FOR GENERATED TASKS
+      let generatedCount = 0;
+      // PROCESS EACH RECURRING TASK
+      for (const task of recurringTasks) {
+        // CHECK IF END DATE HAS PASSED
+        if (
+          task.recurrence?.endDate &&
+          now > new Date(task.recurrence.endDate)
+        ) {
+          // DISABLE RECURRENCE FOR THIS TASK
+          await Task.updateOne(
+            { _id: task._id },
+            { "recurrence.isRecurring": false }
+          ).exec();
+          // CONTINUE TO NEXT TASK
+          continue;
+        }
+        // CALCULATE NEW DUE DATE
+        const baseDueDate = task.dueDate || now;
+        // CALCULATING NEW DUE DATE
+        const newDueDate = calculateNextOccurrenceForCron(
+          new Date(baseDueDate),
+          task.recurrence?.pattern || "daily",
+          task.recurrence?.interval || 1,
+          task.recurrence?.daysOfWeek || [],
+          task.recurrence?.skipWeekends || false
+        );
+        // CHECK IF NEW DUE DATE EXCEEDS END DATE
+        if (
+          task.recurrence?.endDate &&
+          newDueDate > new Date(task.recurrence.endDate)
+        ) {
+          // DISABLE RECURRENCE FOR THIS TASK
+          await Task.updateOne(
+            { _id: task._id },
+            { "recurrence.isRecurring": false }
+          ).exec();
+          // CONTINUE TO NEXT TASK
+          continue;
+        }
+        // CREATE NEW TASK OCCURRENCE
+        const newTaskData = {
+          title: task.title,
+          description: task.description,
+          status: "to do",
+          priority: task.priority,
+          dueDate: newDueDate,
+          projectId: task.projectId,
+          userId: task.userId,
+          recurrence: {
+            isRecurring: true,
+            pattern: task.recurrence?.pattern,
+            interval: task.recurrence?.interval,
+            daysOfWeek: task.recurrence?.daysOfWeek,
+            dayOfMonth: task.recurrence?.dayOfMonth,
+            endDate: task.recurrence?.endDate,
+            skipWeekends: task.recurrence?.skipWeekends,
+            nextOccurrence: calculateNextOccurrenceForCron(
+              newDueDate,
+              task.recurrence?.pattern || "daily",
+              task.recurrence?.interval || 1,
+              task.recurrence?.daysOfWeek || [],
+              task.recurrence?.skipWeekends || false
+            ),
+            lastGeneratedAt: now,
+            originalTaskId: task.recurrence?.originalTaskId || task._id,
+            occurrenceCount: (task.recurrence?.occurrenceCount || 0) + 1,
+          },
+        };
+        // CREATE NEW TASK
+        await Task.create(newTaskData);
+        // DISABLE RECURRENCE ON ORIGINAL TASK
+        await Task.updateOne(
+          { _id: task._id },
+          {
+            "recurrence.isRecurring": false,
+            "recurrence.lastGeneratedAt": now,
+          }
+        ).exec();
+        // INCREMENT COUNTER
+        generatedCount++;
+        // CREATE NOTIFICATION FOR USER
+        await createNotification(
+          task.userId.toString(),
+          "recurring_task",
+          "Recurring Task Created",
+          `A new occurrence of "${task.title}" has been created.`,
+          task._id.toString(),
+          app
+        );
+      }
+      // LOG RESULTS
+      if (generatedCount > 0) {
+        console.log(
+          `Recurring Task Cron Job: Generated ${generatedCount} New Task Occurrence(s)`
+        );
+      }
+    } catch (error: any) {
+      // LOGGING ERROR
+      console.error("Error in Recurring Task Cron Job:", error);
+    }
+  });
+
   // LOGGING SUCCESS
   console.log("Cron Jobs Initialized Successfully!");
+};
+
+// <== RECURRENCE PATTERN TYPE FOR CRON ==>
+type RecurrencePattern = "daily" | "weekly" | "monthly" | "yearly" | "custom";
+
+// <== CALCULATE NEXT OCCURRENCE HELPER FOR CRON ==>
+const calculateNextOccurrenceForCron = (
+  baseDate: Date,
+  pattern: RecurrencePattern,
+  interval: number = 1,
+  daysOfWeek: number[] = [],
+  skipWeekends: boolean = false
+): Date => {
+  // CREATE NEW DATE OBJECT FROM BASE DATE
+  const nextDate = new Date(baseDate);
+  // SWITCH BASED ON PATTERN
+  switch (pattern) {
+    // CASE DAILY
+    case "daily":
+      // ADD INTERVAL DAYS
+      nextDate.setDate(nextDate.getDate() + interval);
+      // IF SKIP WEEKENDS, ADJUST DATE
+      if (skipWeekends) {
+        // GET DAY OF WEEK (0 = SUNDAY, 6 = SATURDAY)
+        const dayOfWeek = nextDate.getDay();
+        // IF SATURDAY, ADD 2 DAYS TO GET TO MONDAY
+        if (dayOfWeek === 6) {
+          // ADD 2 DAYS TO GET TO MONDAY
+          nextDate.setDate(nextDate.getDate() + 2);
+        }
+        // IF SUNDAY, ADD 1 DAY TO GET TO MONDAY
+        else if (dayOfWeek === 0) {
+          // ADD 1 DAY TO GET TO MONDAY
+          nextDate.setDate(nextDate.getDate() + 1);
+        }
+      }
+      break;
+    // CASE WEEKLY
+    case "weekly":
+      // IF DAYS OF WEEK SPECIFIED, FIND NEXT MATCHING DAY
+      if (daysOfWeek.length > 0) {
+        // SORT DAYS OF WEEK
+        const sortedDays = [...daysOfWeek].sort((a, b) => a - b);
+        // GET CURRENT DAY OF WEEK
+        const currentDay = nextDate.getDay();
+        // FIND NEXT DAY IN SORTED DAYS
+        let foundNextDay = false;
+        // LOOP THROUGH SORTED DAYS
+        for (const day of sortedDays) {
+          // IF DAY IS AFTER CURRENT DAY, USE IT
+          if (day > currentDay) {
+            // CALCULATE DAYS TO ADD
+            nextDate.setDate(nextDate.getDate() + (day - currentDay));
+            // SET FOUND NEXT DAY TO TRUE
+            foundNextDay = true;
+            // BREAK OUT OF LOOP
+            break;
+          }
+        }
+        // IF NO NEXT DAY FOUND IN CURRENT WEEK, GO TO FIRST DAY OF NEXT INTERVAL WEEK
+        if (!foundNextDay && sortedDays[0] !== undefined) {
+          // DAYS UNTIL NEXT OCCURRENCE OF FIRST DAY
+          const daysUntilFirst = 7 - currentDay + sortedDays[0];
+          // ADD INTERVAL WEEKS MINUS ONE (SINCE WE ALREADY ADD ONE WEEK)
+          nextDate.setDate(
+            nextDate.getDate() + daysUntilFirst + (interval - 1) * 7
+          );
+        }
+      } else {
+        // NO SPECIFIC DAYS, JUST ADD INTERVAL WEEKS
+        nextDate.setDate(nextDate.getDate() + interval * 7);
+      }
+      break;
+    // CASE MONTHLY
+    case "monthly":
+      // ADD INTERVAL MONTHS
+      nextDate.setMonth(nextDate.getMonth() + interval);
+      break;
+    // CASE YEARLY
+    case "yearly":
+      // ADD INTERVAL YEARS
+      nextDate.setFullYear(nextDate.getFullYear() + interval);
+      break;
+    // CASE CUSTOM
+    case "custom":
+      // FOR CUSTOM, DEFAULT TO DAILY WITH INTERVAL
+      nextDate.setDate(nextDate.getDate() + interval);
+      break;
+    // DEFAULT CASE
+    default:
+      // DEFAULT TO DAILY
+      nextDate.setDate(nextDate.getDate() + 1);
+  }
+  // RETURN NEXT DATE
+  return nextDate;
 };
