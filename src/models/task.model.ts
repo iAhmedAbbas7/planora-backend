@@ -374,6 +374,76 @@ const taskSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+    // RECURRENCE FIELD (FOR RECURRING TASKS)
+    recurrence: {
+      // IS RECURRING FLAG
+      isRecurring: {
+        type: Boolean,
+        default: false,
+      },
+      // RECURRENCE PATTERN: DAILY, WEEKLY, MONTHLY, YEARLY, CUSTOM
+      pattern: {
+        type: String,
+        enum: ["daily", "weekly", "monthly", "yearly", "custom"],
+        default: null,
+      },
+      // INTERVAL (E.G., EVERY 2 DAYS, EVERY 3 WEEKS)
+      interval: {
+        type: Number,
+        default: 1,
+        min: 1,
+        max: 365,
+      },
+      // DAYS OF WEEK FOR WEEKLY PATTERN (0 = SUNDAY, 6 = SATURDAY)
+      daysOfWeek: {
+        type: [Number],
+        default: [],
+        validate: {
+          validator: function (v: number[]) {
+            return v.every((day) => day >= 0 && day <= 6);
+          },
+          message: "Days of week must be between 0 (Sunday) and 6 (Saturday)",
+        },
+      },
+      // DAY OF MONTH FOR MONTHLY PATTERN (1-31)
+      dayOfMonth: {
+        type: Number,
+        default: null,
+        min: 1,
+        max: 31,
+      },
+      // END DATE FOR RECURRENCE (OPTIONAL - IF NULL, RECURS INDEFINITELY)
+      endDate: {
+        type: Date,
+        default: null,
+      },
+      // SKIP WEEKENDS FLAG
+      skipWeekends: {
+        type: Boolean,
+        default: false,
+      },
+      // NEXT OCCURRENCE DATE (CALCULATED)
+      nextOccurrence: {
+        type: Date,
+        default: null,
+      },
+      // LAST GENERATED DATE (WHEN THE LAST RECURRING TASK WAS CREATED)
+      lastGeneratedAt: {
+        type: Date,
+        default: null,
+      },
+      // ORIGINAL TASK ID (REFERENCE TO THE PARENT RECURRING TASK)
+      originalTaskId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Task",
+        default: null,
+      },
+      // OCCURRENCE COUNT (HOW MANY TIMES THIS TASK HAS RECURRED)
+      occurrenceCount: {
+        type: Number,
+        default: 0,
+      },
+    },
   },
   { timestamps: true }
 );
@@ -452,6 +522,29 @@ taskSchema.index({ "dependencies.taskId": 1 }, { sparse: true });
  */
 //<== INDEX FOR SUBTASKS ==>
 taskSchema.index({ subtasks: 1 }, { sparse: true });
+/**
+ * INDEX FOR RECURRING TASKS
+ */
+//<== INDEX FOR RECURRING TASKS ==>
+taskSchema.index({ "recurrence.isRecurring": 1 }, { sparse: true });
+/**
+ * INDEX FOR NEXT OCCURRENCE QUERIES
+ */
+//<== INDEX FOR NEXT OCCURRENCE QUERIES ==>
+taskSchema.index({ "recurrence.nextOccurrence": 1 }, { sparse: true });
+/**
+ * COMPOUND INDEX FOR RECURRING TASKS DUE FOR GENERATION
+ */
+//<== COMPOUND INDEX FOR RECURRING TASKS DUE FOR GENERATION ==>
+taskSchema.index(
+  { "recurrence.isRecurring": 1, "recurrence.nextOccurrence": 1, isTrashed: 1 },
+  { sparse: true }
+);
+/**
+ * INDEX FOR ORIGINAL TASK ID (TO FIND ALL OCCURRENCES OF A RECURRING TASK)
+ */
+//<== INDEX FOR ORIGINAL TASK ID ==>
+taskSchema.index({ "recurrence.originalTaskId": 1 }, { sparse: true });
 
 // <== VIRTUAL FIELD FOR IS BLOCKED ==>
 taskSchema.virtual("isBlocked").get(function () {
