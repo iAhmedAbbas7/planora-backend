@@ -23,6 +23,10 @@ import {
   removeSubtask,
   getSubtasks,
   getDependencyGraph,
+  getRecurringTasks,
+  generateRecurringTaskOccurrence,
+  updateTaskRecurrence,
+  getTaskOccurrences,
 } from "../controllers/task.controller.js";
 import express from "express";
 import isAuthenticated from "../middleware/isAuthenticated.js";
@@ -37,7 +41,6 @@ router.use(isAuthenticated);
 router.get("/", getAllTasks);
 // CREATE TASK
 router.post("/", createTask);
-// <== SPECIFIC ROUTES MUST BE DEFINED BEFORE PARAMETERIZED ROUTES ==>
 // GET TASK STATISTICS
 router.get("/stats", getTaskStats);
 // GET RECENT TASKS
@@ -48,10 +51,10 @@ router.get("/trashed", getTrashedTasks);
 router.get("/monthly-summary", getMonthlySummary);
 // GET TASKS BY PROJECT ID
 router.get("/project/:projectId", getTasksByProjectId);
-// <== DEPENDENCY GRAPH ROUTE (BEFORE PARAMETERIZED ROUTES) ==>
 // GET DEPENDENCY GRAPH
 router.get("/dependency-graph", getDependencyGraph);
-// <== PARAMETERIZED ROUTES MUST BE AFTER SPECIFIC ROUTES ==>
+// GET ALL RECURRING TASKS
+router.get("/recurring", getRecurringTasks);
 // GET SINGLE TASK
 router.get("/:id", getOneTask);
 // UPDATE TASK
@@ -66,7 +69,6 @@ router.put("/:id/restore", restoreTask);
 router.put("/:id/trash", moveTaskToTrash);
 // PERMANENTLY DELETE TASK
 router.delete("/:id/permanent", permanentlyDeleteTask);
-// <== DEPENDENCY ROUTES ==>
 // GET TASK DEPENDENCIES
 router.get("/:id/dependencies", getTaskDependencies);
 // ADD DEPENDENCY TO TASK
@@ -77,12 +79,17 @@ router.delete("/:id/dependencies/:dependencyId", removeDependency);
 router.get("/:id/blockers", getBlockers);
 // GET BLOCKED TASKS (TASKS THIS TASK BLOCKS)
 router.get("/:id/blocked", getBlockedTasks);
-// <== SUBTASK ROUTES ==>
 // GET SUBTASKS
 router.get("/:id/subtasks", getSubtasks);
 // ADD SUBTASK
 router.post("/:id/subtasks", addSubtask);
 // REMOVE SUBTASK
 router.delete("/:id/subtasks/:subtaskId", removeSubtask);
+// UPDATE TASK RECURRENCE
+router.put("/:taskId/recurrence", updateTaskRecurrence);
+// GENERATE NEXT OCCURRENCE FOR RECURRING TASK
+router.post("/:taskId/generate-occurrence", generateRecurringTaskOccurrence);
+// GET ALL OCCURRENCES OF A RECURRING TASK
+router.get("/:taskId/occurrences", getTaskOccurrences);
 
 export default router;
