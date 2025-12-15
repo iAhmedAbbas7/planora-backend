@@ -4313,3 +4313,309 @@ export const getDailyBriefing = expressAsyncHandler(async (req, res) => {
     return;
   }
 });
+
+/**
+ * SUGGEST DUE DATE FOR A TASK BASED ON COMPLEXITY AND USER WORKLOAD
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== SUGGEST DUE DATE ==>
+export const suggestDueDate = expressAsyncHandler(async (req, res) => {
+  // GETTING USER ID FROM REQUEST
+  const userId = (req as any).id;
+  // IF USER ID NOT PROVIDED, RETURN 401 ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GETTING TASK DATA FROM REQUEST BODY
+  const { title, description, priority, projectId } = req.body;
+  // VALIDATE REQUIRED FIELDS
+  if (!title) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Task title is required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET GEMINI MODEL
+  const model = getGeminiModel();
+  // IF GEMINI NOT CONFIGURED, RETURN ERROR
+  if (!model) {
+    // RETURN FALLBACK SUGGESTION (3 DAYS FOR HIGH, 5 FOR MEDIUM, 7 FOR LOW)
+    const daysToAdd = priority === "high" ? 3 : priority === "medium" ? 5 : 7;
+    // CREATE NEW DATE OBJECT
+    const suggestedDate = new Date();
+    // SET DATE
+    suggestedDate.setDate(suggestedDate.getDate() + daysToAdd);
+    // GET DAY OF WEEK
+    const dayOfWeek = suggestedDate.getDay();
+    // IF SUNDAY, ADD 1 DAY TO GET TO MONDAY
+    if (dayOfWeek === 0) suggestedDate.setDate(suggestedDate.getDate() + 1);
+    // IF SATURDAY, ADD 2 DAYS TO GET TO MONDAY
+    if (dayOfWeek === 6) suggestedDate.setDate(suggestedDate.getDate() + 2);
+    // RETURNING FALLBACK RESPONSE
+    res.status(200).json({
+      message: "Due date suggested (fallback mode)!",
+      success: true,
+      data: {
+        suggestedDate: suggestedDate.toISOString(),
+        reasoning:
+          "Based on task priority (AI unavailable). High priority: 3 days, Medium: 5 days, Low: 7 days.",
+        confidence: "medium",
+        workloadAnalysis: null,
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // TRY TO SUGGEST DUE DATE
+  try {
+    // GET CURRENT DATE
+    const now = new Date();
+    // GET USER'S CURRENT WORKLOAD
+    const existingTasks = await Task.find({
+      userId: new mongoose.Types.ObjectId(String(userId)),
+      isTrashed: false,
+      status: { $ne: "completed" },
+      dueDate: {
+        $gte: now,
+        $lte: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000),
+      },
+    })
+      .select("title dueDate priority status")
+      .sort({ dueDate: 1 })
+      .lean()
+      .exec();
+    // GET OVERDUE TASKS COUNT
+    const overdueTasks = await Task.countDocuments({
+      userId: new mongoose.Types.ObjectId(String(userId)),
+      isTrashed: false,
+      status: { $ne: "completed" },
+      dueDate: { $lt: now },
+    }).exec();
+    // GET USER'S AVERAGE COMPLETION TIME (LAST 20 COMPLETED TASKS)
+    const completedTasks = await Task.find({
+      userId: new mongoose.Types.ObjectId(String(userId)),
+      status: "completed",
+      completedAt: { $ne: null },
+    })
+      .select("createdAt completedAt priority")
+      .sort({ completedAt: -1 })
+      .limit(20)
+      .lean()
+      .exec();
+    // CALCULATE AVERAGE COMPLETION TIME BY PRIORITY
+    interface CompletedTask {
+      createdAt: Date;
+      completedAt: Date;
+      priority: string;
+    }
+    // CALCULATE AVERAGE COMPLETION TIME BY PRIORITY
+    const avgCompletionDays = {
+      high: 0,
+      medium: 0,
+      low: 0,
+    };
+    // CREATE COUNTS OBJECT
+    const counts = { high: 0, medium: 0, low: 0 };
+    // LOOP THROUGH COMPLETED TASKS
+    completedTasks.forEach((task: CompletedTask) => {
+      // IF CREATED AT AND COMPLETED AT ARE PROVIDED
+      if (task.createdAt && task.completedAt) {
+        // CALCULATE DAYS BETWEEN CREATED AT AND COMPLETED AT
+        const days = Math.ceil(
+          (new Date(task.completedAt).getTime() -
+            new Date(task.createdAt).getTime()) /
+            (1000 * 60 * 60 * 24)
+        );
+        // GET PRIORITY
+        const p = (task.priority || "medium") as keyof typeof avgCompletionDays;
+        // IF PRIORITY IS DEFINED
+        if (avgCompletionDays[p] !== undefined) {
+          avgCompletionDays[p] += days;
+          // INCREMENT COUNT
+          counts[p]++;
+        }
+      }
+    });
+    // IF HIGH PRIORITY COUNT IS GREATER THAN 0
+    if (counts.high > 0) avgCompletionDays.high /= counts.high;
+    // IF MEDIUM PRIORITY COUNT IS GREATER THAN 0
+    if (counts.medium > 0) avgCompletionDays.medium /= counts.medium;
+    // IF LOW PRIORITY COUNT IS GREATER THAN 0
+    if (counts.low > 0) avgCompletionDays.low /= counts.low;
+    // IF HIGH PRIORITY IS 0, SET TO 2
+    if (avgCompletionDays.high === 0) avgCompletionDays.high = 2;
+    // IF MEDIUM PRIORITY IS 0, SET TO 4
+    if (avgCompletionDays.medium === 0) avgCompletionDays.medium = 4;
+    // IF LOW PRIORITY IS 0, SET TO 7
+    if (avgCompletionDays.low === 0) avgCompletionDays.low = 7;
+    // GROUP TASKS BY DUE DATE FOR WORKLOAD ANALYSIS
+    interface TasksByDate {
+      // KEY IS DATE STRING
+      [key: string]: number;
+    }
+    // CREATE TASKS BY DATE OBJECT
+    const tasksByDate: TasksByDate = {};
+    // LOOP THROUGH EXISTING TASKS
+    existingTasks.forEach((task) => {
+      // IF DUE DATE IS DEFINED
+      if (task.dueDate) {
+        // GET DATE KEY
+        const dateKey = new Date(task.dueDate).toISOString().split("T")[0];
+        // INCREMENT COUNT IF DATE KEY IS DEFINED
+        if (dateKey) {
+          tasksByDate[dateKey] = (tasksByDate[dateKey] || 0) + 1;
+        }
+      }
+    });
+    // BUILD AI PROMPT
+    const prompt = `You are a productivity assistant helping suggest realistic due dates for tasks.
+    TASK DETAILS:
+    - Title: "${title}"
+    - Description: "${description || "No description provided"}"
+    - Priority: ${priority || "medium"}
+    - Project ID: ${projectId || "Personal task"}
+    USER'S CURRENT WORKLOAD (Next 30 days):
+    - Total pending tasks: ${existingTasks.length}
+    - Overdue tasks: ${overdueTasks}
+    - Tasks per day breakdown: ${JSON.stringify(tasksByDate)}
+    USER'S HISTORICAL PERFORMANCE:
+    - Average completion time for HIGH priority: ${avgCompletionDays.high.toFixed(
+      1
+    )} days
+    - Average completion time for MEDIUM priority: ${avgCompletionDays.medium.toFixed(
+      1
+    )} days  
+    - Average completion time for LOW priority: ${avgCompletionDays.low.toFixed(
+      1
+    )} days
+    TODAY'S DATE: ${now.toISOString().split("T")[0]}
+    Based on the task complexity (inferred from title/description), the user's current workload, and their historical performance, suggest a realistic due date.
+    Consider:
+    1. Task complexity (simple tasks = shorter time, complex = longer)
+    2. User's current workload (avoid overloading days)
+    3. Historical performance (how long similar priority tasks take)
+    4. Priority level (high = sooner deadline)
+    5. Don't suggest weekends unless necessary
+    Return ONLY valid JSON in this exact format:
+    {
+      "suggestedDate": "YYYY-MM-DD",
+      "daysFromNow": number,
+      "reasoning": "Brief explanation of why this date was chosen",
+      "confidence": "high" | "medium" | "low",
+      "complexityEstimate": "simple" | "moderate" | "complex",
+      "workloadImpact": "light" | "moderate" | "heavy"
+    }
+    Return ONLY the JSON, no additional text.`;
+    // GENERATE RESPONSE
+    const result = await model.generateContent(prompt);
+    // GET RESPONSE
+    const response = result.response;
+    // GET RESPONSE TEXT
+    const text = response.text();
+    // PARSE RESPONSE
+    let suggestion;
+    // TRY TO PARSE RESPONSE
+    try {
+      // CLEAN UP RESPONSE (REMOVE MARKDOWN CODE BLOCKS IF PRESENT)
+      const cleanedText = text
+        .replace(/```json\n?/g, "")
+        .replace(/```\n?/g, "")
+        .trim();
+      // PARSE AS JSON
+      suggestion = JSON.parse(cleanedText);
+    } catch {
+      // CALCULATE DAYS TO ADD
+      const daysToAdd =
+        priority === "high"
+          ? Math.ceil(avgCompletionDays.high)
+          : priority === "low"
+          ? Math.ceil(avgCompletionDays.low)
+          : Math.ceil(avgCompletionDays.medium);
+      // CREATE NEW DATE OBJECT
+      const suggestedDate = new Date();
+      // SET DATE
+      suggestedDate.setDate(suggestedDate.getDate() + daysToAdd);
+      // GET DAY OF WEEK
+      const dayOfWeek = suggestedDate.getDay();
+      // IF SUNDAY, ADD 1 DAY TO GET TO MONDAY
+      if (dayOfWeek === 0) suggestedDate.setDate(suggestedDate.getDate() + 1);
+      // IF SATURDAY, ADD 2 DAYS TO GET TO MONDAY
+      if (dayOfWeek === 6) suggestedDate.setDate(suggestedDate.getDate() + 2);
+      // CREATE FALLBACK SUGGESTION
+      suggestion = {
+        suggestedDate: suggestedDate.toISOString().split("T")[0],
+        daysFromNow: daysToAdd,
+        reasoning: `Based on your average completion time for ${
+          priority || "medium"
+        } priority tasks.`,
+        confidence: "medium",
+        complexityEstimate: "moderate",
+        workloadImpact: existingTasks.length > 10 ? "heavy" : "moderate",
+      };
+    }
+    // CONVERT DATE STRING TO ISO DATE
+    const finalDate = new Date(suggestion.suggestedDate);
+    // SET HOURS TO 23:59:59
+    finalDate.setHours(23, 59, 59, 999);
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Due date suggested successfully!",
+      success: true,
+      data: {
+        suggestedDate: finalDate.toISOString(),
+        daysFromNow: suggestion.daysFromNow,
+        reasoning: suggestion.reasoning,
+        confidence: suggestion.confidence,
+        complexityEstimate: suggestion.complexityEstimate,
+        workloadImpact: suggestion.workloadImpact,
+        workloadAnalysis: {
+          pendingTasks: existingTasks.length,
+          overdueTasks,
+          avgCompletionDays,
+        },
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  } catch (error: any) {
+    // LOG ERROR
+    console.error("Error suggesting due date:", error);
+    // FALLBACK SUGGESTION
+    const daysToAdd = priority === "high" ? 3 : priority === "medium" ? 5 : 7;
+    // CREATE NEW DATE OBJECT
+    const suggestedDate = new Date();
+    // SET DATE
+    suggestedDate.setDate(suggestedDate.getDate() + daysToAdd);
+    // GET DAY OF WEEK
+    const dayOfWeek = suggestedDate.getDay();
+    // IF SUNDAY, ADD 1 DAY TO GET TO MONDAY
+    if (dayOfWeek === 0) suggestedDate.setDate(suggestedDate.getDate() + 1);
+    // IF SATURDAY, ADD 2 DAYS TO GET TO MONDAY
+    if (dayOfWeek === 6) suggestedDate.setDate(suggestedDate.getDate() + 2);
+    // RETURNING FALLBACK RESPONSE
+    res.status(200).json({
+      message: "Due date suggested (fallback mode)!",
+      success: true,
+      data: {
+        suggestedDate: suggestedDate.toISOString(),
+        reasoning:
+          "Based on task priority (AI error). High priority: 3 days, Medium: 5 days, Low: 7 days.",
+        confidence: "low",
+        workloadAnalysis: null,
+      },
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
