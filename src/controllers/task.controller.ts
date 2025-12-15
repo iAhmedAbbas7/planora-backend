@@ -5,6 +5,112 @@ import { Project } from "../models/project.model.js";
 import expressAsyncHandler from "express-async-handler";
 import { createNotification } from "./notification.controller.js";
 
+// <== RECURRENCE PATTERN TYPE ==>
+type RecurrencePattern = "daily" | "weekly" | "monthly" | "yearly" | "custom";
+
+/**
+ * CALCULATE NEXT OCCURRENCE DATE FOR RECURRING TASKS
+ * @param baseDate - Base Date to Calculate From
+ * @param pattern - Recurrence Pattern
+ * @param interval - Interval Between Occurrences
+ * @param daysOfWeek - Days of Week for Weekly Pattern (0-6)
+ * @param skipWeekends - Whether to Skip Weekends
+ * @returns Next Occurrence Date
+ */
+// <== CALCULATE NEXT OCCURRENCE HELPER FUNCTION ==>
+const calculateNextOccurrence = (
+  baseDate: Date,
+  pattern: RecurrencePattern,
+  interval: number = 1,
+  daysOfWeek: number[] = [],
+  skipWeekends: boolean = false
+): Date => {
+  // CREATE NEW DATE OBJECT FROM BASE DATE
+  const nextDate = new Date(baseDate);
+  // SWITCH BASED ON PATTERN
+  switch (pattern) {
+    // CASE DAILY
+    case "daily":
+      // ADD INTERVAL DAYS
+      nextDate.setDate(nextDate.getDate() + interval);
+      // IF SKIP WEEKENDS, ADJUST DATE
+      if (skipWeekends) {
+        // GET DAY OF WEEK (0 = SUNDAY, 6 = SATURDAY)
+        const dayOfWeek = nextDate.getDay();
+        // IF SATURDAY, ADD 2 DAYS TO GET TO MONDAY
+        if (dayOfWeek === 6) {
+          // ADD 2 DAYS TO GET TO MONDAY
+          nextDate.setDate(nextDate.getDate() + 2);
+        }
+        // IF SUNDAY, ADD 1 DAY TO GET TO MONDAY
+        else if (dayOfWeek === 0) {
+          // ADD 1 DAY TO GET TO MONDAY
+          nextDate.setDate(nextDate.getDate() + 1);
+        }
+      }
+      break;
+    // CASE WEEKLY
+    case "weekly":
+      // IF DAYS OF WEEK SPECIFIED, FIND NEXT MATCHING DAY
+      if (daysOfWeek.length > 0) {
+        // SORT DAYS OF WEEK
+        const sortedDays = [...daysOfWeek].sort((a, b) => a - b);
+        // GET CURRENT DAY OF WEEK
+        const currentDay = nextDate.getDay();
+        // FIND NEXT DAY IN SORTED DAYS
+        let foundNextDay = false;
+        // LOOP THROUGH SORTED DAYS
+        for (const day of sortedDays) {
+          // IF DAY IS AFTER CURRENT DAY, USE IT
+          if (day > currentDay) {
+            // CALCULATE DAYS TO ADD
+            nextDate.setDate(nextDate.getDate() + (day - currentDay));
+            // SET FOUND NEXT DAY TO TRUE
+            foundNextDay = true;
+            // BREAK OUT OF LOOP
+            break;
+          }
+        }
+        // IF NO NEXT DAY FOUND IN CURRENT WEEK, GO TO FIRST DAY OF NEXT INTERVAL WEEK
+        if (!foundNextDay && sortedDays.length > 0) {
+          // DAYS UNTIL NEXT OCCURRENCE OF FIRST DAY
+          const firstDay = sortedDays[0] as number;
+          // CALCULATE DAYS UNTIL FIRST DAY
+          const daysUntilFirst = 7 - currentDay + firstDay;
+          // ADD INTERVAL WEEKS MINUS ONE (SINCE WE ALREADY ADD ONE WEEK)
+          nextDate.setDate(
+            nextDate.getDate() + daysUntilFirst + (interval - 1) * 7
+          );
+        }
+      } else {
+        // NO SPECIFIC DAYS, JUST ADD INTERVAL WEEKS
+        nextDate.setDate(nextDate.getDate() + interval * 7);
+      }
+      break;
+    // CASE MONTHLY
+    case "monthly":
+      // ADD INTERVAL MONTHS
+      nextDate.setMonth(nextDate.getMonth() + interval);
+      break;
+    // CASE YEARLY
+    case "yearly":
+      // ADD INTERVAL YEARS
+      nextDate.setFullYear(nextDate.getFullYear() + interval);
+      break;
+    // CASE CUSTOM
+    case "custom":
+      // FOR CUSTOM, DEFAULT TO DAILY WITH INTERVAL
+      nextDate.setDate(nextDate.getDate() + interval);
+      break;
+    // DEFAULT CASE
+    default:
+      // DEFAULT TO DAILY
+      nextDate.setDate(nextDate.getDate() + 1);
+  }
+  // RETURN NEXT DATE
+  return nextDate;
+};
+
 /**
  * GET MONTHLY SUMMARY
  * @param req - Request Object
@@ -264,7 +370,15 @@ export const createTask = expressAsyncHandler(async (req, res) => {
     return;
   }
   // GETTING TASK DATA FROM REQUEST BODY
-  const { title, description, status, priority, dueDate, projectId } = req.body;
+  const {
+    title,
+    description,
+    status,
+    priority,
+    dueDate,
+    projectId,
+    recurrence,
+  } = req.body;
   // VALIDATING REQUIRED FIELDS
   if (!title || !projectId) {
     // RETURNING ERROR RESPONSE
@@ -306,6 +420,31 @@ export const createTask = expressAsyncHandler(async (req, res) => {
   if (taskData.status === "completed") {
     // SETTING COMPLETED AT IF STATUS IS COMPLETED
     taskData.completedAt = new Date();
+  }
+  // IF RECURRENCE IS PROVIDED, ADD RECURRENCE DATA
+  if (recurrence && recurrence.isRecurring) {
+    // CALCULATE NEXT OCCURRENCE DATE
+    const nextOccurrence = calculateNextOccurrence(
+      dueDate ? new Date(dueDate) : new Date(),
+      recurrence.pattern,
+      recurrence.interval || 1,
+      recurrence.daysOfWeek || [],
+      recurrence.skipWeekends || false
+    );
+    // SET RECURRENCE DATA
+    taskData.recurrence = {
+      isRecurring: true,
+      pattern: recurrence.pattern || "daily",
+      interval: recurrence.interval || 1,
+      daysOfWeek: recurrence.daysOfWeek || [],
+      dayOfMonth: recurrence.dayOfMonth || null,
+      endDate: recurrence.endDate ? new Date(recurrence.endDate) : null,
+      skipWeekends: recurrence.skipWeekends || false,
+      nextOccurrence,
+      lastGeneratedAt: null,
+      originalTaskId: null,
+      occurrenceCount: 0,
+    };
   }
   // CREATING NEW TASK
   const newTask = await Task.create(taskData);
@@ -1708,6 +1847,338 @@ export const getDependencyGraph = expressAsyncHandler(async (req, res) => {
       edges,
       taskCount: tasks.length,
     },
+  });
+  // RETURNING FROM FUNCTION
+  return;
+});
+
+/**
+ * GENERATE NEXT OCCURRENCE FOR A RECURRING TASK
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GENERATE RECURRING TASK OCCURRENCE ==>
+export const generateRecurringTaskOccurrence = expressAsyncHandler(
+  async (req, res) => {
+    // GETTING USER ID FROM REQUEST
+    const userId = (req as any).id;
+    // IF USER ID NOT PROVIDED, RETURN 401 ERROR
+    if (!userId) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "Unauthorized!",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // GETTING TASK ID FROM REQUEST PARAMS
+    const { taskId } = req.params;
+    // VALIDATE TASK ID
+    if (!taskId || !mongoose.Types.ObjectId.isValid(taskId)) {
+      // RETURNING ERROR RESPONSE
+      res.status(400).json({
+        message: "Valid Task ID is Required!",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // FIND THE ORIGINAL RECURRING TASK
+    const originalTask = await Task.findOne({
+      _id: taskId,
+      userId,
+      "recurrence.isRecurring": true,
+      isTrashed: false,
+    }).exec();
+    // IF TASK NOT FOUND, RETURN 404 ERROR
+    if (!originalTask) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Recurring task not found or unauthorized!",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // CHECK IF END DATE HAS PASSED
+    if (
+      originalTask.recurrence?.endDate &&
+      new Date() > new Date(originalTask.recurrence.endDate)
+    ) {
+      // RETURNING RESPONSE THAT RECURRENCE HAS ENDED
+      res.status(400).json({
+        message: "Recurrence period has ended!",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // CALCULATE NEW DUE DATE
+    const baseDueDate = originalTask.dueDate || new Date();
+    // CALCULATE NEW DUE DATE
+    const newDueDate = calculateNextOccurrence(
+      new Date(baseDueDate),
+      (originalTask.recurrence?.pattern as RecurrencePattern) || "daily",
+      originalTask.recurrence?.interval || 1,
+      originalTask.recurrence?.daysOfWeek || [],
+      originalTask.recurrence?.skipWeekends || false
+    );
+    // CHECK IF NEW DUE DATE IS AFTER END DATE
+    if (
+      originalTask.recurrence?.endDate &&
+      newDueDate > new Date(originalTask.recurrence.endDate)
+    ) {
+      // DISABLE RECURRENCE ON ORIGINAL TASK
+      originalTask.recurrence.isRecurring = false;
+      // SAVE ORIGINAL TASK
+      await originalTask.save();
+      // RETURNING RESPONSE
+      res.status(400).json({
+        message: "Next occurrence would exceed end date. Recurrence disabled!",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // CREATE NEW TASK OCCURRENCE
+    const newTaskData = {
+      title: originalTask.title,
+      description: originalTask.description,
+      status: "to do",
+      priority: originalTask.priority,
+      dueDate: newDueDate,
+      projectId: originalTask.projectId,
+      userId: originalTask.userId,
+      recurrence: {
+        isRecurring: true,
+        pattern: originalTask.recurrence?.pattern,
+        interval: originalTask.recurrence?.interval,
+        daysOfWeek: originalTask.recurrence?.daysOfWeek,
+        dayOfMonth: originalTask.recurrence?.dayOfMonth,
+        endDate: originalTask.recurrence?.endDate,
+        skipWeekends: originalTask.recurrence?.skipWeekends,
+        nextOccurrence: calculateNextOccurrence(
+          newDueDate,
+          (originalTask.recurrence?.pattern as RecurrencePattern) || "daily",
+          originalTask.recurrence?.interval || 1,
+          originalTask.recurrence?.daysOfWeek || [],
+          originalTask.recurrence?.skipWeekends || false
+        ),
+        lastGeneratedAt: new Date(),
+        originalTaskId:
+          originalTask.recurrence?.originalTaskId || originalTask._id,
+        occurrenceCount: (originalTask.recurrence?.occurrenceCount || 0) + 1,
+      },
+    };
+    // CREATE NEW TASK
+    const newTask = await Task.create(newTaskData);
+    // UPDATE ORIGINAL TASK'S LAST GENERATED AT AND DISABLE RECURRENCE
+    if (originalTask.recurrence) {
+      // DISABLE RECURRENCE
+      originalTask.recurrence.isRecurring = false;
+      // SET LAST GENERATED AT
+      originalTask.recurrence.lastGeneratedAt = new Date();
+    }
+    // SAVE ORIGINAL TASK
+    await originalTask.save();
+    // RETURNING RESPONSE
+    res.status(201).json({
+      message: "Recurring task occurrence generated successfully!",
+      success: true,
+      data: newTask,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+);
+
+/**
+ * GET RECURRING TASKS FOR USER
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET RECURRING TASKS ==>
+export const getRecurringTasks = expressAsyncHandler(async (req, res) => {
+  // GETTING USER ID FROM REQUEST
+  const userId = (req as any).id;
+  // IF USER ID NOT PROVIDED, RETURN 401 ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FIND ALL RECURRING TASKS
+  const recurringTasks = await Task.find({
+    userId,
+    "recurrence.isRecurring": true,
+    isTrashed: false,
+  })
+    .populate("projectId", "title")
+    .sort({ dueDate: 1 })
+    .lean()
+    .exec();
+  // RETURNING RESPONSE
+  res.status(200).json({
+    success: true,
+    count: recurringTasks.length,
+    data: recurringTasks,
+  });
+  // RETURNING FROM FUNCTION
+  return;
+});
+
+/**
+ * UPDATE RECURRENCE SETTINGS FOR A TASK
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== UPDATE TASK RECURRENCE ==>
+export const updateTaskRecurrence = expressAsyncHandler(async (req, res) => {
+  // GETTING USER ID FROM REQUEST
+  const userId = (req as any).id;
+  // IF USER ID NOT PROVIDED, RETURN 401 ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GETTING TASK ID FROM REQUEST PARAMS
+  const { taskId } = req.params;
+  // GETTING RECURRENCE DATA FROM REQUEST BODY
+  const { recurrence } = req.body;
+  // VALIDATE TASK ID
+  if (!taskId || !mongoose.Types.ObjectId.isValid(taskId)) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Valid Task ID is Required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FIND TASK
+  const task = await Task.findOne({ _id: taskId, userId }).exec();
+  // IF TASK NOT FOUND, RETURN 404 ERROR
+  if (!task) {
+    // RETURNING ERROR RESPONSE
+    res.status(404).json({
+      message: "Task not found or unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // UPDATE RECURRENCE SETTINGS
+  if (recurrence && recurrence.isRecurring) {
+    // CALCULATE NEXT OCCURRENCE
+    const nextOccurrence = calculateNextOccurrence(
+      task.dueDate ? new Date(task.dueDate) : new Date(),
+      recurrence.pattern || "daily",
+      recurrence.interval || 1,
+      recurrence.daysOfWeek || [],
+      recurrence.skipWeekends || false
+    );
+    // UPDATE RECURRENCE DATA - CAST TO ANY TO HANDLE MONGOOSE SCHEMA NULL DEFAULTS
+    (task.recurrence as any) = {
+      isRecurring: true,
+      pattern: recurrence.pattern || "daily",
+      interval: recurrence.interval || 1,
+      daysOfWeek: recurrence.daysOfWeek || [],
+      dayOfMonth: recurrence.dayOfMonth || null,
+      endDate: recurrence.endDate ? new Date(recurrence.endDate) : null,
+      skipWeekends: recurrence.skipWeekends || false,
+      nextOccurrence,
+      lastGeneratedAt: task.recurrence?.lastGeneratedAt || null,
+      originalTaskId: task.recurrence?.originalTaskId || null,
+      occurrenceCount: task.recurrence?.occurrenceCount || 0,
+    };
+  } else {
+    // DISABLE RECURRENCE - CAST TO ANY TO HANDLE MONGOOSE SCHEMA NULL DEFAULTS
+    (task.recurrence as any) = {
+      isRecurring: false,
+      pattern: null,
+      interval: 1,
+      daysOfWeek: [],
+      dayOfMonth: null,
+      endDate: null,
+      skipWeekends: false,
+      nextOccurrence: null,
+      lastGeneratedAt: task.recurrence?.lastGeneratedAt || null,
+      originalTaskId: task.recurrence?.originalTaskId || null,
+      occurrenceCount: task.recurrence?.occurrenceCount || 0,
+    };
+  }
+  // SAVE TASK
+  await task.save();
+  // RETURNING RESPONSE
+  res.status(200).json({
+    message: "Task recurrence updated successfully!",
+    success: true,
+    data: task,
+  });
+  // RETURNING FROM FUNCTION
+  return;
+});
+
+/**
+ * GET TASK OCCURRENCES (ALL INSTANCES OF A RECURRING TASK)
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET TASK OCCURRENCES ==>
+export const getTaskOccurrences = expressAsyncHandler(async (req, res) => {
+  // GETTING USER ID FROM REQUEST
+  const userId = (req as any).id;
+  // IF USER ID NOT PROVIDED, RETURN 401 ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GETTING ORIGINAL TASK ID FROM REQUEST PARAMS
+  const { taskId } = req.params;
+  // VALIDATE TASK ID
+  if (!taskId || !mongoose.Types.ObjectId.isValid(taskId)) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Valid Task ID is Required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FIND ALL OCCURRENCES OF THIS RECURRING TASK
+  const occurrences = await Task.find({
+    userId,
+    $or: [{ _id: taskId }, { "recurrence.originalTaskId": taskId }],
+    isTrashed: false,
+  })
+    .populate("projectId", "title")
+    .sort({ dueDate: 1 })
+    .lean()
+    .exec();
+  // RETURNING RESPONSE
+  res.status(200).json({
+    success: true,
+    count: occurrences.length,
+    data: occurrences,
   });
   // RETURNING FROM FUNCTION
   return;
