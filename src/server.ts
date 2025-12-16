@@ -35,9 +35,11 @@ import timeTrackingRoute from "./routes/timeTracking.route.js";
 import focusSessionRoute from "./routes/focusSession.route.js";
 import helmetMiddleware from "./middleware/helmetMiddleware.js";
 import { connectDB, disconnectDB } from "./config/dbConnection.js";
+import projectTemplateRoute from "./routes/projectTemplate.route.js";
 import workspaceAnalyticsRoute from "./routes/workspaceAnalytics.route.js";
 import notificationSettingsRoute from "./routes/notificationSettings.route.js";
 import { updateSessionActivityMiddleware } from "./middleware/sessionActivity.js";
+import { seedSystemTemplates } from "./controllers/projectTemplate.controller.js";
 
 // <== DATABASE CONNECTION ==>
 connectDB();
@@ -123,6 +125,8 @@ app.use("/api/v1/focus", focusSessionRoute);
 app.use("/api/v1/workspaces", workspaceRoute);
 // <== CODE LINKING ROUTE ==>
 app.use("/api/v1/code-linking", codeLinkingRoute);
+// <== PROJECT TEMPLATES ROUTE ==>
+app.use("/api/v1/templates", projectTemplateRoute);
 // <== WORKSPACE AI ROUTE ==>
 app.use("/api/v1/workspaces/ai", workspaceAIRoute);
 // <== NOTIFICATION ROUTE ==>
@@ -162,9 +166,11 @@ app.use(errorHandler);
 initializeCronJobs(app);
 
 // <== DATABASE & SERVER CONNECTION LISTENER ==>
-mongoose.connection.once("open", () => {
+mongoose.connection.once("open", async () => {
   // <== LOGGING SUCCESS MESSAGE ==>
   console.log("Database Connection Established Successfully");
+  // <== SEED SYSTEM TEMPLATES ==>
+  await seedSystemTemplates();
   // <== SERVER LISTENER ==>
   server.listen(PORT, () => {
     // <== LOGGING SUCCESS MESSAGE ==>
