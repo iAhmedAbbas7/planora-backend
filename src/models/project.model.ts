@@ -78,7 +78,7 @@ const projectSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
-    // GITHUB REPOSITORY FIELD
+    // GITHUB REPOSITORY FIELD (LEGACY - KEPT FOR BACKWARD COMPATIBILITY)
     githubRepo: {
       // REPOSITORY OWNER
       owner: {
@@ -115,6 +115,62 @@ const projectSchema = new mongoose.Schema(
         default: null,
       },
     },
+    // LINKED REPOSITORIES ARRAY (NEW - SUPPORTS MULTIPLE REPOS)
+    linkedRepositories: [
+      {
+        // REPOSITORY OWNER
+        owner: {
+          type: String,
+          required: true,
+          trim: true,
+        },
+        // REPOSITORY NAME
+        name: {
+          type: String,
+          required: true,
+          trim: true,
+        },
+        // REPOSITORY FULL NAME
+        fullName: {
+          type: String,
+          required: true,
+          trim: true,
+        },
+        // REPOSITORY ID FROM GITHUB
+        repoId: {
+          type: Number,
+          required: true,
+        },
+        // REPOSITORY HTML URL
+        htmlUrl: {
+          type: String,
+          required: true,
+          trim: true,
+        },
+        // LINKED AT TIMESTAMP
+        linkedAt: {
+          type: Date,
+          default: Date.now,
+        },
+        // IS PRIMARY REPOSITORY
+        isPrimary: {
+          type: Boolean,
+          default: false,
+        },
+        // REPOSITORY DESCRIPTION
+        description: {
+          type: String,
+          default: null,
+          trim: true,
+        },
+        // DEFAULT BRANCH
+        defaultBranch: {
+          type: String,
+          default: "main",
+          trim: true,
+        },
+      },
+    ],
   },
   { timestamps: true }
 );
@@ -155,6 +211,16 @@ projectSchema.index({ "githubRepo.fullName": 1 }, { sparse: true });
  */
 //<== COMPOUND INDEX FOR USER AND GITHUB REPO QUERIES ==>
 projectSchema.index({ userId: 1, "githubRepo.fullName": 1 });
+/**
+ * INDEX FOR LINKED REPOSITORIES FULL NAME QUERIES
+ */
+//<== INDEX FOR LINKED REPOSITORIES FULL NAME QUERIES ==>
+projectSchema.index({ "linkedRepositories.fullName": 1 }, { sparse: true });
+/**
+ * INDEX FOR LINKED REPOSITORIES REPO ID QUERIES
+ */
+//<== INDEX FOR LINKED REPOSITORIES REPO ID QUERIES ==>
+projectSchema.index({ "linkedRepositories.repoId": 1 }, { sparse: true });
 
 // <== EXPORTING THE PROJECT MODEL ==>
 export const Project = mongoose.model("Project", projectSchema);
