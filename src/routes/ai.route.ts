@@ -25,6 +25,8 @@ import {
   aiActivityInsights,
   getDailyBriefing,
   suggestDueDate,
+  analyzeCodebase,
+  createSprintPlan,
 } from "../controllers/ai.controller.js";
 import express from "express";
 import isAuthenticated from "../middleware/isAuthenticated.js";
@@ -85,5 +87,9 @@ router.post("/activity-insights", aiActivityInsights);
 router.get("/daily-briefing", getDailyBriefing);
 // AI SUGGEST DUE DATE
 router.post("/suggest-due-date", suggestDueDate);
+// AI ANALYZE CODEBASE FOR PROJECT
+router.post("/analyze-codebase/:projectId", analyzeCodebase);
+// AI CREATE SPRINT PLAN FOR PROJECT
+router.post("/sprint-plan/:projectId", createSprintPlan);
 
 export default router;
