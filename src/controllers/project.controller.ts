@@ -20,10 +20,12 @@ export const getProjectsStats = expressAsyncHandler(async (req, res) => {
   const userId = (req as any).id;
   // IF USER ID NOT PROVIDED, RETURN 401 ERROR
   if (!userId) {
+    // RETURNING ERROR RESPONSE
     res.status(401).json({
       message: "Unauthorized!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // GETTING CURRENT DATE
@@ -77,6 +79,7 @@ export const getProjectsStats = expressAsyncHandler(async (req, res) => {
       dueTodayCount,
     },
   });
+  // RETURNING FROM FUNCTION
   return;
 });
 
@@ -92,10 +95,12 @@ export const getWeeklySummary = expressAsyncHandler(async (req, res) => {
   const userId = (req as any).id;
   // IF USER ID NOT PROVIDED, RETURN 401 ERROR
   if (!userId) {
+    // RETURNING ERROR RESPONSE
     res.status(401).json({
       message: "Unauthorized!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // FINDING ALL PROJECTS FOR USER
@@ -116,6 +121,7 @@ export const getWeeklySummary = expressAsyncHandler(async (req, res) => {
       targetProjects,
     },
   });
+  // RETURNING FROM FUNCTION
   return;
 });
 
@@ -131,10 +137,12 @@ export const getProjects = expressAsyncHandler(async (req, res) => {
   const userId = (req as any).id;
   // IF USER ID NOT PROVIDED, RETURN 401 ERROR
   if (!userId) {
+    // RETURNING ERROR RESPONSE
     res.status(401).json({
       message: "Unauthorized!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // GETTING PROJECTS WITH TASK COUNTS USING AGGREGATION
@@ -180,6 +188,7 @@ export const getProjects = expressAsyncHandler(async (req, res) => {
     count: projectsWithTaskCount?.length || 0,
     data: projectsWithTaskCount || [],
   });
+  // RETURNING FROM FUNCTION
   return;
 });
 
@@ -195,10 +204,12 @@ export const createProject = expressAsyncHandler(async (req, res) => {
   const userId = (req as any).id;
   // IF USER ID NOT PROVIDED, RETURN 401 ERROR
   if (!userId) {
+    // RETURNING ERROR RESPONSE
     res.status(401).json({
       message: "Unauthorized!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // GETTING PROJECT DATA FROM REQUEST BODY
@@ -206,10 +217,12 @@ export const createProject = expressAsyncHandler(async (req, res) => {
     req.body;
   // VALIDATING REQUIRED FIELDS
   if (!title || !inChargeName || !role) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Title, In Charge Name, and Role are Required!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // CREATING NEW PROJECT
@@ -238,6 +251,7 @@ export const createProject = expressAsyncHandler(async (req, res) => {
     success: true,
     data: project,
   });
+  // RETURNING FROM FUNCTION
   return;
 });
 
@@ -253,18 +267,22 @@ export const getOneProject = expressAsyncHandler(async (req, res) => {
   const projectId = req.params.id;
   // IF PROJECT ID NOT PROVIDED, RETURN 400 ERROR
   if (!projectId) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Project ID is Required!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // VALIDATING PROJECT ID FORMAT
   if (!mongoose.Types.ObjectId.isValid(projectId)) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Invalid Project ID format!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // GETTING PROJECT WITH TASKS USING AGGREGATION
@@ -295,10 +313,12 @@ export const getOneProject = expressAsyncHandler(async (req, res) => {
   ]).exec();
   // IF PROJECT NOT FOUND, RETURN 404 ERROR
   if (!projectWithTasks || projectWithTasks.length === 0) {
+    // RETURNING ERROR RESPONSE
     res.status(404).json({
       message: "Project not found!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // RETURNING RESPONSE
@@ -306,6 +326,7 @@ export const getOneProject = expressAsyncHandler(async (req, res) => {
     success: true,
     data: projectWithTasks[0],
   });
+  // RETURNING FROM FUNCTION
   return;
 });
 
@@ -321,10 +342,12 @@ export const updateProject = expressAsyncHandler(async (req, res) => {
   const projectId = req.params.id;
   // IF PROJECT ID NOT PROVIDED, RETURN 400 ERROR
   if (!projectId) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Project ID is Required!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // FINDING AND UPDATING PROJECT
@@ -336,10 +359,12 @@ export const updateProject = expressAsyncHandler(async (req, res) => {
     .exec();
   // IF PROJECT NOT FOUND, RETURN 404 ERROR
   if (!project) {
+    // RETURNING ERROR RESPONSE
     res.status(404).json({
       message: "Project not found!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // CREATING NOTIFICATION FOR PROJECT UPDATE
@@ -357,6 +382,7 @@ export const updateProject = expressAsyncHandler(async (req, res) => {
     success: true,
     data: project,
   });
+  // RETURNING FROM FUNCTION
   return;
 });
 
@@ -372,20 +398,24 @@ export const deleteProject = expressAsyncHandler(async (req, res) => {
   const projectId = req.params.id;
   // IF PROJECT ID NOT PROVIDED, RETURN 400 ERROR
   if (!projectId) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Project ID is Required!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // FINDING PROJECT BEFORE DELETION
   const project = await Project.findById(projectId).lean().exec();
   // IF PROJECT NOT FOUND, RETURN 404 ERROR
   if (!project) {
+    // RETURNING ERROR RESPONSE
     res.status(404).json({
       message: "Project not found!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // DELETING ALL TASKS ASSOCIATED WITH PROJECT
@@ -406,6 +436,7 @@ export const deleteProject = expressAsyncHandler(async (req, res) => {
     message: "Project deleted successfully!",
     success: true,
   });
+  // RETURNING FROM FUNCTION
   return;
 });
 
@@ -421,10 +452,12 @@ export const moveToTrash = expressAsyncHandler(async (req, res) => {
   const projectId = req.params.id;
   // IF PROJECT ID NOT PROVIDED, RETURN 400 ERROR
   if (!projectId) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Project ID is Required!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // FINDING AND UPDATING PROJECT
@@ -437,10 +470,12 @@ export const moveToTrash = expressAsyncHandler(async (req, res) => {
     .exec();
   // IF PROJECT NOT FOUND, RETURN 404 ERROR
   if (!project) {
+    // RETURNING ERROR RESPONSE
     res.status(404).json({
       message: "Project not found!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // RETURNING RESPONSE
@@ -449,6 +484,7 @@ export const moveToTrash = expressAsyncHandler(async (req, res) => {
     success: true,
     data: project,
   });
+  // RETURNING FROM FUNCTION
   return;
 });
 
@@ -464,10 +500,12 @@ export const restoreProject = expressAsyncHandler(async (req, res) => {
   const projectId = req.params.id;
   // IF PROJECT ID NOT PROVIDED, RETURN 400 ERROR
   if (!projectId) {
+    // RETURNING ERROR RESPONSE
     res.status(400).json({
       message: "Project ID is Required!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // FINDING AND UPDATING PROJECT
@@ -480,10 +518,12 @@ export const restoreProject = expressAsyncHandler(async (req, res) => {
     .exec();
   // IF PROJECT NOT FOUND, RETURN 404 ERROR
   if (!project) {
+    // RETURNING ERROR RESPONSE
     res.status(404).json({
       message: "Project not found!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // RETURNING RESPONSE
@@ -492,6 +532,7 @@ export const restoreProject = expressAsyncHandler(async (req, res) => {
     success: true,
     data: project,
   });
+  // RETURNING FROM FUNCTION
   return;
 });
 
@@ -507,10 +548,12 @@ export const getTrashedProjects = expressAsyncHandler(async (req, res) => {
   const userId = (req as any).id;
   // IF USER ID NOT PROVIDED, RETURN 401 ERROR
   if (!userId) {
+    // RETURNING ERROR RESPONSE
     res.status(401).json({
       message: "Unauthorized!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // FINDING TRASHED PROJECTS
@@ -523,10 +566,12 @@ export const getTrashedProjects = expressAsyncHandler(async (req, res) => {
     .exec();
   // IF NO TRASHED PROJECTS FOUND, RETURN 404 ERROR
   if (!trashedProjects || trashedProjects.length === 0) {
+    // RETURNING ERROR RESPONSE
     res.status(404).json({
       message: "No trashed projects found!",
       success: false,
     });
+    // RETURNING FROM FUNCTION
     return;
   }
   // RETURNING RESPONSE
@@ -535,6 +580,7 @@ export const getTrashedProjects = expressAsyncHandler(async (req, res) => {
     count: trashedProjects.length,
     data: trashedProjects,
   });
+  // RETURNING FROM FUNCTION
   return;
 });
 
@@ -612,7 +658,8 @@ export const linkGitHubRepo = expressAsyncHandler(async (req, res) => {
   if (project.githubRepo && project.githubRepo.fullName) {
     // RETURNING ERROR RESPONSE
     res.status(400).json({
-      message: "Project already has a linked GitHub repository. Please unlink it first.",
+      message:
+        "Project already has a linked GitHub repository. Please unlink it first.",
       success: false,
     });
     // RETURNING FROM FUNCTION
@@ -637,7 +684,8 @@ export const linkGitHubRepo = expressAsyncHandler(async (req, res) => {
   if (!user.githubAccessToken || !user.githubUsername) {
     // RETURNING ERROR RESPONSE
     res.status(400).json({
-      message: "GitHub is not connected to your account. Please connect GitHub first.",
+      message:
+        "GitHub is not connected to your account. Please connect GitHub first.",
       success: false,
     });
     // RETURNING FROM FUNCTION
@@ -1051,4 +1099,500 @@ export const getProjectGitHubData = expressAsyncHandler(async (req, res) => {
     // RETURNING FROM FUNCTION
     return;
   }
+});
+
+/**
+ * ADD LINKED REPOSITORY TO PROJECT (SUPPORTS MULTIPLE REPOS)
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== ADD LINKED REPOSITORY TO PROJECT ==>
+export const addLinkedRepository = expressAsyncHandler(async (req, res) => {
+  // GETTING USER ID FROM REQUEST
+  const userId = (req as any).id;
+  // IF USER ID NOT PROVIDED, RETURN 401 ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GETTING PROJECT ID FROM PARAMS
+  const projectId = req.params.id;
+  // IF PROJECT ID NOT PROVIDED, RETURN 400 ERROR
+  if (!projectId) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Project ID is Required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // VALIDATE PROJECT ID FORMAT
+  if (!mongoose.Types.ObjectId.isValid(projectId)) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Invalid Project ID format!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GETTING REPOSITORY DATA FROM REQUEST BODY
+  const {
+    owner,
+    name,
+    fullName,
+    repoId,
+    htmlUrl,
+    isPrimary,
+    description,
+    defaultBranch,
+  } = req.body;
+  // VALIDATE REQUIRED FIELDS
+  if (!owner || !name || !repoId || !htmlUrl) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Repository owner, name, repoId, and htmlUrl are required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FIND PROJECT BY ID AND USER ID
+  const project = await Project.findOne({
+    _id: projectId,
+    userId,
+    isTrashed: false,
+  }).exec();
+  // IF PROJECT NOT FOUND, RETURN 404 ERROR
+  if (!project) {
+    // RETURNING ERROR RESPONSE
+    res.status(404).json({
+      message: "Project not found!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // INITIALIZE LINKED REPOSITORIES ARRAY IF UNDEFINED
+  if (!project.linkedRepositories || project.linkedRepositories.length === 0) {
+    // RETURNING ERROR RESPONSE
+    project.linkedRepositories = [] as any;
+  }
+  // CHECK IF REPOSITORY ALREADY LINKED
+  const linkedRepos = project.linkedRepositories as any[];
+  // CHECK IF REPOSITORY ALREADY LINKED
+  const existingRepo = linkedRepos.find((repo: any) => repo.repoId === repoId);
+  // IF REPOSITORY ALREADY LINKED, RETURN 400 ERROR
+  if (existingRepo) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Repository is already linked to this project!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // IF SET AS PRIMARY, UNSET ANY EXISTING PRIMARY
+  if (isPrimary) {
+    // SET ALL OTHER REPOSITORIES AS NOT PRIMARY
+    linkedRepos.forEach((repo: any) => {
+      // SET REPOSITORY AS NOT PRIMARY
+      repo.isPrimary = false;
+    });
+  }
+  // SET AS PRIMARY IF IT'S THE FIRST REPOSITORY
+  const shouldBePrimary = isPrimary || project.linkedRepositories.length === 0;
+  // ADD NEW REPOSITORY
+  const newRepo = {
+    owner,
+    name,
+    fullName: fullName || `${owner}/${name}`,
+    repoId,
+    htmlUrl,
+    linkedAt: new Date(),
+    isPrimary: shouldBePrimary,
+    description: description || null,
+    defaultBranch: defaultBranch || "main",
+  };
+  project.linkedRepositories.push(newRepo);
+  // ALSO UPDATE LEGACY GITHUB REPO FIELD IF THIS IS PRIMARY
+  if (shouldBePrimary) {
+    // UPDATE LEGACY GITHUB REPO FIELD
+    project.githubRepo = {
+      owner,
+      name,
+      fullName: fullName || `${owner}/${name}`,
+      repoId,
+      htmlUrl,
+      linkedAt: new Date(),
+    };
+  }
+  // SAVE PROJECT
+  await project.save();
+  // RETURNING SUCCESS RESPONSE
+  res.status(200).json({
+    message: "Repository linked successfully!",
+    success: true,
+    data: {
+      projectId: project._id,
+      linkedRepository: newRepo,
+      linkedRepositories: project.linkedRepositories,
+    },
+  });
+  // RETURNING FROM FUNCTION
+  return;
+});
+
+/**
+ * REMOVE LINKED REPOSITORY FROM PROJECT
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== REMOVE LINKED REPOSITORY FROM PROJECT ==>
+export const removeLinkedRepository = expressAsyncHandler(async (req, res) => {
+  // GETTING USER ID FROM REQUEST
+  const userId = (req as any).id;
+  // IF USER ID NOT PROVIDED, RETURN 401 ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GETTING PROJECT ID AND REPO ID FROM PARAMS
+  const { id: projectId, repoId } = req.params;
+  // IF PROJECT ID NOT PROVIDED, RETURN 400 ERROR
+  if (!projectId) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Project ID is Required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // VALIDATE PROJECT ID FORMAT
+  if (!mongoose.Types.ObjectId.isValid(projectId)) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Invalid Project ID format!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // VALIDATE REPO ID
+  if (!repoId) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Repository ID is Required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FIND PROJECT BY ID AND USER ID
+  const project = await Project.findOne({
+    _id: projectId,
+    userId,
+    isTrashed: false,
+  }).exec();
+  // IF PROJECT NOT FOUND, RETURN 404 ERROR
+  if (!project) {
+    // RETURNING ERROR RESPONSE
+    res.status(404).json({
+      message: "Project not found!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // CHECK IF REPOSITORY EXISTS IN LINKED REPOSITORIES
+  const repoIdNum = parseInt(repoId, 10);
+  // CHECK IF REPOSITORY EXISTS IN LINKED REPOSITORIES
+  const repoIndex = project.linkedRepositories?.findIndex(
+    (repo) => repo.repoId === repoIdNum
+  );
+  // IF REPOSITORY NOT FOUND, RETURN 404 ERROR
+  if (repoIndex === undefined || repoIndex === -1) {
+    // RETURNING ERROR RESPONSE
+    res.status(404).json({
+      message: "Repository not found in project!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // STORE REMOVED REPO INFO
+  const removedRepo = project.linkedRepositories?.[repoIndex];
+  // IF REPOSITORY NOT FOUND, RETURN 404 ERROR
+  if (!removedRepo) {
+    // RETURNING ERROR RESPONSE
+    res.status(404).json({
+      message: "Repository not found in project!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  const wasPrimary = removedRepo.isPrimary;
+  // REMOVE REPOSITORY FROM ARRAY
+  project.linkedRepositories!.splice(repoIndex, 1);
+  // IF REMOVED REPO WAS PRIMARY, SET FIRST REMAINING AS PRIMARY
+  if (
+    wasPrimary &&
+    project.linkedRepositories &&
+    project.linkedRepositories.length > 0
+  ) {
+    // GET NEW PRIMARY REPOSITORY
+    const newPrimary = project.linkedRepositories[0];
+    // IF NEW PRIMARY REPOSITORY EXISTS, SET AS PRIMARY
+    if (newPrimary) {
+      // SET NEW PRIMARY REPOSITORY AS PRIMARY
+      newPrimary.isPrimary = true;
+      // UPDATE LEGACY GITHUB REPO FIELD
+      project.githubRepo = {
+        owner: newPrimary.owner,
+        name: newPrimary.name,
+        fullName: newPrimary.fullName,
+        repoId: newPrimary.repoId,
+        htmlUrl: newPrimary.htmlUrl,
+        linkedAt: newPrimary.linkedAt,
+      };
+    }
+  } else if (
+    !project.linkedRepositories ||
+    project.linkedRepositories.length === 0
+  ) {
+    // CLEAR LEGACY GITHUB REPO FIELD IF NO REPOS LEFT
+    project.githubRepo = {
+      owner: null as unknown as string,
+      name: null as unknown as string,
+      fullName: null as unknown as string,
+      repoId: null as unknown as number,
+      htmlUrl: null as unknown as string,
+      linkedAt: null as unknown as Date,
+    };
+  }
+  // SAVE PROJECT
+  await project.save();
+  // RETURNING SUCCESS RESPONSE
+  res.status(200).json({
+    message: "Repository unlinked successfully!",
+    success: true,
+    data: {
+      projectId: project._id,
+      removedRepository: removedRepo,
+      linkedRepositories: project.linkedRepositories,
+    },
+  });
+  // RETURNING FROM FUNCTION
+  return;
+});
+
+/**
+ * SET PRIMARY LINKED REPOSITORY
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== SET PRIMARY LINKED REPOSITORY ==>
+export const setPrimaryRepository = expressAsyncHandler(async (req, res) => {
+  // GETTING USER ID FROM REQUEST
+  const userId = (req as any).id;
+  // IF USER ID NOT PROVIDED, RETURN 401 ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GETTING PROJECT ID AND REPO ID FROM PARAMS
+  const { id: projectId, repoId } = req.params;
+  // IF PROJECT ID NOT PROVIDED, RETURN 400 ERROR
+  if (!projectId) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Project ID is Required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // VALIDATE PROJECT ID FORMAT
+  if (!mongoose.Types.ObjectId.isValid(projectId)) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Invalid Project ID format!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // VALIDATE REPO ID
+  if (!repoId) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Repository ID is Required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FIND PROJECT BY ID AND USER ID
+  const project = await Project.findOne({
+    _id: projectId,
+    userId,
+    isTrashed: false,
+  }).exec();
+  // IF PROJECT NOT FOUND, RETURN 404 ERROR
+  if (!project) {
+    // RETURNING ERROR RESPONSE
+    res.status(404).json({
+      message: "Project not found!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FIND REPOSITORY IN LINKED REPOSITORIES
+  const repoIdNum = parseInt(repoId, 10);
+  // FIND REPOSITORY IN LINKED REPOSITORIES
+  const linkedReposArray = project.linkedRepositories as any[] | undefined;
+  // FIND REPOSITORY IN LINKED REPOSITORIES
+  const targetRepo = linkedReposArray?.find(
+    (repo: any) => repo.repoId === repoIdNum
+  );
+  // IF REPOSITORY NOT FOUND, RETURN 404 ERROR
+  if (!targetRepo) {
+    // RETURNING ERROR RESPONSE
+    res.status(404).json({
+      message: "Repository not found in project!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // UNSET ALL PRIMARY FLAGS
+  linkedReposArray?.forEach((repo: any) => {
+    // SET REPOSITORY AS NOT PRIMARY
+    repo.isPrimary = false;
+  });
+  // SET TARGET REPO AS PRIMARY
+  targetRepo.isPrimary = true;
+  // UPDATE LEGACY GITHUB REPO FIELD
+  project.githubRepo = {
+    owner: targetRepo.owner,
+    name: targetRepo.name,
+    fullName: targetRepo.fullName,
+    repoId: targetRepo.repoId,
+    htmlUrl: targetRepo.htmlUrl,
+    linkedAt: targetRepo.linkedAt,
+  };
+  // SAVE PROJECT
+  await project.save();
+  // RETURNING SUCCESS RESPONSE
+  res.status(200).json({
+    message: "Primary repository set successfully!",
+    success: true,
+    data: {
+      projectId: project._id,
+      primaryRepository: targetRepo,
+      linkedRepositories: project.linkedRepositories,
+    },
+  });
+  // RETURNING FROM FUNCTION
+  return;
+});
+
+/**
+ * GET ALL LINKED REPOSITORIES FOR A PROJECT
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET ALL LINKED REPOSITORIES ==>
+export const getLinkedRepositories = expressAsyncHandler(async (req, res) => {
+  // GETTING USER ID FROM REQUEST
+  const userId = (req as any).id;
+  // IF USER ID NOT PROVIDED, RETURN 401 ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GETTING PROJECT ID FROM PARAMS
+  const projectId = req.params.id;
+  // IF PROJECT ID NOT PROVIDED, RETURN 400 ERROR
+  if (!projectId) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Project ID is Required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // VALIDATE PROJECT ID FORMAT
+  if (!mongoose.Types.ObjectId.isValid(projectId)) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Invalid Project ID format!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FIND PROJECT BY ID AND USER ID
+  const project = await Project.findOne({
+    _id: projectId,
+    userId,
+    isTrashed: false,
+  })
+    .select("linkedRepositories githubRepo")
+    .lean()
+    .exec();
+  // IF PROJECT NOT FOUND, RETURN 404 ERROR
+  if (!project) {
+    // RETURNING ERROR RESPONSE
+    res.status(404).json({
+      message: "Project not found!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // CONVERT LINKED REPOSITORIES TO ARRAY
+  const reposData: any[] = project.linkedRepositories || [];
+  // RETURNING SUCCESS RESPONSE
+  res.status(200).json({
+    message: "Linked repositories retrieved successfully!",
+    success: true,
+    data: {
+      projectId: project._id,
+      linkedRepositories: reposData,
+      // INCLUDE LEGACY GITHUB REPO FOR BACKWARD COMPATIBILITY
+      githubRepo: project.githubRepo,
+    },
+  });
+  // RETURNING FROM FUNCTION
+  return;
 });
