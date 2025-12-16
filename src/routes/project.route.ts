@@ -13,6 +13,10 @@ import {
   linkGitHubRepo,
   unlinkGitHubRepo,
   getProjectGitHubData,
+  addLinkedRepository,
+  removeLinkedRepository,
+  setPrimaryRepository,
+  getLinkedRepositories,
 } from "../controllers/project.controller.js";
 import {
   getCommentsByProjectId,
@@ -28,8 +32,6 @@ const router = express.Router();
 // <== ROUTES ==>
 // ALL ROUTES REQUIRE AUTHENTICATION
 router.use(isAuthenticated);
-
-// <== STATIC ROUTES ==>
 // GET ALL PROJECTS
 router.get("/", getProjects);
 // CREATE PROJECT
@@ -42,7 +44,6 @@ router.get("/trashed", getTrashedProjects);
 router.get("/weekly-summary", getWeeklySummary);
 // DELETE COMMENT (NO PROJECT ID IN PATH)
 router.delete("/comments/:commentId", deleteComment);
-// <== DYNAMIC ROUTES ==>
 // GET SINGLE PROJECT
 router.get("/:id", getOneProject);
 // UPDATE PROJECT
@@ -63,5 +64,13 @@ router.post("/:projectId/comments", createComment);
 router.delete("/:id/github/unlink", unlinkGitHubRepo);
 // GET COMMENTS BY PROJECT ID
 router.get("/:projectId/comments", getCommentsByProjectId);
+// GET ALL LINKED REPOSITORIES FOR A PROJECT
+router.get("/:id/repositories", getLinkedRepositories);
+// ADD LINKED REPOSITORY TO PROJECT
+router.post("/:id/repositories", addLinkedRepository);
+// REMOVE LINKED REPOSITORY FROM PROJECT
+router.delete("/:id/repositories/:repoId", removeLinkedRepository);
+// SET PRIMARY REPOSITORY
+router.put("/:id/repositories/:repoId/primary", setPrimaryRepository);
 
 export default router;
