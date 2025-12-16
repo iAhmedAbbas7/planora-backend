@@ -4619,3 +4619,514 @@ export const suggestDueDate = expressAsyncHandler(async (req, res) => {
     return;
   }
 });
+
+/**
+ * ANALYZE CODEBASE FOR A PROJECT
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== ANALYZE CODEBASE ==>
+export const analyzeCodebase = expressAsyncHandler(async (req, res) => {
+  // GETTING USER ID FROM REQUEST
+  const userId = (req as any).id;
+  // IF USER ID NOT PROVIDED, RETURN 401 ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GETTING PROJECT ID FROM PARAMS
+  const { projectId } = req.params;
+  // IF PROJECT ID NOT PROVIDED, RETURN 400 ERROR
+  if (!projectId) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Project ID is Required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET REQUEST BODY
+  const { repositoryData, fileTree, readme, packageJson } = req.body;
+  // VALIDATE REQUIRED FIELDS
+  if (!repositoryData) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Repository data is required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  try {
+    // GET GEMINI MODEL
+    const model = getGeminiModel();
+    // IF MODEL NOT AVAILABLE, RETURN ERROR
+    if (!model) {
+      // RETURNING ERROR RESPONSE
+      res.status(500).json({
+        message: "AI service is not available. Please try again later.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // FIND PROJECT TO GET EXISTING TASKS
+    const project = await Project.findOne({
+      _id: projectId,
+      userId,
+      isTrashed: false,
+    }).lean();
+    // GET EXISTING TASKS FOR THIS PROJECT
+    const existingTasks = await Task.find({
+      projectId,
+      userId,
+      isTrashed: false,
+    })
+      .select("title status priority")
+      .lean();
+    // BUILD PROMPT FOR AI
+    const prompt = `You are a senior software architect analyzing a codebase. Based on the following information, provide a comprehensive analysis:
+    Repository: ${repositoryData.fullName || "Unknown"}
+    Description: ${repositoryData.description || "No description"}
+    Language: ${repositoryData.language || "Unknown"}
+    Stars: ${repositoryData.stargazersCount || 0}
+    Forks: ${repositoryData.forksCount || 0}
+    Default Branch: ${repositoryData.defaultBranch || "main"}
+    ${
+      fileTree
+        ? `File Structure:\n${JSON.stringify(fileTree, null, 2).slice(0, 3000)}`
+        : ""
+    }
+    ${readme ? `README Content:\n${readme.slice(0, 2000)}` : ""}
+    ${
+      packageJson
+        ? `Package.json:\n${JSON.stringify(packageJson, null, 2).slice(
+            0,
+            1500
+          )}`
+        : ""
+    }
+    Existing Tasks in Project (${existingTasks.length}):
+    ${existingTasks
+      .slice(0, 10)
+      .map((t: any) => `- ${t.title} (${t.status}, ${t.priority})`)
+      .join("\n")}
+    Provide analysis in this JSON format:
+    {
+      "overview": {
+        "projectType": "string (web app, mobile app, library, etc.)",
+        "techStack": ["array of technologies"],
+        "architecture": "string (monolith, microservices, serverless, etc.)",
+        "maturityLevel": "string (prototype, development, production)",
+        "summary": "2-3 sentence summary"
+      },
+      "codeQuality": {
+        "score": 0-100,
+        "strengths": ["array of strengths"],
+        "improvements": ["array of areas to improve"]
+      },
+      "suggestedFeatures": [
+        {
+          "title": "feature name",
+          "description": "what this feature does",
+          "priority": "high/medium/low",
+          "estimatedEffort": "small/medium/large",
+          "category": "feature/bugfix/improvement/documentation"
+        }
+      ],
+      "technicalDebt": [
+        {
+          "issue": "description of technical debt",
+          "impact": "high/medium/low",
+          "suggestedFix": "how to address it"
+        }
+      ],
+      "securityConsiderations": ["array of security notes"],
+      "scalabilityNotes": "string about scaling considerations"
+    }`;
+    // GENERATE RESPONSE
+    const result = await model.generateContent(prompt);
+    // GET RESPONSE
+    const response = result.response;
+    // GET RESPONSE TEXT
+    const text = response.text();
+    // PARSE RESPONSE
+    let analysis;
+    // TRY TO PARSE RESPONSE
+    try {
+      // CLEAN UP RESPONSE
+      const cleanedText = text
+        .replace(/```json\n?/g, "")
+        .replace(/```\n?/g, "")
+        .trim();
+      // PARSE AS JSON
+      analysis = JSON.parse(cleanedText);
+    } catch {
+      // FALLBACK IF PARSING FAILS
+      analysis = {
+        overview: {
+          projectType: "Unknown",
+          techStack: [repositoryData.language || "Unknown"],
+          architecture: "Unknown",
+          maturityLevel: "Unknown",
+          summary:
+            "Unable to fully analyze the codebase. Please provide more details.",
+        },
+        codeQuality: {
+          score: 50,
+          strengths: ["Code structure exists"],
+          improvements: ["Add more documentation"],
+        },
+        suggestedFeatures: [],
+        technicalDebt: [],
+        securityConsiderations: ["Review security practices"],
+        scalabilityNotes: "Unable to determine without more information",
+      };
+    }
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Codebase analyzed successfully!",
+      success: true,
+      data: {
+        projectId,
+        repository: repositoryData.fullName,
+        analysis,
+        analyzedAt: new Date().toISOString(),
+      },
+    });
+    return;
+  } catch (error: any) {
+    // LOG ERROR
+    console.error("Error analyzing codebase:", error);
+    // RETURNING ERROR RESPONSE
+    res.status(500).json({
+      message: "Failed to analyze codebase. Please try again.",
+      success: false,
+    });
+    return;
+  }
+});
+
+/**
+ * CREATE SPRINT PLAN FOR A PROJECT
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== CREATE SPRINT PLAN ==>
+export const createSprintPlan = expressAsyncHandler(async (req, res) => {
+  // GETTING USER ID FROM REQUEST
+  const userId = (req as any).id;
+  // IF USER ID NOT PROVIDED, RETURN 401 ERROR
+  if (!userId) {
+    // RETURNING ERROR RESPONSE
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GETTING PROJECT ID FROM PARAMS
+  const { projectId } = req.params;
+  // IF PROJECT ID NOT PROVIDED, RETURN 400 ERROR
+  if (!projectId) {
+    // RETURNING ERROR RESPONSE
+    res.status(400).json({
+      message: "Project ID is Required!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // GET REQUEST BODY
+  const {
+    sprintDuration = 14,
+    teamSize = 1,
+    sprintGoal,
+    focusAreas,
+    excludeTaskIds,
+  } = req.body;
+  try {
+    // GET GEMINI MODEL
+    const model = getGeminiModel();
+    // IF MODEL NOT AVAILABLE, RETURN ERROR
+    if (!model) {
+      // RETURNING ERROR RESPONSE
+      res.status(500).json({
+        message: "AI service is not available. Please try again later.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // FIND PROJECT
+    const project = await Project.findOne({
+      _id: projectId,
+      userId,
+      isTrashed: false,
+    }).lean();
+    // IF PROJECT NOT FOUND
+    if (!project) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Project not found!",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // GET ALL PENDING AND IN-PROGRESS TASKS
+    const tasks = await Task.find({
+      projectId,
+      userId,
+      isTrashed: false,
+      status: { $in: ["to do", "in progress"] },
+      ...(excludeTaskIds && excludeTaskIds.length > 0
+        ? { _id: { $nin: excludeTaskIds } }
+        : {}),
+    })
+      .select(
+        "title description priority status dueDate estimatedTime dependencies"
+      )
+      .lean();
+    // IF NO TASKS, RETURN EMPTY SPRINT
+    if (tasks.length === 0) {
+      // RETURNING ERROR RESPONSE
+      res.status(200).json({
+        message: "No tasks available for sprint planning!",
+        success: true,
+        data: {
+          projectId,
+          sprint: {
+            tasks: [],
+            totalTasks: 0,
+            estimatedHours: 0,
+            recommendation: "Create some tasks first before planning a sprint.",
+          },
+        },
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // GET COMPLETED TASKS FOR VELOCITY ESTIMATION
+    const completedTasks = await Task.find({
+      projectId,
+      userId,
+      status: "completed",
+    })
+      .select("completedAt createdAt")
+      .lean();
+    // CALCULATE AVERAGE TASK COMPLETION TIME (IN DAYS)
+    let avgTaskTime = 3;
+    // IF COMPLETED TASKS ARE AVAILABLE, CALCULATE AVERAGE TASK COMPLETION TIME
+    if (completedTasks.length > 0) {
+      // GET COMPLETION TIMES
+      const completionTimes = (completedTasks as any[])
+        .filter((t) => t.completedAt && t.createdAt)
+        .map((t) => {
+          // GET CREATED AND COMPLETED TIMES
+          const created = new Date(t.createdAt as Date);
+          // GET COMPLETED TIME
+          const completed = new Date(t.completedAt as Date);
+          // CALCULATE DAYS BETWEEN CREATED AND COMPLETED TIMES
+          return (
+            (completed.getTime() - created.getTime()) / (1000 * 60 * 60 * 24)
+          );
+        });
+      // IF COMPLETION TIMES ARE AVAILABLE, CALCULATE AVERAGE TASK COMPLETION TIME
+      if (completionTimes.length > 0) {
+        // CALCULATE AVERAGE TASK COMPLETION TIME
+        avgTaskTime =
+          completionTimes.reduce((a, b) => a + b, 0) / completionTimes.length;
+      }
+    }
+    // BUILD PROMPT FOR AI
+    const prompt = `You are a sprint planning expert. Create an optimal sprint plan based on:
+    Project: ${project.title}
+    ${project.description ? `Description: ${project.description}` : ""}
+    Sprint Duration: ${sprintDuration} days
+    Team Size: ${teamSize}
+    ${sprintGoal ? `Sprint Goal: ${sprintGoal}` : ""}
+    ${focusAreas ? `Focus Areas: ${focusAreas.join(", ")}` : ""}
+    Available Tasks (${tasks.length}):
+    ${tasks
+      .map(
+        (t: any, i: number) =>
+          `${i + 1}. "${t.title}" - Priority: ${
+            t.priority || "medium"
+          }, Status: ${t.status}${
+            t.dueDate
+              ? `, Due: ${new Date(t.dueDate).toLocaleDateString()}`
+              : ""
+          }`
+      )
+      .join("\n")}
+    Historical Data:
+    - Average task completion time: ${avgTaskTime.toFixed(1)} days
+    - Team capacity: ~${Math.floor(
+      (sprintDuration / avgTaskTime) * teamSize
+    )} tasks per sprint
+    Create a sprint plan in this JSON format:
+    {
+      "sprintName": "descriptive sprint name",
+      "sprintGoal": "clear, achievable goal for this sprint",
+      "startDate": "${new Date().toISOString().split("T")[0]}",
+      "endDate": "${
+        new Date(Date.now() + sprintDuration * 24 * 60 * 60 * 1000)
+          .toISOString()
+          .split("T")[0]
+      }",
+      "selectedTasks": [
+        {
+          "taskIndex": 1,
+          "reason": "why this task was selected",
+          "suggestedOrder": 1,
+          "estimatedDays": 2
+        }
+      ],
+      "totalEstimatedDays": 10,
+      "capacityUtilization": 80,
+      "risks": ["potential risks"],
+      "recommendations": ["tips for successful sprint"],
+      "deferredTasks": [
+        {
+          "taskIndex": 3,
+          "reason": "why this task was deferred"
+        }
+      ]
+    }
+    Important: Select tasks that can realistically be completed within the sprint duration considering team capacity.`;
+    // GENERATE RESPONSE
+    const result = await model.generateContent(prompt);
+    // GET RESPONSE
+    const response = result.response;
+    // GET RESPONSE TEXT
+    const text = response.text();
+    // PARSE RESPONSE
+    let sprintPlan;
+    // TRY TO PARSE RESPONSE
+    try {
+      // CLEAN UP RESPONSE
+      const cleanedText = text
+        .replace(/```json\n?/g, "")
+        .replace(/```\n?/g, "")
+        .trim();
+      // PARSE AS JSON
+      sprintPlan = JSON.parse(cleanedText);
+    } catch {
+      // FALLBACK IF PARSING FAILS - SELECT TOP PRIORITY TASKS
+      const priorityOrder: Record<string, number> = {
+        high: 3,
+        medium: 2,
+        low: 1,
+      };
+      // SORT TASKS BY PRIORITY
+      const sortedTasks = ([...tasks] as any[]).sort(
+        (a: any, b: any) =>
+          (priorityOrder[b.priority || "medium"] || 2) -
+          (priorityOrder[a.priority || "medium"] || 2)
+      );
+      // CALCULATE MAX TASKS
+      const maxTasks = Math.floor((sprintDuration / avgTaskTime) * teamSize);
+      // CREATE SPRINT PLAN
+      sprintPlan = {
+        sprintName: `Sprint - ${new Date().toLocaleDateString()}`,
+        sprintGoal: sprintGoal || "Complete priority tasks",
+        startDate: new Date().toISOString().split("T")[0],
+        endDate: new Date(Date.now() + sprintDuration * 24 * 60 * 60 * 1000)
+          .toISOString()
+          .split("T")[0],
+        selectedTasks: sortedTasks
+          .slice(0, maxTasks)
+          .map((t: any, i: number) => ({
+            taskIndex: (tasks as any[]).indexOf(t) + 1,
+            reason: `Priority: ${t.priority || "medium"}`,
+            suggestedOrder: i + 1,
+            estimatedDays: Math.ceil(avgTaskTime),
+          })),
+        totalEstimatedDays: maxTasks * Math.ceil(avgTaskTime),
+        capacityUtilization: 75,
+        risks: ["Unable to generate detailed AI plan"],
+        recommendations: ["Review task estimates manually"],
+        deferredTasks: sortedTasks.slice(maxTasks).map((t: any) => ({
+          taskIndex: (tasks as any[]).indexOf(t) + 1,
+          reason: "Capacity exceeded",
+        })),
+      };
+    }
+    // MAP TASK INDICES TO ACTUAL TASKS
+    const tasksArray = tasks as any[];
+    // MAP SELECTED TASKS WITH DETAILS
+    const selectedTasksWithDetails = sprintPlan.selectedTasks.map(
+      (selection: any) => {
+        const task = tasksArray[selection.taskIndex - 1];
+        return {
+          ...selection,
+          task: task || null,
+        };
+      }
+    );
+    // MAP DEFERRED TASKS WITH DETAILS
+    const deferredTasksWithDetails = (sprintPlan.deferredTasks || []).map(
+      (deferred: any) => {
+        // GET TASK
+        const task = tasksArray[deferred.taskIndex - 1];
+        // RETURN TASK WITH DETAILS
+        return {
+          ...deferred,
+          task: task || null,
+        };
+      }
+    );
+    // RETURNING SUCCESS RESPONSE
+    res.status(200).json({
+      message: "Sprint plan created successfully!",
+      success: true,
+      data: {
+        projectId,
+        projectTitle: project.title,
+        sprint: {
+          name: sprintPlan.sprintName,
+          goal: sprintPlan.sprintGoal,
+          startDate: sprintPlan.startDate,
+          endDate: sprintPlan.endDate,
+          duration: sprintDuration,
+          teamSize,
+          selectedTasks: selectedTasksWithDetails.filter((t: any) => t.task),
+          deferredTasks: deferredTasksWithDetails.filter((t: any) => t.task),
+          metrics: {
+            totalEstimatedDays: sprintPlan.totalEstimatedDays,
+            capacityUtilization: sprintPlan.capacityUtilization,
+            tasksSelected: selectedTasksWithDetails.filter((t: any) => t.task)
+              .length,
+            tasksDeferred: deferredTasksWithDetails.filter((t: any) => t.task)
+              .length,
+            avgTaskTime: avgTaskTime.toFixed(1),
+          },
+          risks: sprintPlan.risks || [],
+          recommendations: sprintPlan.recommendations || [],
+        },
+        createdAt: new Date().toISOString(),
+      },
+    });
+    return;
+  } catch (error: any) {
+    // LOG ERROR
+    console.error("Error creating sprint plan:", error);
+    // RETURNING ERROR RESPONSE
+    res.status(500).json({
+      message: "Failed to create sprint plan. Please try again.",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+});
