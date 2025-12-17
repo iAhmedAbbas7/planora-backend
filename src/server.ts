@@ -11,6 +11,7 @@ import passport from "./config/passport.js";
 import rootRoute from "./routes/root.route.js";
 import authRoute from "./routes/auth.route.js";
 import taskRoute from "./routes/task.route.js";
+import goalRoute from "./routes/goal.route.js";
 import trashRoute from "./routes/trash.route.js";
 import corsOptions from "./config/corsOptions.js";
 import { logEvents } from "./middleware/logger.js";
@@ -18,6 +19,7 @@ import { getDirName } from "./utils/getDirName.js";
 import { app, server } from "./services/socket.js";
 import githubRoute from "./routes/github.route.js";
 import searchRoute from "./routes/search.route.js";
+import goalAIRoute from "./routes/goalAI.route.js";
 import profileRoute from "./routes/profile.route.js";
 import projectRoute from "./routes/project.route.js";
 import accountRoute from "./routes/account.route.js";
@@ -97,6 +99,8 @@ app.use("/", rootRoute);
 app.use("/api/v1/ai", aiRoute);
 // <== AUTH ROUTE ==>
 app.use("/api/v1/auth", authRoute);
+// <== GOALS ROUTE ==>
+app.use("/api/v1/goals", goalRoute);
 // <== TASK ROUTE ==>
 app.use("/api/v1/tasks", taskRoute);
 // <== TRASH ROUTE ==>
@@ -107,6 +111,8 @@ app.use("/api/v1/dx", dxScoringRoute);
 app.use("/api/v1/search", searchRoute);
 // <== GITHUB INTEGRATION ROUTE ==>
 app.use("/api/v1/github", githubRoute);
+// <== GOALS AI ROUTE ==>
+app.use("/api/v1/goals/ai", goalAIRoute);
 // <== PROFILE ROUTE ==>
 app.use("/api/v1/profile", profileRoute);
 // <== ACCOUNT ROUTE ==>
