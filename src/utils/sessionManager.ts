@@ -2,16 +2,215 @@
 import crypto from "crypto";
 import mongoose from "mongoose";
 import { LocationInfo } from "./ipGeolocation.js";
-import { DeviceInfo } from "./deviceFingerprint.js";
 import { Session } from "../models/session.model.js";
+import { getPlanLimits } from "../config/planLimits.js";
+import { PlanType } from "../models/subscription.model.js";
 import { RefreshToken } from "../models/refreshToken.model.js";
+import { Subscription } from "../models/subscription.model.js";
+import { TrustedDevice } from "../models/trustedDevice.model.js";
+import { DeviceInfo, generateTrustedDeviceFingerprint } from "./deviceFingerprint.js";
 
 // <== SESSION EXPIRATION DAYS ==>
 const SESSION_EXPIRATION_DAYS = parseInt(
   process.env.SESSION_EXPIRES_IN_DAYS || "30"
 );
-// <== MAX ACTIVE SESSIONS ==>
-const MAX_ACTIVE_SESSIONS = parseInt(process.env.MAX_ACTIVE_SESSIONS || "5");
+// <== DEFAULT MAX ACTIVE SESSIONS ==>
+const DEFAULT_MAX_ACTIVE_SESSIONS = 3;
+
+/**
+ * CHECK IF THIS IS THE USER'S FIRST SESSION
+ * @param userId - User ID
+ * @returns Boolean Indicating If This Is The First Session
+ */
+// <== IS FIRST SESSION ==>
+export const isFirstSession = async (
+  userId: mongoose.Types.ObjectId
+): Promise<boolean> => {
+  // COUNT ALL SESSIONS FOR THIS USER (INCLUDING EXPIRED/REVOKED)
+  const sessionCount = await Session.countDocuments({ userId }).exec();
+  // RETURN TRUE IF NO SESSIONS FOUND, FALSE OTHERWISE
+  return sessionCount === 0;
+};
+
+/**
+ * CHECK IF A DEVICE IS IN THE USER'S TRUSTED DEVICES LIST
+ * @param userId - User ID
+ * @param deviceInfo - Device Info Object
+ * @returns Boolean Indicating If Device Is Trusted
+ */
+// <== IS DEVICE TRUSTED ==>
+export const isDeviceTrusted = async (
+  userId: mongoose.Types.ObjectId,
+  deviceInfo: DeviceInfo
+): Promise<boolean> => {
+  // GENERATE TRUSTED DEVICE FINGERPRINT
+  const fingerprint = generateTrustedDeviceFingerprint(deviceInfo);
+  // CHECK IF DEVICE EXISTS IN TRUSTED DEVICES
+  const trustedDevice = await TrustedDevice.findOne({
+    userId,
+    deviceFingerprint: fingerprint,
+    isActive: true,
+  })
+    .lean()
+    .exec();
+  // IF FOUND, UPDATE LAST USED TIMESTAMP (NON-BLOCKING)
+  if (trustedDevice) {
+    TrustedDevice.updateOne(
+      { _id: trustedDevice._id },
+      { lastUsedAt: new Date() }
+    ).exec();
+  }
+  // RETURN TRUE IF DEVICE IS TRUSTED, FALSE OTHERWISE
+  return trustedDevice !== null;
+};
+
+/**
+ * ADD A DEVICE TO USER'S TRUSTED DEVICES LIST
+ * @param userId - User ID
+ * @param deviceInfo - Device Info Object
+ * @returns Created or Updated TrustedDevice
+ */
+// <== ADD TRUSTED DEVICE ==>
+export const addTrustedDevice = async (
+  userId: mongoose.Types.ObjectId,
+  deviceInfo: DeviceInfo
+): Promise<any> => {
+  // GENERATE TRUSTED DEVICE FINGERPRINT
+  const fingerprint = generateTrustedDeviceFingerprint(deviceInfo);
+  // EXTRACT MAJOR BROWSER VERSION
+  const majorBrowserVersion = deviceInfo.browserVersion.split(".")[0] || "";
+  // UPSERT TRUSTED DEVICE (UPDATE IF EXISTS, CREATE IF NOT)
+  const trustedDevice = await TrustedDevice.findOneAndUpdate(
+    {
+      userId,
+      deviceFingerprint: fingerprint,
+    },
+    {
+      $set: {
+        deviceType: deviceInfo.deviceType,
+        deviceName: deviceInfo.deviceName,
+        browserName: deviceInfo.browserName,
+        browserVersion: majorBrowserVersion,
+        operatingSystem: deviceInfo.operatingSystem,
+        lastUsedAt: new Date(),
+        isActive: true,
+      },
+      $setOnInsert: {
+        trustedAt: new Date(),
+      },
+    },
+    {
+      upsert: true,
+      new: true,
+    }
+  ).exec();
+  return trustedDevice;
+};
+
+/**
+ * REMOVE A DEVICE FROM USER'S TRUSTED DEVICES LIST
+ * @param userId - User ID
+ * @param deviceInfo - Device Info Object
+ * @returns Boolean Indicating If Device Was Removed
+ */
+// <== REMOVE TRUSTED DEVICE ==>
+export const removeTrustedDevice = async (
+  userId: mongoose.Types.ObjectId,
+  deviceInfo: DeviceInfo
+): Promise<boolean> => {
+  // GENERATE TRUSTED DEVICE FINGERPRINT
+  const fingerprint = generateTrustedDeviceFingerprint(deviceInfo);
+  // DEACTIVATE TRUSTED DEVICE
+  const result = await TrustedDevice.updateOne(
+    {
+      userId,
+      deviceFingerprint: fingerprint,
+    },
+    {
+      isActive: false,
+    }
+  ).exec();
+  // RETURN TRUE IF DEVICE WAS REMOVED, FALSE OTHERWISE
+  return result.modifiedCount > 0;
+};
+
+/**
+ * GET ALL TRUSTED DEVICES FOR A USER
+ * @param userId - User ID
+ * @returns Array of Trusted Devices
+ */
+// <== GET TRUSTED DEVICES ==>
+export const getTrustedDevices = async (
+  userId: mongoose.Types.ObjectId
+): Promise<any[]> => {
+  const devices = await TrustedDevice.find({
+    userId,
+    isActive: true,
+  })
+    .sort({ lastUsedAt: -1 })
+    .lean()
+    .exec();
+  return devices;
+};
+
+/**
+ * DETERMINE IF A NEW SESSION SHOULD BE AUTO-TRUSTED
+ * @param userId - User ID
+ * @param deviceInfo - Device Info Object
+ * @returns Boolean Indicating If Session Should Be Auto-Trusted
+ */
+// <== SHOULD AUTO TRUST SESSION ==>
+export const shouldAutoTrustSession = async (
+  userId: mongoose.Types.ObjectId,
+  deviceInfo: DeviceInfo
+): Promise<boolean> => {
+  // CHECK IF THIS IS THE FIRST SESSION (SIGNUP)
+  const firstSession = await isFirstSession(userId);
+  // IF THIS IS THE FIRST SESSION, RETURN TRUE
+  if (firstSession) {
+    // RETURN TRUE
+    return true;
+  }
+  // CHECK IF DEVICE IS ALREADY TRUSTED
+  const deviceTrusted = await isDeviceTrusted(userId, deviceInfo);
+  // RETURN TRUE IF DEVICE IS TRUSTED, FALSE OTHERWISE
+  return deviceTrusted;
+};
+
+/**
+ * GET MAX SESSIONS FOR USER BASED ON THEIR SUBSCRIPTION PLAN
+ * @param userId - User ID
+ * @returns Max Sessions Number (100 Means Unlimited)
+ */
+// <== GET MAX SESSIONS FOR USER ==>
+export const getMaxSessionsForUser = async (
+  userId: mongoose.Types.ObjectId
+): Promise<number> => {
+  // TRY TO GET MAX SESSIONS FOR USER
+  try {
+    // FIND USER'S SUBSCRIPTION
+    const subscription = await Subscription.findOne({
+      userId,
+      status: { $in: ["active", "trialing"] },
+    })
+      .lean()
+      .exec();
+    // IF SUBSCRIPTION FOUND, GET PLAN LIMITS
+    if (subscription) {
+      // GET PLAN LIMITS
+      const planLimits = getPlanLimits(subscription.plan as PlanType);
+      // RETURN MAX SESSIONS FROM PLAN LIMITS (-1 MEANS UNLIMITED, USE 100 AS PRACTICAL LIMIT)
+      return planLimits.maxSessions === -1 ? 100 : planLimits.maxSessions;
+    }
+    // IF NO SUBSCRIPTION, RETURN DEFAULT
+    return DEFAULT_MAX_ACTIVE_SESSIONS;
+  } catch (error) {
+    // LOG ERROR AND RETURN DEFAULT
+    console.error("Error getting max sessions for user:", error);
+    // RETURN DEFAULT MAX SESSIONS
+    return DEFAULT_MAX_ACTIVE_SESSIONS;
+  }
+};
 
 /**
  * CREATE NEW SESSION
@@ -19,7 +218,6 @@ const MAX_ACTIVE_SESSIONS = parseInt(process.env.MAX_ACTIVE_SESSIONS || "5");
  * @param deviceInfo - Device Info Object
  * @param ipAddress - IP Address
  * @param locationInfo - Location Info Object
- * @param isCurrent - Is Current Session Flag
  * @param isTrusted - Is Trusted Device Flag
  * @param isSuspicious - Is Suspicious Activity Flag
  * @param suspiciousReason - Suspicious Activity Reason
@@ -31,7 +229,6 @@ export const createSession = async (
   deviceInfo: DeviceInfo,
   ipAddress: string,
   locationInfo: LocationInfo,
-  isCurrent: boolean = false,
   isTrusted: boolean = false,
   isSuspicious: boolean = false,
   suspiciousReason: string = ""
@@ -42,31 +239,38 @@ export const createSession = async (
   const expiresAt = new Date();
   // SET EXPIRATION DATE
   expiresAt.setDate(expiresAt.getDate() + SESSION_EXPIRATION_DAYS);
-  // IF THIS IS CURRENT SESSION, MARK ALL OTHER SESSIONS AS NOT CURRENT
-  if (isCurrent) {
-    // UPDATE ALL OTHER SESSIONS AS NOT CURRENT
-    await Session.updateMany(
-      { userId, isCurrent: true },
-      { isCurrent: false }
-    ).exec();
-  }
+  // GET MAX SESSIONS FOR USER BASED ON THEIR PLAN
+  const maxSessions = await getMaxSessionsForUser(userId);
   // CHECK IF MAX SESSIONS REACHED
   const activeSessionCount = await Session.countDocuments({
     userId,
     revoked: false,
     expiresAt: { $gt: new Date() },
   }).exec();
-  // IF MAX SESSIONS REACHED, REVOKE OLDEST SESSION
-  if (activeSessionCount >= MAX_ACTIVE_SESSIONS) {
-    // FIND OLDEST SESSION
-    const oldestSession = await Session.findOne({
+  // IF MAX SESSIONS REACHED, REVOKE OLDEST NON-TRUSTED SESSION
+  if (activeSessionCount >= maxSessions) {
+    // FIND OLDEST NON-TRUSTED SESSION FIRST
+    let oldestSession = await Session.findOne({
       userId,
       revoked: false,
+      isTrusted: false,
       expiresAt: { $gt: new Date() },
     })
-      .sort({ createdAt: 1 })
+      .sort({ lastActivity: 1 })
       .lean()
       .exec();
+    // IF NO NON-TRUSTED SESSION, FIND OLDEST SESSION OVERALL
+    if (!oldestSession) {
+      // FIND OLDEST SESSION OVERALL
+      oldestSession = await Session.findOne({
+        userId,
+        revoked: false,
+        expiresAt: { $gt: new Date() },
+      })
+        .sort({ lastActivity: 1 })
+        .lean()
+        .exec();
+    }
     // IF OLDEST SESSION FOUND, REVOKE IT
     if (oldestSession) {
       // REVOKE OLDEST SESSION
@@ -75,7 +279,6 @@ export const createSession = async (
         {
           revoked: true,
           revokedAt: new Date(),
-          isCurrent: false,
         }
       ).exec();
       // REVOKE ALL REFRESH TOKENS FOR OLDEST SESSION
@@ -99,7 +302,6 @@ export const createSession = async (
     locationCountry: locationInfo.country,
     locationCity: locationInfo.city,
     locationRegion: locationInfo.region,
-    isCurrent,
     isTrusted,
     lastActivity: new Date(),
     expiresAt,
@@ -161,8 +363,6 @@ export const revokeSession = async (
   session.revoked = true;
   // SET REVOKED AT DATE
   session.revokedAt = new Date();
-  // SET IS CURRENT TO FALSE
-  session.isCurrent = false;
   // SAVE SESSION
   await session.save();
   // REVOKE ALL REFRESH TOKENS FOR THIS SESSION
@@ -205,7 +405,6 @@ export const revokeAllOtherSessions = async (
     {
       revoked: true,
       revokedAt: new Date(),
-      isCurrent: false,
     }
   ).exec();
   // GET REVOKED SESSION IDs
@@ -248,7 +447,7 @@ export const revokeAllOtherSessions = async (
 /**
  * TRUST DEVICE
  * @param sessionId - Session ID
- * @param userId - User ID (for security check)
+ * @param userId - User ID (For Security Check)
  * @returns Trusted Session or Null
  */
 // <== TRUST DEVICE ==>
@@ -267,10 +466,20 @@ export const trustDevice = async (
     // RETURN NULL
     return null;
   }
-  // TRUST DEVICE
+  // TRUST DEVICE ON SESSION
   session.isTrusted = true;
   // SAVE SESSION
   await session.save();
+  // ALSO ADD TO TRUSTED DEVICES FOR FUTURE SESSIONS
+  const deviceInfo: DeviceInfo = {
+    deviceType: session.deviceType as "desktop" | "mobile" | "tablet" | "unknown",
+    deviceName: session.deviceName,
+    browserName: session.browserName,
+    browserVersion: session.browserVersion,
+    operatingSystem: session.operatingSystem,
+    userAgent: session.userAgent,
+  };
+  await addTrustedDevice(userId, deviceInfo);
   // RETURN TRUSTED SESSION
   return session;
 };
@@ -278,7 +487,7 @@ export const trustDevice = async (
 /**
  * UNTRUST DEVICE
  * @param sessionId - Session ID
- * @param userId - User ID (for security check)
+ * @param userId - User ID (For Security Check)
  * @returns Untrusted Session or Null
  */
 // <== UNTRUST DEVICE ==>
@@ -297,10 +506,20 @@ export const untrustDevice = async (
     // RETURN NULL
     return null;
   }
-  // UNTRUST DEVICE
+  // UNTRUST DEVICE ON SESSION
   session.isTrusted = false;
   // SAVE SESSION
   await session.save();
+  // ALSO REMOVE FROM TRUSTED DEVICES
+  const deviceInfo: DeviceInfo = {
+    deviceType: session.deviceType as "desktop" | "mobile" | "tablet" | "unknown",
+    deviceName: session.deviceName,
+    browserName: session.browserName,
+    browserVersion: session.browserVersion,
+    operatingSystem: session.operatingSystem,
+    userAgent: session.userAgent,
+  };
+  await removeTrustedDevice(userId, deviceInfo);
   // RETURN UNTRUSTED SESSION
   return session;
 };
