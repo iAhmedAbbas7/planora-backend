@@ -2443,31 +2443,42 @@ export const githubLinkCallback = expressAsyncHandler(async (req, res) => {
   const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
   // GET CODE AND STATE FROM QUERY PARAMETERS
   const { code, state } = req.query;
-  // VALIDATE CODE
-  if (!code || typeof code !== "string") {
-    // REDIRECTING TO FRONTEND
-    res.redirect(`${frontendUrl}/settings?tab=Integrations`);
-    // RETURNING FROM FUNCTION
-    return;
-  }
-  // PARSE STATE TO GET USER ID
+  // DEFAULT REDIRECT URL
+  let redirectUrl = "/settings?tab=Integrations";
+  // PARSE STATE TO GET USER ID AND REDIRECT
   let linkUserId: string | null = null;
-  // IF STATE IS FOUND, PARSE IT TO GET USER ID
+  // IF STATE IS FOUND, PARSE IT TO GET USER ID AND REDIRECT
   if (state && typeof state === "string") {
+    // TRY TO PARSE STATE
     try {
       // PARSING STATE
       const stateObj = JSON.parse(state);
       // EXTRACTING LINK USER ID
       linkUserId = stateObj.linkUserId;
+      // EXTRACTING REDIRECT URL (IF PROVIDED)
+      if (stateObj.redirect && typeof stateObj.redirect === "string") {
+        // VALIDATE REDIRECT IS A RELATIVE PATH (SECURITY)
+        if (stateObj.redirect.startsWith("/")) {
+          // SET REDIRECT URL
+          redirectUrl = stateObj.redirect;
+        }
+      }
     } catch (error) {
       // INVALID STATE FORMAT
       console.error("Error parsing GitHub link state:", error);
     }
   }
+  // VALIDATE CODE
+  if (!code || typeof code !== "string") {
+    // REDIRECTING TO FRONTEND WITH ERROR
+    res.redirect(`${frontendUrl}${redirectUrl}${redirectUrl.includes("?") ? "&" : "?"}github_error=invalid_code`);
+    // RETURNING FROM FUNCTION
+    return;
+  }
   // VALIDATE USER ID FROM STATE
   if (!linkUserId) {
-    // REDIRECTING TO FRONTEND
-    res.redirect(`${frontendUrl}/settings?tab=Integrations`);
+    // REDIRECTING TO FRONTEND WITH ERROR
+    res.redirect(`${frontendUrl}${redirectUrl}${redirectUrl.includes("?") ? "&" : "?"}github_error=invalid_state`);
     // RETURNING FROM FUNCTION
     return;
   }
@@ -2492,8 +2503,8 @@ export const githubLinkCallback = expressAsyncHandler(async (req, res) => {
     const tokenData = tokenResponse.data;
     // CHECK FOR ERROR IN TOKEN RESPONSE
     if (tokenData.error) {
-      // REDIRECTING TO FRONTEND
-      res.redirect(`${frontendUrl}/settings?tab=Integrations`);
+      // REDIRECTING TO FRONTEND WITH ERROR
+      res.redirect(`${frontendUrl}${redirectUrl}${redirectUrl.includes("?") ? "&" : "?"}github_error=token_error`);
       // RETURNING FROM FUNCTION
       return;
     }
@@ -2501,8 +2512,8 @@ export const githubLinkCallback = expressAsyncHandler(async (req, res) => {
     const accessToken = tokenData.access_token;
     // IF NO ACCESS TOKEN, RETURN ERROR
     if (!accessToken) {
-      // REDIRECTING TO FRONTEND
-      res.redirect(`${frontendUrl}/settings?tab=Integrations`);
+      // REDIRECTING TO FRONTEND WITH ERROR
+      res.redirect(`${frontendUrl}${redirectUrl}${redirectUrl.includes("?") ? "&" : "?"}github_error=no_token`);
       // RETURNING FROM FUNCTION
       return;
     }
@@ -2514,8 +2525,8 @@ export const githubLinkCallback = expressAsyncHandler(async (req, res) => {
     const user = await User.findById(linkUserId).exec();
     // IF USER NOT FOUND, RETURN ERROR
     if (!user) {
-      // REDIRECTING TO FRONTEND
-      res.redirect(`${frontendUrl}/settings?tab=Integrations`);
+      // REDIRECTING TO FRONTEND WITH ERROR
+      res.redirect(`${frontendUrl}${redirectUrl}${redirectUrl.includes("?") ? "&" : "?"}github_error=user_not_found`);
       // RETURNING FROM FUNCTION
       return;
     }
@@ -2528,8 +2539,8 @@ export const githubLinkCallback = expressAsyncHandler(async (req, res) => {
       .exec();
     // IF GITHUB ACCOUNT IS ALREADY LINKED, RETURN ERROR
     if (existingGitHubUser) {
-      // REDIRECTING TO FRONTEND
-      res.redirect(`${frontendUrl}/settings?tab=Integrations`);
+      // REDIRECTING TO FRONTEND WITH ERROR
+      res.redirect(`${frontendUrl}${redirectUrl}${redirectUrl.includes("?") ? "&" : "?"}github_error=account_linked`);
       // RETURNING FROM FUNCTION
       return;
     }
@@ -2547,15 +2558,15 @@ export const githubLinkCallback = expressAsyncHandler(async (req, res) => {
     user.githubScopes = githubScopes;
     // SAVING USER
     await user.save();
-    // REDIRECTING TO FRONTEND
-    res.redirect(`${frontendUrl}/settings?tab=Integrations`);
+    // REDIRECTING TO FRONTEND WITH SUCCESS
+    res.redirect(`${frontendUrl}${redirectUrl}${redirectUrl.includes("?") ? "&" : "?"}github_success=true`);
     // RETURNING FROM FUNCTION
     return;
   } catch (error: any) {
     // LOG ERROR
     console.error("Error in GitHub link callback:", error);
-    // REDIRECTING TO FRONTEND
-    res.redirect(`${frontendUrl}/settings?tab=Integrations`);
+    // REDIRECTING TO FRONTEND WITH ERROR
+    res.redirect(`${frontendUrl}${redirectUrl}${redirectUrl.includes("?") ? "&" : "?"}github_error=callback_error`);
     // RETURNING FROM FUNCTION
     return;
   }
