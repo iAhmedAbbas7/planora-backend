@@ -64,7 +64,6 @@ export const getSessions = expressAsyncHandler(
           locationCity: session.location?.city || session.locationCity || "",
           locationRegion:
             session.location?.region || session.locationRegion || "",
-          isCurrent: session.isCurrent || false,
           isTrusted: session.isTrusted || false,
           lastActivity: session.lastActivity || session.createdAt,
           createdAt: session.createdAt,
@@ -245,33 +244,35 @@ export const revokeAllOtherSessionsController = expressAsyncHandler(
       // RETURNING FROM FUNCTION
       return;
     }
-    // GET CURRENT SESSION ID FROM REQUEST BODY OR FIND CURRENT SESSION
-    const { currentSessionId } = req.body;
-    // IF CURRENT SESSION ID NOT PROVIDED, FIND CURRENT SESSION
-    let sessionId = currentSessionId;
-    // IF CURRENT SESSION ID NOT PROVIDED, FIND CURRENT SESSION
+    // GET CURRENT SESSION ID FROM REQUEST BODY, OR COOKIE AS FALLBACK
+    let sessionId = req.body.currentSessionId || req.cookies?.sessionId;
+    // IF CURRENT SESSION ID NOT PROVIDED, RETURN ERROR
     if (!sessionId) {
-      // FIND CURRENT SESSION
-      const currentSession = await Session.findOne({
-        userId: new mongoose.Types.ObjectId(userId),
-        isCurrent: true,
-        revoked: false,
-      })
-        .lean()
-        .exec();
-      // IF CURRENT SESSION FOUND, USE ITS SESSION ID
-      if (currentSession) {
-        // USE CURRENT SESSION ID
-        sessionId = currentSession.sessionId;
-      } else {
-        // RETURNING ERROR RESPONSE
-        res.status(400).json({
-          message: "Current session not found!",
-          success: false,
-        });
-        // RETURNING FROM FUNCTION
-        return;
-      }
+      // RETURNING ERROR RESPONSE
+      res.status(400).json({
+        message: "Current session ID is required! Please provide it in the request body or ensure the sessionId cookie is set.",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // VERIFY THE SESSION EXISTS AND BELONGS TO THE USER
+    const currentSession = await Session.findOne({
+      userId: new mongoose.Types.ObjectId(userId),
+      sessionId: sessionId,
+      revoked: false,
+    })
+      .lean()
+      .exec();
+    // IF CURRENT SESSION NOT FOUND, RETURN ERROR
+    if (!currentSession) {
+      // RETURNING ERROR RESPONSE
+      res.status(404).json({
+        message: "Current session not found or already revoked!",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
     }
     // REVOKE ALL OTHER SESSIONS
     const revokedCount = await revokeAllOtherSessions(
