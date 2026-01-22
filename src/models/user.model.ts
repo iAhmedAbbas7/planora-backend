@@ -182,6 +182,55 @@ const userSchema = new mongoose.Schema(
       ref: "Workspace",
       default: null,
     },
+    // SUBSCRIPTION ID REFERENCE
+    subscriptionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Subscription",
+      default: null,
+    },
+    // STRIPE CUSTOMER ID
+    stripeCustomerId: {
+      type: String,
+      default: null,
+    },
+    // ONBOARDING COMPLETED FLAG
+    onboardingCompleted: {
+      type: Boolean,
+      default: false,
+    },
+    // SELECTED PLAN (BEFORE CHECKOUT)
+    selectedPlan: {
+      type: String,
+      enum: ["individual", "team", "enterprise", null],
+      default: null,
+    },
+    // LAST ACTIVE TIMESTAMP
+    lastActiveAt: {
+      type: Date,
+      default: null,
+    },
+    // PREFERRED BILLING CYCLE
+    preferredBillingCycle: {
+      type: String,
+      enum: ["monthly", "yearly"],
+      default: "monthly",
+    },
+    // REFERRAL CODE
+    referralCode: {
+      type: String,
+      default: null,
+    },
+    // REFERRED BY (USER ID WHO REFERRED THIS USER)
+    referredBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    // TIMEZONE PREFERENCE
+    timezone: {
+      type: String,
+      default: "UTC",
+    },
   },
   { timestamps: true }
 );
@@ -233,6 +282,26 @@ userSchema.index({ phoneNumber: 1 }, { sparse: true });
  */
 //<== INDEX FOR GITHUB USERNAME ==>
 userSchema.index({ githubUsername: 1 }, { sparse: true });
+/**
+ * INDEX FOR SUBSCRIPTION ID
+ */
+//<== INDEX FOR SUBSCRIPTION ID ==>
+userSchema.index({ subscriptionId: 1 }, { sparse: true });
+/**
+ * INDEX FOR STRIPE CUSTOMER ID
+ */
+//<== INDEX FOR STRIPE CUSTOMER ID ==>
+userSchema.index({ stripeCustomerId: 1 }, { sparse: true });
+/**
+ * INDEX FOR ONBOARDING STATUS
+ */
+//<== INDEX FOR ONBOARDING STATUS ==>
+userSchema.index({ onboardingCompleted: 1 });
+/**
+ * INDEX FOR REFERRAL CODE
+ */
+//<== INDEX FOR REFERRAL CODE ==>
+userSchema.index({ referralCode: 1 }, { unique: true, sparse: true });
 
 // <== EXPORTING THE USER MODEL ==>
 export const User = mongoose.model("User", userSchema);
