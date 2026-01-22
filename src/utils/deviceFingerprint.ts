@@ -109,7 +109,7 @@ export const extractDeviceInfo = (req: Request): DeviceInfo => {
 };
 
 /**
- * GENERATE DEVICE FINGERPRINT HASH
+ * GENERATE DEVICE FINGERPRINT HASH (INCLUDES IP ADDRESS)
  * @param deviceInfo - Device Info Object
  * @param ipAddress - IP Address
  * @returns Device Fingerprint Hash
@@ -123,6 +123,30 @@ export const generateDeviceFingerprint = (
   const crypto = require("crypto");
   // CREATE FINGERPRINT STRING
   const fingerprintString = `${deviceInfo.browserName}-${deviceInfo.browserVersion}-${deviceInfo.operatingSystem}-${deviceInfo.deviceType}-${ipAddress}`;
+  // GENERATE HASH
+  const hash = crypto
+    .createHash("sha256")
+    .update(fingerprintString)
+    .digest("hex");
+  // RETURN HASH
+  return hash;
+};
+
+/**
+ * GENERATE TRUSTED DEVICE FINGERPRINT HASH (WITHOUT IP ADDRESS)
+ * @param deviceInfo - Device Info Object
+ * @returns Trusted Device Fingerprint Hash
+ */
+// <== GENERATE TRUSTED DEVICE FINGERPRINT ==>
+export const generateTrustedDeviceFingerprint = (
+  deviceInfo: DeviceInfo
+): string => {
+  // IMPORT CRYPTO
+  const crypto = require("crypto");
+  // EXTRACT MAJOR BROWSER VERSION ONLY (E.G., "120" FROM "120.0.6099.130")
+  const majorBrowserVersion = deviceInfo.browserVersion.split(".")[0] || "";
+  // CREATE FINGERPRINT STRING WITHOUT IP AND WITH MAJOR VERSION ONLY
+  const fingerprintString = `${deviceInfo.browserName}-${majorBrowserVersion}-${deviceInfo.operatingSystem}-${deviceInfo.deviceType}`;
   // GENERATE HASH
   const hash = crypto
     .createHash("sha256")
