@@ -85,12 +85,6 @@ const sessionSchema = new mongoose.Schema(
       trim: true,
       maxlength: 100,
     },
-    // IS CURRENT SESSION FIELD
-    isCurrent: {
-      type: Boolean,
-      default: false,
-      index: true,
-    },
     // IS TRUSTED DEVICE FIELD
     isTrusted: {
       type: Boolean,
@@ -146,11 +140,6 @@ const sessionSchema = new mongoose.Schema(
  */
 //<== UNIQUE INDEX FOR SESSION ID ==>
 sessionSchema.index({ sessionId: 1 }, { unique: true, name: "sessionId_unique_idx" });
-/**
- * COMPOUND INDEX FOR USER AND IS CURRENT SESSION
- */
-//<== COMPOUND INDEX FOR USER AND IS CURRENT SESSION ==>
-sessionSchema.index({ userId: 1, isCurrent: 1 });
 /**
  * COMPOUND INDEX FOR USER AND REVOKED STATUS
  */
