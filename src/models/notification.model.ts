@@ -16,7 +16,10 @@ export type NotificationType =
   | "workspace_deleted"
   | "workspace_member_added"
   | "workspace_member_removed"
-  | "workspace_invitation_received";
+  | "workspace_invitation_received"
+  | "trial_expired"
+  | "trial_ending_soon"
+  | "trial_ending_tomorrow";
 
 // <== NOTIFICATION INTERFACE ==>
 export interface INotification {
