@@ -1,4 +1,5 @@
 // <== IMPORTS ==>
+import crypto from "crypto";
 import { Request } from "express";
 import { UAParser } from "ua-parser-js";
 
@@ -141,8 +142,6 @@ export const generateDeviceFingerprint = (
 export const generateTrustedDeviceFingerprint = (
   deviceInfo: DeviceInfo
 ): string => {
-  // IMPORT CRYPTO
-  const crypto = require("crypto");
   // EXTRACT MAJOR BROWSER VERSION ONLY (E.G., "120" FROM "120.0.6099.130")
   const majorBrowserVersion = deviceInfo.browserVersion.split(".")[0] || "";
   // CREATE FINGERPRINT STRING WITHOUT IP AND WITH MAJOR VERSION ONLY
