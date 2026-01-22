@@ -23,14 +23,21 @@ import expressAsyncHandler from "express-async-handler";
 import { Workspace } from "../models/workspace.model.js";
 import { verifyBackupCode } from "../utils/encryption.js";
 import { Request, Response, NextFunction } from "express";
-import { createSession } from "../utils/sessionManager.js";
 import { PendingUser } from "../models/pendingUser.model.js";
 import { getLocationFromIp } from "../utils/ipGeolocation.js";
 import { RefreshToken } from "../models/refreshToken.model.js";
 import { PasswordReset } from "../models/passwordReset.model.js";
 import { AccountRecovery } from "../models/accountRecovery.model.js";
 import { decryptSecret, encryptSecret } from "../utils/encryption.js";
+import { createDefaultSubscription } from "../utils/stripeHelpers.js";
 import { extractDeviceInfo, getIpAddress } from "../utils/deviceFingerprint.js";
+import { createSession, shouldAutoTrustSession, addTrustedDevice, isFirstSession } from "../utils/sessionManager.js";
+
+// <== AUTHENTICATED REQUEST TYPE ==>
+interface AuthenticatedRequest extends Express.Request {
+  // USER ID
+  id?: string;
+}
 
 /**
  * GENERATE JWT TOKEN
@@ -411,14 +418,18 @@ export const login = expressAsyncHandler(async (req, res) => {
     }).exec();
     // CHECK IF SAME DEVICE WAS PREVIOUSLY TRUSTED
     const wasDeviceTrusted = allSessions.some((session) => {
+      // CHECK IF THE DEVICE IS THE SAME BY CHECKING THE DEVICE FINGERPRINT (BROWSER, OS, DEVICE TYPE)
       const deviceMatch =
         session.browserName === deviceInfo.browserName &&
         session.operatingSystem === deviceInfo.operatingSystem &&
         session.deviceType === deviceInfo.deviceType;
+      // CHECK IF THE IP ADDRESS IS THE SAME
       const ipMatch = session.ipAddress === ipAddress;
+      // CHECK IF THE LOCATION IS THE SAME
       const locationMatch =
         session.locationCountry === (locationInfo?.country || "Unknown") &&
         session.locationCity === (locationInfo?.city || "Unknown");
+      // RETURN TRUE IF THE DEVICE IS THE SAME AND IS TRUSTED
       return (
         deviceMatch && (ipMatch || locationMatch) && session.isTrusted === true
       );
@@ -472,6 +483,10 @@ export const login = expressAsyncHandler(async (req, res) => {
   const ipAddress = getIpAddress(req);
   // GET LOCATION INFO FROM IP ADDRESS
   const locationInfo = await getLocationFromIp(ipAddress);
+  // CHECK IF THIS IS THE FIRST SESSION (SIGNUP)
+  const firstSession = await isFirstSession(user._id);
+  // CHECK IF SESSION SHOULD BE AUTO-TRUSTED (FIRST SESSION OR RETURNING FROM TRUSTED DEVICE)
+  const autoTrust = await shouldAutoTrustSession(user._id, deviceInfo);
   // CREATE SESSION
   const session = await createSession(
     user._id,
@@ -483,16 +498,15 @@ export const login = expressAsyncHandler(async (req, res) => {
       region: "Unknown",
       countryCode: "XX",
     },
-    true,
-    false,
+    autoTrust,
     false,
     ""
   );
-  // CLEAN UP REFRESH TOKENS FOR OTHER SESSIONS (NOT THE CURRENT ONE)
-  await RefreshToken.deleteMany({
-    userId: user._id,
-    sessionId: { $ne: session._id },
-  }).exec();
+  // IF FIRST SESSION (SIGNUP), ADD DEVICE TO TRUSTED DEVICES FOR FUTURE LOGINS
+  if (firstSession) {
+    // ADDING DEVICE TO TRUSTED DEVICES FOR FUTURE LOGINS
+    await addTrustedDevice(user._id, deviceInfo);
+  }
   // GENERATE UNIQUE TOKEN ID
   const tokenId = crypto.randomUUID();
   // GENERATE ACCESS TOKEN
@@ -533,6 +547,13 @@ export const login = expressAsyncHandler(async (req, res) => {
   // SETTING REFRESH TOKEN IN HTTP-ONLY COOKIE
   res.cookie("refreshToken", refreshToken, {
     httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: refreshTokenMaxAge,
+  });
+  // SETTING SESSION ID COOKIE (NOT HTTP-ONLY SO FRONTEND CAN IDENTIFY CURRENT SESSION)
+  res.cookie("sessionId", session.sessionId, {
+    httpOnly: false,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     maxAge: refreshTokenMaxAge,
@@ -784,6 +805,8 @@ export const verify2FA = expressAsyncHandler(async (req, res) => {
   const ipAddress = getIpAddress(req);
   // GET LOCATION INFO FROM IP
   const locationInfo = await getLocationFromIp(ipAddress);
+  // CHECK IF SESSION SHOULD BE AUTO-TRUSTED (FIRST SESSION OR RETURNING FROM TRUSTED DEVICE)
+  const autoTrust = await shouldAutoTrustSession(user._id, deviceInfo);
   // CREATE SESSION FOR 2FA LOGIN
   const session = await createSession(
     user._id,
@@ -795,16 +818,10 @@ export const verify2FA = expressAsyncHandler(async (req, res) => {
       region: "Unknown",
       countryCode: "XX",
     },
-    true,
-    false,
+    autoTrust,
     false,
     ""
   );
-  // CLEAN UP REFRESH TOKENS FOR OTHER SESSIONS (NOT THE CURRENT ONE)
-  await RefreshToken.deleteMany({
-    userId: user._id,
-    sessionId: { $ne: session._id },
-  }).exec();
   // GENERATE UNIQUE TOKEN ID
   const tokenId = crypto.randomUUID();
   // GENERATE ACCESS TOKEN
@@ -845,6 +862,13 @@ export const verify2FA = expressAsyncHandler(async (req, res) => {
   // SETTING REFRESH TOKEN IN HTTP-ONLY COOKIE
   res.cookie("refreshToken", refreshToken, {
     httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: refreshTokenMaxAge,
+  });
+  // SETTING SESSION ID COOKIE (NOT HTTP-ONLY SO FRONTEND CAN IDENTIFY CURRENT SESSION)
+  res.cookie("sessionId", session.sessionId, {
+    httpOnly: false,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     maxAge: refreshTokenMaxAge,
@@ -937,6 +961,32 @@ export const refreshToken = expressAsyncHandler(async (req, res) => {
   }
   // GET SESSION ID FROM STORED TOKEN (IF EXISTS)
   const sessionId = storedToken.sessionId || null;
+  // VALIDATE SESSION IS STILL ACTIVE (IF SESSION ID EXISTS)
+  if (sessionId) {
+    // FIND SESSION IN DATABASE
+    const session = await Session.findOne({
+      _id: sessionId,
+      revoked: false,
+      expiresAt: { $gt: new Date() },
+    })
+      .lean()
+      .exec();
+    // IF SESSION NOT FOUND OR REVOKED, RETURN 401 ERROR
+    if (!session) {
+      // RETURNING ERROR RESPONSE
+      res.status(401).json({
+        message: "Session has been revoked or expired!",
+        success: false,
+      });
+      // RETURNING FROM FUNCTION
+      return;
+    }
+    // UPDATE SESSION LAST ACTIVITY
+    await Session.updateOne(
+      { _id: sessionId },
+      { lastActivity: new Date() }
+    ).exec();
+  }
   // DELETING OLD REFRESH TOKEN BEING USED FOR REFRESH
   await RefreshToken.deleteOne({ _id: storedToken._id }).exec();
   // CLEANING UP ANY OTHER REVOKED OR EXPIRED TOKENS FOR THIS USER
@@ -1053,8 +1103,6 @@ export const logout = expressAsyncHandler(async (req, res) => {
           currentSession.revoked = true;
           // SET REVOKED AT DATE
           currentSession.revokedAt = new Date();
-          // SET IS CURRENT TO FALSE
-          currentSession.isCurrent = false;
           // SAVE CURRENT SESSION
           await currentSession.save();
         }
@@ -1078,6 +1126,12 @@ export const logout = expressAsyncHandler(async (req, res) => {
   // CLEARING REFRESH TOKEN COOKIE
   res.clearCookie("refreshToken", {
     httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+  });
+  // CLEARING SESSION ID COOKIE
+  res.clearCookie("sessionId", {
+    httpOnly: false,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
   });
@@ -1218,8 +1272,39 @@ export const oauthCallback = expressAsyncHandler(async (req, res) => {
     // RETURNING FROM FUNCTION
     return;
   }
-  // CLEANING UP ALL EXISTING REFRESH TOKENS (ALL TOKENS - REVOKED, EXPIRED, OR ACTIVE)
-  await RefreshToken.deleteMany({ userId }).exec();
+  // CHECK IF USER IS NEW
+  const isNewUser = user.isNewUser === true;
+  // CHECK IF SELECTED PLAN IS PROVIDED
+  const selectedPlan = user.selectedPlan || null;
+  // CHECK IF BILLING CYCLE IS PROVIDED
+  const billingCycle = user.billingCycle || "monthly";
+  // EXTRACT DEVICE INFO FROM REQUEST
+  const deviceInfo = extractDeviceInfo(req);
+  // GET IP ADDRESS FROM REQUEST
+  const ipAddress = getIpAddress(req);
+  // GET LOCATION INFO FROM IP
+  const locationInfo = await getLocationFromIp(ipAddress);
+  // CHECK IF SESSION SHOULD BE AUTO-TRUSTED (FIRST SESSION OR RETURNING FROM TRUSTED DEVICE)
+  const autoTrust = await shouldAutoTrustSession(new mongoose.Types.ObjectId(userId), deviceInfo);
+  // CREATE SESSION FOR OAUTH USER
+  const session = await createSession(
+    new mongoose.Types.ObjectId(userId),
+    deviceInfo,
+    ipAddress,
+    locationInfo || {
+      country: "Unknown",
+      city: "Unknown",
+      region: "Unknown",
+      countryCode: "XX",
+    },
+    autoTrust,
+    false,
+    ""
+  );
+  // IF NEW USER (FIRST OAUTH SIGNUP), ADD DEVICE TO TRUSTED DEVICES
+  if (isNewUser) {
+    await addTrustedDevice(new mongoose.Types.ObjectId(userId), deviceInfo);
+  }
   // GENERATING UNIQUE TOKEN ID FOR DATABASE STORAGE
   const tokenId = crypto.randomUUID();
   // GENERATING ACCESS TOKEN
@@ -1234,10 +1319,11 @@ export const oauthCallback = expressAsyncHandler(async (req, res) => {
   const expiresAt = new Date();
   // SETTING EXPIRATION DATE
   expiresAt.setDate(expiresAt.getDate() + expiresInDays);
-  // STORING REFRESH TOKEN IN DATABASE
+  // STORING REFRESH TOKEN IN DATABASE WITH SESSION ID
   await RefreshToken.create({
     tokenId,
     userId,
+    sessionId: session._id,
     expiresAt,
     revoked: false,
   });
@@ -1246,7 +1332,7 @@ export const oauthCallback = expressAsyncHandler(async (req, res) => {
   // CALCULATING ACCESS TOKEN MAX AGE
   const accessTokenMaxAge = accessTokenExpiresIn.includes("m")
     ? parseInt(accessTokenExpiresIn) * 60 * 1000
-    : 15 * 60 * 1000; // Default 15 minutes
+    : 15 * 60 * 1000;
   // SETTING ACCESS TOKEN IN HTTP-ONLY COOKIE
   res.cookie("accessToken", accessToken, {
     httpOnly: true,
@@ -1263,34 +1349,56 @@ export const oauthCallback = expressAsyncHandler(async (req, res) => {
     sameSite: "lax",
     maxAge: refreshTokenMaxAge,
   });
-  // CHECK IF USER IS NEW (CREATED WITHIN LAST 10 SECONDS) AND SEND WELCOME EMAIL
-  try {
-    // FETCH USER FROM DATABASE TO GET CREATED AT TIMESTAMP
-    const dbUser = await User.findById(userId).lean().exec();
-    // IF USER FOUND, CHECK IF USER WAS CREATED WITHIN LAST 10 SECONDS (NEW USER)
-    if (dbUser) {
-      // CHECK IF USER WAS CREATED WITHIN LAST 10 SECONDS (NEW USER)
-      const userCreatedAt = new Date(dbUser.createdAt || Date.now());
-      // CHECK IF USER WAS CREATED WITHIN LAST 10 SECONDS (NEW USER)
-      const tenSecondsAgo = new Date(Date.now() - 10 * 1000);
-      // CHECK IF USER WAS CREATED WITHIN LAST 10 SECONDS (NEW USER)
-      const isNewUser = userCreatedAt > tenSecondsAgo;
-      // IF NEW USER, SEND WELCOME EMAIL
-      if (isNewUser) {
+  // SETTING SESSION ID COOKIE (NOT HTTP-ONLY SO FRONTEND CAN IDENTIFY CURRENT SESSION)
+  res.cookie("sessionId", session.sessionId, {
+    httpOnly: false,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: refreshTokenMaxAge,
+  });
+  // FRONTEND URL
+  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+  // HANDLE NEW USER SETUP
+  if (isNewUser) {
+    // TRY TO SETUP NEW USER
+    try { 
+      // FETCH USER FROM DATABASE
+      const dbUser = await User.findById(userId).lean().exec();
+      // IF USER FOUND, CREATE DEFAULT SUBSCRIPTION FOR NEW OAUTH USER (FREE TRIAL)
+      if (dbUser) {
+        // CREATE DEFAULT SUBSCRIPTION FOR NEW OAUTH USER (FREE TRIAL)
+        try {
+          // CREATE DEFAULT SUBSCRIPTION FOR NEW OAUTH USER (FREE TRIAL)
+          const subscription = await createDefaultSubscription(userId);
+          // UPDATE USER WITH SUBSCRIPTION ID
+          await User.findByIdAndUpdate(userId, {
+            subscriptionId: subscription._id,
+          }).exec();
+        } catch (subError) {
+          // LOG ERROR
+          console.error("Error creating subscription for OAuth user:", subError);
+        }
         // SEND WELCOME EMAIL (DON'T AWAIT - SEND IN BACKGROUND)
         sendWelcomeEmail(dbUser.email, dbUser.name).catch((error) => {
-          // LOG ERROR BUT DON'T FAIL THE REQUEST
+          // LOG ERROR
           console.error("Error sending welcome email to OAuth user:", error);
         });
       }
+    } catch (error) {
+      // LOG ERROR
+      console.error("Error setting up new OAuth user:", error);
     }
-  } catch (error) {
-    // LOG ERROR BUT DON'T FAIL THE REQUEST
-    console.error("Error checking if user is new for welcome email:", error);
+    // CHECK IF PAID PLAN WAS SELECTED - REDIRECT TO CHECKOUT
+    if (selectedPlan && ["individual", "team", "enterprise"].includes(selectedPlan)) {
+      // REDIRECT TO BILLING PAGE WITH PLAN TO TRIGGER CHECKOUT
+      res.redirect(
+        `${frontendUrl}/settings?tab=Billing&checkout=true&plan=${selectedPlan}&cycle=${billingCycle}&oauth=success`
+      );
+      // RETURNING FROM FUNCTION
+      return;
+    }
   }
-  // REDIRECT TO FRONTEND WITH SUCCESS
-  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-  // REDIRECTING TO FRONTEND WITH SUCCESS
+  // REDIRECT TO FRONTEND WITH SUCCESS (NO PLAN SELECTED OR EXISTING USER)
   res.redirect(`${frontendUrl}/dashboard?oauth=success`);
   return;
 });
@@ -1435,9 +1543,12 @@ export const verifyEmail = expressAsyncHandler(async (req, res) => {
     type: "personal",
     ownerId: newUser._id,
   });
-  // UPDATE USER WITH PERSONAL WORKSPACE ID
+  // CREATE DEFAULT SUBSCRIPTION FOR NEW USER (FREE TRIAL)
+  const subscription = await createDefaultSubscription(newUser._id.toString());
+  // UPDATE USER WITH PERSONAL WORKSPACE ID AND SUBSCRIPTION ID
   await User.findByIdAndUpdate(newUser._id, {
     personalWorkspaceId: personalWorkspace._id,
+    subscriptionId: subscription._id,
   });
   // EXTRACT DEVICE INFO FROM REQUEST
   const deviceInfo = extractDeviceInfo(req);
@@ -1445,7 +1556,7 @@ export const verifyEmail = expressAsyncHandler(async (req, res) => {
   const ipAddress = getIpAddress(req);
   // GET LOCATION INFO FROM IP ADDRESS
   const locationInfo = await getLocationFromIp(ipAddress);
-  // CREATE SESSION
+  // CREATE SESSION (FIRST SESSION FOR NEW USER - ALWAYS TRUSTED)
   const session = await createSession(
     newUser._id,
     deviceInfo,
@@ -1458,10 +1569,9 @@ export const verifyEmail = expressAsyncHandler(async (req, res) => {
     },
     true,
     false,
-    false,
     ""
   );
-  // CLEANING UP ANY EXISTING REFRESH TOKENS FOR OTHER SESSIONS (NOT THE CURRENT ONE)
+  // DELETE ANY EXISTING REFRESH TOKENS FOR OTHER SESSIONS (NOT THE CURRENT ONE)
   await RefreshToken.deleteMany({
     userId: newUser._id,
     sessionId: { $ne: session._id },
@@ -1506,6 +1616,13 @@ export const verifyEmail = expressAsyncHandler(async (req, res) => {
   // SETTING REFRESH TOKEN IN HTTP-ONLY COOKIE
   res.cookie("refreshToken", refreshToken, {
     httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: refreshTokenMaxAge,
+  });
+  // SETTING SESSION ID COOKIE (NOT HTTP-ONLY SO FRONTEND CAN IDENTIFY CURRENT SESSION)
+  res.cookie("sessionId", session.sessionId, {
+    httpOnly: false,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     maxAge: refreshTokenMaxAge,
@@ -2442,4 +2559,106 @@ export const githubLinkCallback = expressAsyncHandler(async (req, res) => {
     // RETURNING FROM FUNCTION
     return;
   }
+});
+
+/**
+ * GET ONBOARDING STATUS
+ * RETURNS THE USER'S ONBOARDING COMPLETION STATUS
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== GET ONBOARDING STATUS ==>
+export const getOnboardingStatus = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM AUTHENTICATED REQUEST
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURN UNAUTHORIZED ERROR
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FIND USER BY ID
+  const user = await User.findById(userId)
+    .select("onboardingCompleted selectedPlan")
+    .lean()
+    .exec();
+  // IF USER NOT FOUND, RETURN ERROR
+  if (!user) {
+    // RETURN NOT FOUND ERROR
+    res.status(404).json({
+      message: "User not found!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // RETURN ONBOARDING STATUS
+  res.status(200).json({
+    message: "Onboarding status retrieved successfully!",
+    success: true,
+    data: {
+      onboardingCompleted: user.onboardingCompleted || false,
+      selectedPlan: user.selectedPlan || null,
+    },
+  });
+  // RETURNING FROM FUNCTION
+  return;
+});
+
+/**
+ * COMPLETE ONBOARDING
+ * MARKS THE USER'S ONBOARDING AS COMPLETE
+ * @param req - Request Object
+ * @param res - Response Object
+ * @returns Response Object
+ */
+// <== COMPLETE ONBOARDING ==>
+export const completeOnboarding = expressAsyncHandler(async (req, res) => {
+  // GET USER ID FROM AUTHENTICATED REQUEST
+  const userId = (req as AuthenticatedRequest).id;
+  // IF USER ID NOT FOUND, RETURN ERROR
+  if (!userId) {
+    // RETURN UNAUTHORIZED ERROR
+    res.status(401).json({
+      message: "Unauthorized!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // FIND USER AND UPDATE ONBOARDING STATUS
+  const user = await User.findByIdAndUpdate(
+    userId,
+    { onboardingCompleted: true },
+    { new: true }
+  )
+    .select("onboardingCompleted name email")
+    .exec();
+  // IF USER NOT FOUND, RETURN ERROR
+  if (!user) {
+    // RETURN NOT FOUND ERROR
+    res.status(404).json({
+      message: "User not found!",
+      success: false,
+    });
+    // RETURNING FROM FUNCTION
+    return;
+  }
+  // LOG SUCCESSFUL ONBOARDING COMPLETION
+  console.log(`User ${user.email} completed onboarding`);
+  // RETURN SUCCESS RESPONSE
+  res.status(200).json({
+    message: "Onboarding completed successfully!",
+    success: true,
+    data: {
+      onboardingCompleted: user.onboardingCompleted,
+    },
+  });
+  // RETURNING FROM FUNCTION
+  return;
 });
