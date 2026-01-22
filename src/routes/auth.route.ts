@@ -18,6 +18,8 @@ import {
   verify2FA,
   requestAccountRecovery,
   verifyAccountRecovery,
+  getOnboardingStatus,
+  completeOnboarding,
 } from "../controllers/auth.controller.js";
 import {
   requestDeviceVerification,
@@ -37,20 +39,38 @@ import isAuthenticated from "../middleware/isAuthenticated.js";
 const router = express.Router();
 
 // <== ROUTES ==>
-// GOOGLE OAUTH INITIATION
-router.get(
-  "/google",
+// GOOGLE OAUTH INITIATION (WITH MODE AND PLAN SUPPORT)
+router.get("/google", (req, res, next) => {
+  // GET MODE FROM QUERY (LOGIN OR REGISTER), DEFAULT TO REGISTER
+  const mode = req.query.mode === "login" ? "login" : "register";
+  // GET PLAN FROM QUERY (OPTIONAL)
+  const plan = req.query.plan || null;
+  // GET BILLING CYCLE FROM QUERY (OPTIONAL)
+  const billingCycle = req.query.cycle || "monthly";
+  // CREATE STATE OBJECT TO PASS THROUGH OAUTH PROCESS
+  const state = JSON.stringify({ mode, plan, billingCycle });
+  // AUTHENTICATE WITH GOOGLE
   passport.authenticate("google", {
     scope: ["profile", "email"],
-  })
-);
-// GITHUB OAUTH INITIATION (FOR SIGNUP/LOGIN)
-router.get(
-  "/github",
+    state: state,
+  })(req, res, next);
+});
+// GITHUB OAUTH INITIATION (FOR SIGNUP/LOGIN WITH MODE AND PLAN SUPPORT)
+router.get("/github", (req, res, next) => {
+  // GET MODE FROM QUERY (LOGIN OR REGISTER), DEFAULT TO REGISTER
+  const mode = req.query.mode === "login" ? "login" : "register";
+  // GET PLAN FROM QUERY (OPTIONAL)
+  const plan = req.query.plan || null;
+  // GET BILLING CYCLE FROM QUERY (OPTIONAL)
+  const billingCycle = req.query.cycle || "monthly";
+  // CREATE STATE OBJECT TO PASS THROUGH OAUTH PROCESS
+  const state = JSON.stringify({ mode, plan, billingCycle });
+  // AUTHENTICATE WITH GITHUB
   passport.authenticate("github", {
     scope: ["user:email", "read:user", "repo"],
-  })
-);
+    state: state,
+  })(req, res, next);
+});
 // REQUEST DEVICE VERIFICATION ROUTE
 router.post(
   "/device-verification/request",
@@ -105,5 +125,9 @@ router.post("/account-recovery/request", requestAccountRecovery);
 router.get("/google/callback", googleOAuthCallback, oauthCallback);
 // GITHUB OAUTH CALLBACK - HANDLES BOTH LOGIN/SIGNUP AND LINKING
 router.get("/github/callback", handleGitHubCallback, oauthCallback);
+// GET ONBOARDING STATUS ROUTE
+router.get("/onboarding/status", isAuthenticated, getOnboardingStatus);
+// COMPLETE ONBOARDING ROUTE
+router.post("/onboarding/complete", isAuthenticated, completeOnboarding);
 
 export default router;
