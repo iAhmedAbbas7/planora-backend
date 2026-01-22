@@ -6,8 +6,8 @@ import {
   sendSuspiciousActivityAlert,
 } from "../utils/mailer.js";
 import crypto from "crypto";
-import speakeasy from "speakeasy";
 import bcrypt from "bcryptjs";
+import speakeasy from "speakeasy";
 import { Request, Response } from "express";
 import { User } from "../models/user.model.js";
 import { Session } from "../models/session.model.js";
@@ -18,8 +18,8 @@ import { checkSuspiciousActivity } from "../utils/suspiciousActivity.js";
 import { decryptSecret, verifyBackupCode } from "../utils/encryption.js";
 import { DeviceVerification } from "../models/deviceVerification.model.js";
 import { generateToken, generateRefreshToken } from "./auth.controller.js";
-import { createSession, getActiveSessions } from "../utils/sessionManager.js";
 import { extractDeviceInfo, getIpAddress } from "../utils/deviceFingerprint.js";
+import { createSession, getActiveSessions, addTrustedDevice } from "../utils/sessionManager.js";
 
 /**
  * REQUEST DEVICE VERIFICATION
@@ -482,11 +482,15 @@ export const verifyDeviceCode = expressAsyncHandler(
       deviceInfo,
       deviceVerification.ipAddress,
       locationInfo,
-      true,
-      rememberDevice === true,
+      rememberDevice === true, // TRUST DEVICE IF USER SELECTED REMEMBER DEVICE
       suspiciousCheck.isSuspicious,
       suspiciousCheck.reason
     );
+    // IF REMEMBER DEVICE IS ENABLED, ADD TO TRUSTED DEVICES FOR FUTURE AUTO-TRUST
+    if (rememberDevice === true) {
+      // ADDING DEVICE TO TRUSTED DEVICES
+      await addTrustedDevice(user._id, deviceInfo);
+    }
     // GENERATING UNIQUE TOKEN ID FOR DATABASE STORAGE
     const tokenId = crypto.randomUUID();
     // GENERATING ACCESS TOKEN
@@ -501,11 +505,6 @@ export const verifyDeviceCode = expressAsyncHandler(
     const expiresAt = new Date();
     // SETTING EXPIRATION DATE
     expiresAt.setDate(expiresAt.getDate() + expiresInDays);
-    // CLEAN UP REFRESH TOKENS FOR OTHER SESSIONS (NOT THE CURRENT ONE)
-    await RefreshToken.deleteMany({
-      userId: user._id,
-      sessionId: { $ne: session._id },
-    }).exec();
     // STORING REFRESH TOKEN IN DATABASE WITH SESSION ID
     await RefreshToken.create({
       tokenId,
@@ -528,11 +527,19 @@ export const verifyDeviceCode = expressAsyncHandler(
       maxAge: accessTokenMaxAge,
     });
     // SETTING REFRESH TOKEN IN HTTP-ONLY COOKIE
+    const refreshTokenMaxAge = expiresInDays * 24 * 60 * 60 * 1000;
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
-      maxAge: expiresInDays * 24 * 60 * 60 * 1000,
+      maxAge: refreshTokenMaxAge,
+    });
+    // SETTING SESSION ID COOKIE (NOT HTTP-ONLY SO FRONTEND CAN IDENTIFY CURRENT SESSION)
+    res.cookie("sessionId", session.sessionId, {
+      httpOnly: false,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: refreshTokenMaxAge,
     });
     // DELETE DEVICE VERIFICATION
     await deviceVerification.deleteOne().exec();
@@ -864,11 +871,14 @@ export const completeDeviceLogin = expressAsyncHandler(
       deviceInfo,
       deviceVerification.ipAddress,
       locationInfo,
-      true,
-      rememberDevice === true,
+      rememberDevice === true, // TRUST DEVICE IF USER SELECTED REMEMBER DEVICE
       suspiciousCheck.isSuspicious,
       suspiciousCheck.reason
     );
+    // IF REMEMBER DEVICE IS ENABLED, ADD TO TRUSTED DEVICES FOR FUTURE AUTO-TRUST
+    if (rememberDevice === true) {
+      await addTrustedDevice(user._id, deviceInfo);
+    }
     // GENERATING UNIQUE TOKEN ID FOR DATABASE STORAGE
     const tokenId = crypto.randomUUID();
     // GENERATING ACCESS TOKEN
@@ -883,11 +893,6 @@ export const completeDeviceLogin = expressAsyncHandler(
     const expiresAt = new Date();
     // SETTING EXPIRATION DATE
     expiresAt.setDate(expiresAt.getDate() + expiresInDays);
-    // CLEAN UP REFRESH TOKENS FOR OTHER SESSIONS (NOT THE CURRENT ONE)
-    await RefreshToken.deleteMany({
-      userId: user._id,
-      sessionId: { $ne: session._id },
-    }).exec();
     // STORING REFRESH TOKEN IN DATABASE WITH SESSION ID
     await RefreshToken.create({
       tokenId,
@@ -914,6 +919,13 @@ export const completeDeviceLogin = expressAsyncHandler(
     // SETTING REFRESH TOKEN IN HTTP-ONLY COOKIE
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: refreshTokenMaxAge,
+    });
+    // SETTING SESSION ID COOKIE (NOT HTTP-ONLY SO FRONTEND CAN IDENTIFY CURRENT SESSION)
+    res.cookie("sessionId", session.sessionId, {
+      httpOnly: false,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
       maxAge: refreshTokenMaxAge,
