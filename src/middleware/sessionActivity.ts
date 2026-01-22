@@ -28,37 +28,42 @@ export const updateSessionActivityMiddleware = async (
       // RETURN
       return;
     }
-    // GET IP ADDRESS FROM REQUEST
-    const ipAddress = getIpAddress(req);
-    // FIND CURRENT SESSION BY USER ID AND IP ADDRESS
-    const currentSession = await Session.findOne({
-      userId,
-      isCurrent: true,
-      revoked: false,
-      expiresAt: { $gt: new Date() },
-    })
-      .lean()
-      .exec();
-    // IF CURRENT SESSION FOUND, UPDATE ACTIVITY
-    if (currentSession) {
-      // UPDATE SESSION ACTIVITY
-      await updateSessionActivity(currentSession.sessionId);
-    } else {
-      // IF NO CURRENT SESSION FOUND, FIND SESSION BY IP ADDRESS
-      const sessionByIp = await Session.findOne({
+    // GET SESSION ID FROM COOKIE (PRIMARY METHOD - MOST ACCURATE)
+    const sessionIdFromCookie = req.cookies?.sessionId;
+    // IF SESSION ID FROM COOKIE EXISTS, USE IT DIRECTLY
+    if (sessionIdFromCookie) {
+      // FIND SESSION BY SESSION ID FROM COOKIE
+      const sessionFromCookie = await Session.findOne({
         userId,
-        ipAddress,
+        sessionId: sessionIdFromCookie,
         revoked: false,
         expiresAt: { $gt: new Date() },
       })
-        .sort({ lastActivity: -1 })
         .lean()
         .exec();
-      // IF SESSION FOUND BY IP, UPDATE ACTIVITY
-      if (sessionByIp) {
-        // UPDATE SESSION ACTIVITY
-        await updateSessionActivity(sessionByIp.sessionId);
+      // IF SESSION FOUND, UPDATE ACTIVITY
+      if (sessionFromCookie) {
+        await updateSessionActivity(sessionFromCookie.sessionId);
+        next();
+        return;
       }
+    }
+    // FALLBACK: GET IP ADDRESS FROM REQUEST
+    const ipAddress = getIpAddress(req);
+    // FALLBACK: FIND SESSION BY IP ADDRESS (IF COOKIE NOT AVAILABLE)
+    const sessionByIp = await Session.findOne({
+      userId,
+      ipAddress,
+      revoked: false,
+      expiresAt: { $gt: new Date() },
+    })
+      .sort({ lastActivity: -1 })
+      .lean()
+      .exec();
+    // IF SESSION FOUND BY IP, UPDATE ACTIVITY
+    if (sessionByIp) {
+      // UPDATE SESSION ACTIVITY
+      await updateSessionActivity(sessionByIp.sessionId);
     }
     // CONTINUE TO NEXT MIDDLEWARE
     next();
