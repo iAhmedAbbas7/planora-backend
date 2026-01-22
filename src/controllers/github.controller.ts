@@ -102,10 +102,12 @@ export const initiateGitHubLink = (
     // RETURNING FROM FUNCTION
     return;
   }
-  // INITIATE GITHUB OAUTH WITH STATE PARAMETER CONTAINING USER ID
+  // GET REDIRECT URL FROM QUERY (OPTIONAL)
+  const redirect = req.query.redirect as string | undefined;
+  // INITIATE GITHUB OAUTH WITH STATE PARAMETER CONTAINING USER ID AND REDIRECT URL
   passport.authenticate("github", {
     scope: ["user:email", "read:user", "repo"],
-    state: JSON.stringify({ linkUserId: userId }),
+    state: JSON.stringify({ linkUserId: userId, redirect: redirect || null }),
   })(req, res, next);
 };
 
