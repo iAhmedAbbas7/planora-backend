@@ -38,6 +38,7 @@ import focusSessionRoute from "./routes/focusSession.route.js";
 import helmetMiddleware from "./middleware/helmetMiddleware.js";
 import { connectDB, disconnectDB } from "./config/dbConnection.js";
 import projectTemplateRoute from "./routes/projectTemplate.route.js";
+import billingRoute, { handleWebhook } from "./routes/billing.route.js";
 import workspaceAnalyticsRoute from "./routes/workspaceAnalytics.route.js";
 import notificationSettingsRoute from "./routes/notificationSettings.route.js";
 import { updateSessionActivityMiddleware } from "./middleware/sessionActivity.js";
@@ -55,6 +56,12 @@ const PORT = process.env.PORT || 7000;
 // <== MIDDLEWARE ==>
 // CORS MIDDLEWARE
 app.use(cors(corsOptions));
+// <== STRIPE WEBHOOK ROUTE (NEEDS RAW BODY - MUST BE BEFORE JSON PARSER) ==>
+app.post(
+  "/api/v1/billing/webhook",
+  express.raw({ type: "application/json" }),
+  handleWebhook
+);
 // JSON MIDDLEWARE
 app.use(express.json());
 // FORM DATA MIDDLEWARE
@@ -119,6 +126,8 @@ app.use("/api/v1/profile", profileRoute);
 app.use("/api/v1/account", accountRoute);
 // <== REPORTS ROUTE ==>
 app.use("/api/v1/reports", reportsRoute);
+// <== BILLING ROUTE ==>
+app.use("/api/v1/billing", billingRoute);
 // <== PROJECT ROUTE ==>
 app.use("/api/v1/projects", projectRoute);
 // <== SECURITY ROUTE ==>
